@@ -1,0 +1,63 @@
+! Empty domain test - related for fixed bug in domains remover
+! Expected: no changes
+[$path=|/video/]buzz##body > .play-button-outer ~ .pppx
+
+! Probe fail test
+! Expected: "Content probe failed" error in the log
+example.org##body
+
+! Test Probe Success
+! Expected: "Test Probe Success" message in the debug log
+example.de##body
+
+! Potentially dead site test
+! Expected:
+!  - "DNS resolution failed" message in the debug log
+!  - "potentially_dead: true" added to watchers.yml
+!  - "Failed for N days - consider removing from filters" message in the debug log (N=failedDaysWarning)
+deadexample24.com##body
+
+! Mixed domains test
+! CN dynamic mirrors, another site and actual updated domains (turkifsaclub)
+! Expected:
+!   - example.org - as is
+!   - dd.yvhoyh.com => updated
+!   - turkifsaclub - MAY be updated, if added a corresponding config, and new domain detected
+example.org,dd.yvhoyh.com,turkifsaclub001.sbs,example.com##.ads1
+dd.yvhoyh.com,turkifsaclub001.sbs,example.com#$#.ads { display: none !important; }
+||example.com^$domain=example.org|dd.yvhoyh.com|turkifsaclub001.sbs|example.com
+
+! Single site test
+! Expected result: updated matched domain, removed manually predicted
+! For example, turkifsaclub020.sbs - new actual domain.
+! Expected: kifsaclub020.sbs##.ads-grid
+! turkifsaclub001.sbs- frequently changed domains
+||turkifsaclub*.sbs/*.gif
+[$domain=/turkifsaclub\d+\.sbs/]##.ads-grid
+turkifsaclub001.sbs,turkifsaclub002.sbs,turkifsaclub003.sbs,turkifsaclub004.sbs,turkifsaclub005.sbs,turkifsaclub006.sbs,turkifsaclub007.sbs,turkifsaclub008.sbs,turkifsaclub009.sbs,turkifsaclub010.sbs,turkifsaclub011.sbs,turkifsaclub012.sbs,turkifsaclub013.sbs,turkifsaclub014.sbs,turkifsaclub015.sbs,turkifsaclub016.sbs,turkifsaclub017.sbs,turkifsaclub018.sbs,turkifsaclub019.sbs,turkifsaclub020.sbs##.ads-grid
+
+! CN dynamic mirrors
+! Expected: Old domain => New domain
+dd.yvhoyh.com##.ads1
+dd.yvhoyh.com#$#.ads { display: none !important; }
+||example.com^$domain=dd.yvhoyh.com
+
+! START ↓↓↓↓: Single sites
+
+! Frequently changed domains — sahatv2.top
+||sahatv*.top/assets/img/*.gif
+[$domain=/sahatv\d+\.top/]##header > a + ul
+sahatv2.top,sahatv3.top,sahatv4.top,sahatv5.top,sahatv6.top,sahatv7.top,sahatv8.top,sahatv9.top,sahatv10.top,sahatv11.top,sahatv12.top,sahatv13.top,sahatv14.top,sahatv15.top,sahatv16.top,sahatv17.top,sahatv18.top,sahatv19.top,sahatv20.top,sahatv21.top,sahatv22.top,sahatv23.top,sahatv24.top,sahatv25.top,sahatv26.top,sahatv27.top,sahatv28.top,sahatv29.top,sahatv30.top,sahatv31.top,sahatv32.top,sahatv33.top,sahatv34.top,sahatv35.top,sahatv36.top##header > a + ul
+
+! Frequently changed domains — yavasgir19.com
+||yavasgir*.com/*.gif
+[$domain=/yavasgir\d+\.com/]##a[href^="https://cutt.ly/"]
+||example.com^$script,domain=yavasgir19.com|yavasgir20.com|yavasgir21.com|yavasgir22.com|yavasgir23.com|yavasgir24.com|yavasgir25.com|yavasgir26.com|yavasgir27.com|yavasgir28.com|yavasgir29.com|yavasgir30.com|yavasgir31.com|yavasgir32.com|yavasgir33.com|yavasgir35.com|yavasgir36.com|yavasgir37.com|yavasgir38.com
+yavasgir19.com,yavasgir20.com,yavasgir21.com,yavasgir22.com,yavasgir23.com,yavasgir24.com,yavasgir25.com,yavasgir26.com,yavasgir27.com,yavasgir28.com,yavasgir29.com,yavasgir30.com,yavasgir31.com,yavasgir32.com,yavasgir33.com,yavasgir35.com,yavasgir36.com,yavasgir37.com,yavasgir38.com##a[href^="https://cutt.ly/"]
+
+! Frequently changed domains — kralsportshd*.com
+||kralsportshd*.com/assets/img/*.gif
+[$domain=/kralsportshd\d+\.com/]##div[class^="reklam-"]
+kralsportshd1.com,kralsportshd2.com,kralsportshd3.com,kralsportshd4.com,kralsportshd5.com,kralsportshd6.com,kralsportshd7.com##div[class^="reklam-"]
+
+! END ↑↑↑↑↑: Single sites

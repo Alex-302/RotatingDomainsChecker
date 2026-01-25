@@ -1,0 +1,33 @@
+name: 'Rotating Domains Checker'
+description: 'Automatically check and update rotating domains in ad blocking filters'
+author: 'Alex-302'
+branding:
+  icon: 'refresh-cw'
+  color: 'blue'
+
+inputs:
+  config-path:
+    description: 'Path to configuration file'
+    required: false
+    default: './config.yml'
+  mode:
+    description: 'Run mode: prod, debug, prod-dry, debug-dry'
+    required: false
+    default: ''
+  filters-path:
+    description: 'Path to filters directory'
+    required: false
+    default: './'
+
+outputs:
+  updated-count:
+    description: 'Number of domains updated'
+  commit-sha:
+    description: 'SHA of the commit made'
+  pr-number:
+    description: 'Pull request number (if created)'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
+  post: 'dist/cleanup.js'
