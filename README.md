@@ -226,11 +226,11 @@ List of sites to monitor with their verification rules.
 ```yaml
 sites:
   example.com:
-    # Required field
-    last_known_mirror: "example.com"
+    # Required: at least one of these must be specified
+    initial_domain: "example.com"     # Initial site domain (recommended for new sites)
+    last_known_mirror: "example.com"  # Last working mirror (auto-updated by script)
     
     # Optional fields
-    initial_domain: "example.com"     # Initial site domain
     path: "/"                         # Path to check on domain
     probe_text: "Example Domain"      # Key phrases for content verification
     disable_heuristic: false          # Disable heuristic search
@@ -467,13 +467,15 @@ Rotating Domains Checker provides detailed logs showing:
 ```yaml
 sites:
   yoursite.com:
-    initial_domain: "yoursite.com"
+    initial_domain: "yoursite.com"    # Required for new sites
     last_known_mirror: "yoursite.com"
-    last_seen: "2026-01-21"
-    last_failed: ""
-    failed_days: 0
-    probe_text: "Your Site Title"
-    path: "/"
+    probe_text: "Your Site Title"     # Optional: key phrases to verify
+    path: "/"                         # Optional: specific path to check
+    
+    # These fields will be auto-updated by the script:
+    # last_seen: "2026-01-21"
+    # last_failed: ""
+    # failed_days: 0
 ```
 
 ## Replacement Logic
