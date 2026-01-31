@@ -11,7 +11,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 
 function formatDateTime(date: Date): string {
   const year = date.getFullYear();
