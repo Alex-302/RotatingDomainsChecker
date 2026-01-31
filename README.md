@@ -9,7 +9,6 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 - [Required Setup](#required-setup)
 - [Usage](#usage)
   - [Run Modes](#run-modes)
-  - [GitHub Action Modes](#github-action-modes)
 - [Configuration](#configuration)
   - [config.yml](#configyml)
   - [watchers.yml](#watchersyml)
@@ -151,28 +150,27 @@ Create `config.yml` and `watchers.yml` files in your repository root. See detail
 
 ### Run Modes
 
-| Mode | Checks | Replacements | Save | File Log | Git Action | Purpose |
-| ------ | -------- | -------------- | ------ | ---------- | ------------ | --------- |
-| `prod_live` | ✅ | ✅ | ✅ | ✅ | Commit/PR | Production mode |
-| `prod_dry` | ✅ | ❌ | ❌ | ✅ | None | Test + git simulation |
-| `test_live` | ✅ | ✅ | ✅ | ✅ | Commit/PR | Test directory |
-| `test_dry` | ✅ | ❌ | ❌ | ✅ | None | Test dir + git simulation |
+| Mode            | Domain Checks | File Modifications | Git Operations | Filter Directory          |
+|-----------------|---------------|--------------------|----------------|---------------------------|
+| **`prod_live`** | ✅            | ✅                 | ✅ Commit/PR   | `filtersdir` (production) |
+| **`prod_dry`**  | ✅            | ❌                 | 📋 Simulated   | `filtersdir` (production) |
+| **`test_live`** | ✅            | ✅                 | ❌ Skipped     | `filtersdir_test` (test)  |
+| **`test_dry`**  | ✅            | ❌                 | 📋 Simulated   | `filtersdir_test` (test)  |
 
-#### Run Commands
+**Mode descriptions:**
 
-- **`prod_live`**: `node dist/index.js` or `npm run run`
-- **`prod_dry`**: `node dist/index.js --dry-run` or `npm run dry`
-- **`test_live`**: `node dist/index.js --mode=test_local` or `npm run test:local`
-- **`test_dry`**: `node dist/index.js --mode=test_local --dry-run` or `npm run test:local:dry`
+- **`prod_live`** (`npm run prod_live`) - Full production run: checks domains, updates files, creates commit/PR (based on `git.mode` in `config.yml`)
+- **`prod_dry`** (`npm run prod_dry`) - Production dry run: checks domains, shows commit message preview (no actual file modifications or git operations)
+- **`test_live`** (`npm run test_live`) - Test run with modifications: checks domains, updates test files only (skips git operations entirely)
+- **`test_dry`** (`npm run test_dry`) - Test dry run: checks domains, shows commit message preview for test files (no modifications or git operations)
 
-### GitHub Action Modes
+**Git operations:**
 
-- **`prod_live`** - Production mode with changes applied (commit or PR from config.yml)
-- **`prod_dry`** - Production mode without changes (git operations simulation)
-- **`test_live`** - Test directory processing with changes applied (uses filtersdir_test)
-- **`test_dry`** - Test directory without changes (git operations simulation)
+- **Commit/PR** (`prod_live`) - Executes real git commands: creates commits or pull requests based on `git.mode` setting in `config.yml`
+- **Simulated** (`prod_dry`, `test_dry`) - Generates and displays commit message, but doesn't execute git commands
+- **Skipped** (`test_live`) - Bypasses git code entirely for fast local testing with file modifications
 
-> **Note:** Git mode (commit or PR) is configured in config.yml via `git.mode`
+> **Note:** The `git.mode` setting in `config.yml` (`"prod"` for direct commit or `"debug"` for PR) only affects `prod_live` mode. Test modes always skip git operations.
 
 ## Configuration
 
@@ -226,11 +224,11 @@ List of sites to monitor with their verification rules.
 ```yaml
 sites:
   example.com:
-    # Required field
-    last_known_mirror: "example.com"
+    # Required: at least one of these must be specified
+    initial_domain: "example.com"     # Initial site domain (recommended for new sites)
+    last_known_mirror: "example.com"  # Last working mirror (auto-updated by script)
     
     # Optional fields
-    initial_domain: "example.com"     # Initial site domain
     path: "/"                         # Path to check on domain
     probe_text: "Example Domain"      # Key phrases for content verification
     disable_heuristic: false          # Disable heuristic search
@@ -305,7 +303,7 @@ npm install
 npm run build
 
 # Run tests
-npm run test:local:dry
+npm run test_dry
 
 # Make customizations if needed
 ```
@@ -467,13 +465,15 @@ Rotating Domains Checker provides detailed logs showing:
 ```yaml
 sites:
   yoursite.com:
-    initial_domain: "yoursite.com"
+    initial_domain: "yoursite.com"    # Required for new sites
     last_known_mirror: "yoursite.com"
-    last_seen: "2026-01-21"
-    last_failed: ""
-    failed_days: 0
-    probe_text: "Your Site Title"
-    path: "/"
+    probe_text: "Your Site Title"     # Optional: key phrases to verify
+    path: "/"                         # Optional: specific path to check
+    
+    # These fields will be auto-updated by the script:
+    # last_seen: "2026-01-21"
+    # last_failed: ""
+    # failed_days: 0
 ```
 
 ## Replacement Logic
@@ -516,7 +516,7 @@ npm install
 npm run build
 
 # Run with test filter
-npm run test:local
+npm run test_live
 ```
 
 ## Troubleshooting

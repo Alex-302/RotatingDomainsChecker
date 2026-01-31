@@ -43,11 +43,12 @@ export class Logger {
 
   private detectRunMode(): RunMode {
     const args = process.argv.slice(2);
-    const isDryRun = args.includes('--dry-run');
-    const isTestMode = args.some(arg => arg.includes('--mode=test_local'));
-
-    if (isTestMode) return isDryRun ? 'test_dry' : 'test_live';
-    return isDryRun ? 'prod_dry' : 'prod_live';
+    const cliMode = args.find(arg => arg.startsWith('--mode='))?.split('=')[1];
+    const mode = process.env.INPUT_MODE || cliMode || 'prod_live';
+    
+    // Validate and return mode
+    const validModes: RunMode[] = ['prod_live', 'prod_dry', 'test_live', 'test_dry'];
+    return validModes.includes(mode as RunMode) ? (mode as RunMode) : 'prod_live';
   }
 
   private createLogConfig(mode: RunMode): LogConfig {

@@ -337,14 +337,14 @@ export class BatchProcessor {
             this.logger.warn(task.siteName, `Heuristic: antibot detected on ${task.candidateUrl}, stopping search for this site`);
 
             // Create a result entry with the actual domain that had antibot
-            const oldHost = this.resolver.normalizeAndExtractHost(task.site.last_known_mirror);
+            const oldHost = task.site.last_known_mirror ? this.resolver.normalizeAndExtractHost(task.site.last_known_mirror) : "";
             const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
             results[task.siteIndex] = {
               siteName: task.siteName,
               oldHost,
               newHost: result.finalHost,
               hostChanged: false,
-              startedHost: this.resolver.extractHostWithoutQuery(task.site.last_known_mirror),
+              startedHost: task.site.last_known_mirror ? this.resolver.extractHostWithoutQuery(task.site.last_known_mirror) : "",
               result,
               shouldUpdate: false,
               error: result.error,
@@ -477,7 +477,7 @@ export class BatchProcessor {
 
       return {
         siteName,
-        oldHost: this.resolver.normalizeAndExtractHost(site.last_known_mirror),
+        oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
         newHost: "",
         hostChanged: false,
         startedHost: this.resolver.extractHostWithoutQuery(normalizedUrl),
@@ -519,7 +519,7 @@ export class BatchProcessor {
 
       return {
         siteName,
-        oldHost: this.resolver.normalizeAndExtractHost(site.last_known_mirror),
+        oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
         newHost: result.finalHost,
         hostChanged: false,
         startedHost,
@@ -551,7 +551,7 @@ export class BatchProcessor {
 
         return {
           siteName,
-          oldHost: this.resolver.normalizeAndExtractHost(site.last_known_mirror),
+          oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
           newHost: result.finalHost,
           hostChanged: false,
           startedHost,
@@ -565,7 +565,7 @@ export class BatchProcessor {
     }
 
     // Check if host changed
-    const oldHost = this.resolver.normalizeAndExtractHost(site.last_known_mirror);
+    const oldHost = site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "";
     const newHost = result.finalHost.toLowerCase();
 
     // hostChanged: compare where we started (startedHost) with where we ended up (newHost)

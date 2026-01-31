@@ -10,14 +10,23 @@ inputs:
     description: 'Path to configuration file'
     required: false
     default: './config.yml'
+    type: string
   mode:
-    description: 'Run mode: prod, debug, prod-dry, debug-dry'
+    description: 'Run mode: prod_live, prod_dry, test_live, test_dry'
     required: false
     default: ''
+    type: choice
+    options:
+      - ''
+      - 'prod_live'
+      - 'prod_dry'
+      - 'test_live'
+      - 'test_dry'
   filters-path:
     description: 'Path to filters directory'
     required: false
     default: './'
+    type: string
 
 outputs:
   updated-count:

@@ -45,33 +45,13 @@ async function main() {
   const inputMode = process.env.INPUT_MODE || '';
   const filtersPath = process.env.INPUT_FILTERS_PATH || './';
 
-  // Legacy command line arguments and GitHub Actions mode processing
-  let dryRun = process.argv.includes("--dry-run");
-  let isTestMode = process.argv.some(arg => arg.includes('--mode=test_local'));
+  // Parse mode from command line arguments or GitHub Actions
+  const cliMode = process.argv.find(arg => arg.startsWith('--mode='))?.split('=')[1];
+  const mode = inputMode || cliMode || 'prod_live';
 
-  // Process GitHub Actions input modes
-  if (inputMode) {
-    switch (inputMode) {
-      case 'prod_live':
-        // Default production mode with changes
-        break;
-      case 'prod_dry':
-        dryRun = true;
-        break;
-      case 'test_live':
-        isTestMode = true;
-        break;
-      case 'test_dry':
-        dryRun = true;
-        isTestMode = true;
-        break;
-      default:
-        // For legacy compatibility
-        dryRun = dryRun || inputMode.includes('dry');
-        isTestMode = isTestMode || inputMode.includes('test_local');
-        break;
-    }
-  }
+  // Determine flags based on mode
+  const dryRun = mode === 'prod_dry' || mode === 'test_dry';
+  const isTestMode = mode === 'test_live' || mode === 'test_dry';
 
   // Load configuration using configPath
   const config = loadConfig(configPath);
@@ -442,7 +422,15 @@ async function main() {
   logger.saveToFile();
 
   // Git operations (will include the log file in commit)
-  const gitResult = await gitManager.commitOrCreatePR(summary, dryRun);
+  // Skip git operations only in test_live mode (test_dry shows simulation)
+  let gitResult: { commitSha?: string; prNumber?: number; prUrl?: string } = {};
+  if (isTestMode && !dryRun) {
+    // test_live: skip git operations entirely
+    logger.logGlobal(LogLevel.INFO, "⚠️  Test mode: Skipping git operations (files were modified)");
+  } else {
+    // prod_live, prod_dry, test_dry: all go through git manager
+    gitResult = await gitManager.commitOrCreatePR(summary, dryRun);
+  }
 
   // Set GitHub Actions outputs
   if (process.env.GITHUB_ACTIONS && process.env.GITHUB_OUTPUT) {
