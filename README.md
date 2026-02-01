@@ -33,7 +33,10 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 ## Purpose
 
 - Track HTTP redirects to new website mirrors with loop protection
-- Heuristics for sequentially numbered domains `domain[N].tld` / `domain[N][text].tld`
+- Heuristics for sequentially numbered domains:
+  - `domain[N].tld` - number after domain name (e.g., `example1916.com`)
+  - `domain[N][text].tld` - number with text suffix (e.g., `example126aa.de`)
+  - `[N]domain.tld` - number before domain name (e.g., `7example.com`)
 - Verify key phrases in HTML using `probe_text`
 - Verify URLs/paths via `path` to avoid redirects to unrelated sites
 - Log complete redirect chains

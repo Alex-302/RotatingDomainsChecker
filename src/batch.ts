@@ -74,21 +74,41 @@ export class BatchProcessor {
     site: any,
     failedUrl: string
   ): HeuristicTask[] {
-    // Extract domain pattern: domain123.tld or domain123text.tld -> {prefix: "domain", number: 123, middle: "text", suffix: ".tld"}
-    const match = failedUrl.match(/^(https?:\/\/)?([a-zA-Z]+)(\d+)([a-zA-Z]*)(\.[a-zA-Z.]+)(\/.*)?$/);
+    // Try pattern 1: domain[N].tld or domain[N][text].tld (number after letters)
+    let match = failedUrl.match(/^(https?:\/\/)?([a-z-]+)(\d+)([a-z-]*)(\.[a-z.]+)(\/.*)?/i);
+    let isNumberFirst = false;
+    
+    // Try pattern 2: [N]domain.tld (number at the beginning)
     if (!match) {
-      this.logger.warn(siteName, "Heuristic: URL doesn't match domain[N].tld or domain[N][text].tld pattern, skipping");
+      match = failedUrl.match(/^(https?:\/\/)?(\d+)([a-z-]+)(\.[a-z.]+)(\/.*)?/i);
+      isNumberFirst = true;
+    }
+    
+    if (!match) {
+      this.logger.warn(siteName, "Heuristic: URL doesn't match domain[N].tld, domain[N][text].tld, or [N]domain.tld pattern, skipping");
       return [];
     }
 
-    const [, protocol = "https://", prefix, numStr, middleText = "", suffix, path = ""] = match;
+    let protocol: string, prefix: string, numStr: string, middleText: string, suffix: string, path: string;
+    
+    if (isNumberFirst) {
+      // Pattern: [N]domain.tld -> (protocol)(number)(letters)(suffix)(path)
+      [, protocol = "https://", numStr, prefix, suffix, path = ""] = match;
+      middleText = "";
+    } else {
+      // Pattern: domain[N].tld or domain[N][text].tld -> (protocol)(letters)(number)(middle)(suffix)(path)
+      [, protocol = "https://", prefix, numStr, middleText = "", suffix, path = ""] = match;
+    }
+    
     const currentNum = parseInt(numStr, 10);
     const startNum = currentNum + 1;
 
     const tasks: HeuristicTask[] = [];
     for (let i = 0; i < this.config.heuristic.maxAttempts; i++) {
       const num = startNum + i;
-      const candidateUrl = `${protocol}${prefix}${num}${middleText}${suffix}${path}`;
+      const candidateUrl = isNumberFirst 
+        ? `${protocol}${num}${prefix}${suffix}${path}`
+        : `${protocol}${prefix}${num}${middleText}${suffix}${path}`;
       tasks.push({
         siteName,
         siteIndex,

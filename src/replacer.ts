@@ -15,13 +15,13 @@ function normalizeDomain(domain: string): string {
 // Helper functions for domain pattern detection
 function matchesNumericPattern(domain: string): boolean {
   const norm = normalizeDomain(domain);
-  // Supports both domain[N].tld and domain[N][text].tld patterns
-  return /^[\w-]+(\d+)[a-z]*\.[a-z]{2,}$/.test(norm);
+  // Supports domain[N].tld, domain[N][text].tld, and [N]domain.tld patterns
+  return /^[\w-]*\d+[\w-]*\.[a-z]{2,}$/.test(norm);
 }
 
 function extractBasePattern(domain: string): string {
   const norm = normalizeDomain(domain);
-  // Replace numeric part with {N}, preserving text after number
+  // Replace numeric part with {N}, preserving text before and after number
   return norm.replace(/\d+/, '{N}');
 }
 
@@ -397,19 +397,30 @@ function shouldSkipLine(line: string): boolean {
  * Check if domain matches predicted mirror pattern relative to baseDomain
  * Example: yavasgir31.com is predicted mirror of yavasgir34.com
  * Example: betist126tv.live is predicted mirror of betist131tv.live
- * Pattern: baseNameN.tld or baseNameN[text].tld where N is any number
+ * Example: 7dizipal.com is predicted mirror of 8dizipal.com
+ * Pattern: baseNameN.tld, baseNameN[text].tld, or N[baseName].tld where N is any number
  */
 function isPredictedMirror(domain: string, baseDomain: string): boolean {
   const d = normalizeDomain(domain);
   const base = normalizeDomain(baseDomain);
   
-  // Extract base name (letters before digits) - supports domain[N].tld and domain[N][text].tld
-  const match = base.match(/^([a-z]+)\d+[a-z]*\./);
-  if (!match) return false;
+  // Try pattern 1: domain[N].tld or domain[N][text].tld (letters/hyphens before digits)
+  let match = base.match(/^([a-z-]+)\d+[a-z-]*\./);
+  if (match) {
+    const baseName = escapeRegExp(match[1]);
+    // Check if domain matches pattern: baseNameN.tld or baseNameN[text].tld
+    return new RegExp(`^${baseName}\\d+[a-z-]*\\.[a-z]+$`).test(d) && d !== base;
+  }
   
-  const baseName = match[1];
-  // Check if domain matches pattern: baseNameN.tld or baseNameN[text].tld
-  return new RegExp(`^${baseName}\\d+[a-z]*\\.[a-z]+$`).test(d) && d !== base;
+  // Try pattern 2: [N]domain.tld (digits before letters/hyphens)
+  match = base.match(/^\d+([a-z-]+)\./);
+  if (match) {
+    const baseName = escapeRegExp(match[1]);
+    // Check if domain matches pattern: N[baseName].tld
+    return new RegExp(`^\\d+${baseName}\\.[a-z]+$`).test(d) && d !== base;
+  }
+  
+  return false;
 }
 
 /**
