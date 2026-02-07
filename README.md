@@ -522,6 +522,52 @@ npm run build
 npm run test_live
 ```
 
+## Testing
+
+The project includes a comprehensive test suite covering all core functionality.
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run tests without coverage (faster)
+npm run test:run
+
+# Run tests with coverage report
+npm run test:coverage
+
+# Run specific test file
+npm test -- --testNamePattern="batch"
+```
+
+### Test Structure
+
+The test suite is organized in the `__tests__/` directory:
+
+- **`replacer.test.ts`** - Tests domain replacement logic, pattern matching, and filter file processing
+- **`batch.test.ts`** - Tests batch processing, heuristic candidate generation, and site checking logic
+- **`httpResolver.test.ts`** - Tests HTTP resolution, retry logic, and antibot detection
+- **`probe.test.ts`** - Tests content probe verification
+- **`git.test.ts`** - Tests Git operations, commit message generation, and PR creation
+- **`config.test.ts`** - Tests configuration loading and YAML handling
+
+### Test Coverage
+
+The test suite provides comprehensive coverage of:
+- Domain pattern matching (`domain[N].tld`, `[N]domain.tld`, `domain[N][text].tld`)
+- Heuristic candidate generation and validation
+- DNS pre-check and HTTP resolution
+- Content probe verification
+- Git operations (commits and pull requests)
+- Configuration parsing and validation
+- Error handling and edge cases
+
+### ESM Support
+
+The project uses Jest with ESM support. Tests use `jest.unstable_mockModule` for mocking Node.js core modules like `dns` and `child_process`. All test files are configured to run with `--experimental-vm-modules` flag.
+
 ## Troubleshooting
 
 ### Common Issues

@@ -10,6 +10,9 @@
     "prod_dry": "tsx src/index.ts --mode=prod_dry",
     "test_live": "tsx src/index.ts --mode=test_live",
     "test_dry": "tsx src/index.ts --mode=test_dry",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "new:branch": "tsx scripts/new-branch.ts",
@@ -33,13 +36,16 @@
   "devDependencies": {
     "@eslint/config-array": "^0.19.0",
     "@eslint/object-schema": "^2.1.4",
+    "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
+    "jest": "^30.2.0",
     "markdownlint-cli": "^0.47.0",
     "prettier": "^3.2.4",
+    "ts-jest": "^29.4.6",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }

@@ -565,3 +565,23 @@ function processLine(
 
   return out;
 }
+
+// Exports for testing
+export {
+  normalizeDomain,
+  matchesNumericPattern,
+  extractBasePattern,
+  matchesSamePattern,
+  matchesPattern,
+  replaceDomain,
+  hasSchemeChangeInList,
+  handleSchemeChange,
+  deduplicateDomains,
+  processDomainList,
+  isPredictedMirror,
+  removePredictedMirrors,
+  processLine,
+  shouldSkipLine,
+  findTargetFiles,
+  escapeRegExp,
+};
