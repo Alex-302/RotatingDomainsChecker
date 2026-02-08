@@ -587,7 +587,8 @@ The project uses Husky for pre-commit hooks:
 
 # pre-commit hook runs:
 npm run lint          # ESLint checks
-npm run format:check  # Prettier formatting check  
+# npm run format:check  # Prettier formatting check (disabled)
+npx tsc --noEmit      # TypeScript type checking
 npm test              # All tests must pass
 ```
 

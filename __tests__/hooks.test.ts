@@ -35,10 +35,6 @@ describe('validateCommitMessage — Conventional Commits format', () => {
     expect(validateCommitMessage('chore: update dependencies').valid).toBe(true);
   });
 
-  test('accepts valid "upd:" commit message', () => {
-    expect(validateCommitMessage('upd: pre-commit hooks').valid).toBe(true);
-  });
-
   test('accepts valid commit message with scope', () => {
     expect(validateCommitMessage('feat(batch): add heuristic support').valid).toBe(true);
   });

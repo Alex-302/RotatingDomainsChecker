@@ -47,7 +47,7 @@ export interface Config {
     filePath: string;
   };
   git: {
-    mode: "debug" | "prod";
+    mode: 'debug' | 'prod';
     branch: string;
     prBranchPrefix: string;
   };

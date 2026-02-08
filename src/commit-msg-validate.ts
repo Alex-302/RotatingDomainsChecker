@@ -1,7 +1,7 @@
 // Commit message validation logic
 // Extracted into a separate module so it can be unit tested
 
-const CONVENTIONAL_COMMIT_RE = /^(upd|feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .{1,80}/;
+const CONVENTIONAL_COMMIT_RE = /^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .{1,80}/;
 
 // Auto-generated messages that bypass conventional commit check
 const ALLOWED_PREFIXES = ["Rotating Domains Checker:"];

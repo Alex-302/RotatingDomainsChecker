@@ -1,4 +1,4 @@
-import type { Config, Watchers, CheckResult, HeuristicTask } from "./types.js";
+import type { Config, Watchers, CheckResult, HeuristicTask, RedirectResult } from "./types.js";
 import { HttpResolver } from "./httpResolver.js";
 import { ContentProbe } from "./probe.js";
 import { Logger, LogLevel } from "./logger.js";
@@ -93,11 +93,11 @@ export class BatchProcessor {
     
     if (isNumberFirst) {
       // Pattern: [N]domain.tld -> (protocol)(number)(letters)(suffix)(path)
-      [, protocol = "https://", numStr, prefix, suffix, path = ""] = match;
-      middleText = "";
+      [, protocol = 'https://', numStr, prefix, suffix, path = ''] = match;
+      middleText = '';
     } else {
       // Pattern: domain[N].tld or domain[N][text].tld -> (protocol)(letters)(number)(middle)(suffix)(path)
-      [, protocol = "https://", prefix, numStr, middleText = "", suffix, path = ""] = match;
+      [, protocol = 'https://', prefix, numStr, middleText = '', suffix, path = ''] = match;
     }
     
     const currentNum = parseInt(numStr, 10);
@@ -106,7 +106,7 @@ export class BatchProcessor {
     const tasks: HeuristicTask[] = [];
     for (let i = 0; i < this.config.heuristic.maxAttempts; i++) {
       const num = startNum + i;
-      const candidateUrl = isNumberFirst 
+      const candidateUrl = isNumberFirst
         ? `${protocol}${num}${prefix}${suffix}${path}`
         : `${protocol}${prefix}${num}${middleText}${suffix}${path}`;
       tasks.push({
@@ -264,7 +264,7 @@ export class BatchProcessor {
         // Step 3: HTTP checks with unified queue
         const heuristicParallel = this.config.processing.heuristicParallel ?? this.config.processing.parallel;
         const foundSites = new Set<number>();
-        const activePromises = new Map<number, Promise<{ taskIndex: number; task: HeuristicTask & { dnsOk: boolean }; result: any }>>();
+        const activePromises = new Map<number, Promise<{ taskIndex: number; task: HeuristicTask & { dnsOk: boolean }; result: RedirectResult }>>();
         let nextTaskIndex = 0;
 
         const checkCandidate = async (task: HeuristicTask & { dnsOk: boolean }) => {

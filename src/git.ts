@@ -1,4 +1,6 @@
 import { execSync } from "child_process";
+import { writeFileSync, unlinkSync, mkdtempSync, rmSync } from "fs";
+import { join } from "path";
 import type { Config, Summary } from "./types.js";
 import { Logger, LogLevel } from "./logger.js";
 
@@ -225,7 +227,22 @@ Please review the changes before merging.
 ---
 *This PR was created automatically by Rotating Domains Checker*`;
 
-      execSync(`gh pr create --title "${prTitle}" --body "${prBody}" --head "${branchName}" --base "${this.config.git.branch}"`, { encoding: 'utf8' });
+      // Create temporary directory and file for PR body to avoid command injection
+      const tempDir = mkdtempSync(join(process.cwd(), 'pr-temp-'));
+      const prBodyFile = join(tempDir, 'pr-body.txt');
+      
+      try {
+        writeFileSync(prBodyFile, prBody, 'utf8');
+        execSync(`gh pr create --title "${prTitle}" --body-file "${prBodyFile}" --head "${branchName}" --base "${this.config.git.branch}"`, { encoding: 'utf8' });
+      } finally {
+        // Clean up temporary file and directory
+        try {
+          unlinkSync(prBodyFile);
+          rmSync(tempDir, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
       
       // Get commit SHA and PR number
       const commitSha = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
