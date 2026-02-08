@@ -109,3 +109,91 @@ describe('6.7 abortAllRequests', () => {
     expect(() => resolver.abortAllRequests()).not.toThrow();
   });
 });
+
+// ============================================================================
+// 6.8 containsSkipText
+// ============================================================================
+
+describe('6.8 containsSkipText', () => {
+  test('returns matched phrase when body contains skip_text', () => {
+    const config = makeConfig({ skip_text: ['This domain is parked', 'Domain for sale'] });
+    const resolver = new HttpResolver(config);
+    expect(resolver.containsSkipText('Welcome! This domain is parked by the owner.')).toBe('This domain is parked');
+  });
+
+  test('returns second phrase when first does not match', () => {
+    const config = makeConfig({ skip_text: ['This domain is parked', 'Domain for sale'] });
+    const resolver = new HttpResolver(config);
+    expect(resolver.containsSkipText('Domain for sale - contact us')).toBe('Domain for sale');
+  });
+
+  test('returns undefined when body does not contain any skip_text', () => {
+    const config = makeConfig({ skip_text: ['This domain is parked', 'Domain for sale'] });
+    const resolver = new HttpResolver(config);
+    expect(resolver.containsSkipText('<html>Normal website content</html>')).toBeUndefined();
+  });
+
+  test('returns undefined when body is undefined', () => {
+    const config = makeConfig({ skip_text: ['This domain is parked'] });
+    const resolver = new HttpResolver(config);
+    expect(resolver.containsSkipText(undefined)).toBeUndefined();
+  });
+
+  test('returns undefined when body is empty string', () => {
+    const config = makeConfig({ skip_text: ['This domain is parked'] });
+    const resolver = new HttpResolver(config);
+    expect(resolver.containsSkipText('')).toBeUndefined();
+  });
+
+  test('returns undefined when skip_text is not configured', () => {
+    const config = makeConfig();
+    const resolver = new HttpResolver(config);
+    expect(resolver.containsSkipText('This domain is parked')).toBeUndefined();
+  });
+
+  test('returns undefined when skip_text is empty array', () => {
+    const config = makeConfig({ skip_text: [] });
+    const resolver = new HttpResolver(config);
+    expect(resolver.containsSkipText('This domain is parked')).toBeUndefined();
+  });
+
+  test('is case-sensitive', () => {
+    const config = makeConfig({ skip_text: ['This domain is parked'] });
+    const resolver = new HttpResolver(config);
+    expect(resolver.containsSkipText('THIS DOMAIN IS PARKED')).toBeUndefined();
+    expect(resolver.containsSkipText('This domain is parked')).toBe('This domain is parked');
+  });
+});
+
+// ============================================================================
+// 6.9 Integration test: containsSkipText with real config.yml
+// ============================================================================
+
+describe('6.9 containsSkipText with real config.yml', () => {
+  test('skip_text exists in config.yml and all phrases work', async () => {
+    const { loadConfig } = await import('../src/config.js');
+    const config = loadConfig();
+
+    expect(config.skip_text).toBeDefined();
+    expect(Array.isArray(config.skip_text)).toBe(true);
+    expect(config.skip_text!.length).toBeGreaterThan(0);
+
+    const resolver = new HttpResolver(config);
+
+    // Every phrase from real config.yml must be detected
+    for (const phrase of config.skip_text!) {
+      const testContent = `<html><body>Some content ${phrase} more content</body></html>`;
+      const matched = resolver.containsSkipText(testContent);
+      expect(matched).toBe(phrase);
+    }
+  });
+
+  test('normal website content does not trigger skip_text', async () => {
+    const { loadConfig } = await import('../src/config.js');
+    const config = loadConfig();
+    const resolver = new HttpResolver(config);
+
+    const normalContent = '<html><body><h1>Welcome to our streaming site</h1><p>Watch movies online</p></body></html>';
+    expect(resolver.containsSkipText(normalContent)).toBeUndefined();
+  });
+});

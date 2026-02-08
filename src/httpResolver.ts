@@ -109,6 +109,24 @@ export class HttpResolver {
           } catch {
             // If body read fails, continue without it
           }
+
+          // Check global skip_text — detect parked/expired domains
+          const skipPhrase = this.containsSkipText(finalBody);
+          if (skipPhrase) {
+            return {
+              success: false,
+              finalUrl: currentUrl,
+              finalHost: new URL(currentUrl).hostname,
+              statusCode: response.status,
+              redirectChain: chain,
+              antibotDetected: false,
+              finalBody,
+              skippedByText: skipPhrase,
+              error: `Skipped by skip_text: "${skipPhrase}"`,
+              shouldTriggerHeuristic: true,
+            };
+          }
+
           return {
             success: true,
             finalUrl: currentUrl,
@@ -318,6 +336,22 @@ export class HttpResolver {
     }
 
     throw lastError || new Error("Fetch failed after retries");
+  }
+
+  /**
+   * Check if response body contains any global skip_text phrase (parked/expired domains)
+   * @returns The matched phrase, or undefined if no match
+   */
+  containsSkipText(body?: string): string | undefined {
+    if (!body || !this.config.skip_text || this.config.skip_text.length === 0) {
+      return undefined;
+    }
+    for (const phrase of this.config.skip_text) {
+      if (body.includes(phrase)) {
+        return phrase;
+      }
+    }
+    return undefined;
   }
 
   private isAntibotResponse(response: Response, url: string): boolean {

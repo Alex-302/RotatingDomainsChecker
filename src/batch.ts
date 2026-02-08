@@ -345,6 +345,9 @@ export class BatchProcessor {
                 actualCheckedDomain: task.candidateUrl,
               };
             }
+          } else if (result.skippedByText) {
+            // Domain matched skip_text (parked/expired) — skip candidate, continue search
+            this.logger.debug(task.siteName, `Heuristic: ${task.candidateUrl} skipped by skip_text: "${result.skippedByText}"`);
           } else {
             // HTTP request failed - log the failure
             const statusInfo = result.statusCode ? `HTTP ${result.statusCode}` : 'connection failed';

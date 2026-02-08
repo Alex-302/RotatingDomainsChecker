@@ -42,6 +42,7 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 - Log complete redirect chains
 - Automatic replacement in filter files
 - Detect antibot/Cloudflare
+- Detect parked/expired domains to avoid false positives
 - Batch checks with parallelism
 - Failure day counter with warnings for potentially dead sites
 - Auto-update information about tracked domains
@@ -208,6 +209,10 @@ processing:
   parallel: 10           # Global parallelism
   resolveParallel: 20    # Concurrent resolve checks
   heuristicParallel: 50  # Concurrent heuristic checks
+
+# Global skip_text — skip domains whose response body contains these phrases (parked/expired domains)
+skip_text:
+  - "This domain is parked"
 
 # Logging
 logging:

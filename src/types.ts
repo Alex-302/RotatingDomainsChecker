@@ -46,6 +46,7 @@ export interface Config {
     incremental: boolean;
     filePath: string;
   };
+  skip_text?: string[];
   git: {
     mode: 'debug' | 'prod';
     branch: string;
@@ -96,6 +97,7 @@ export interface RedirectResult {
   contentProbeOk?: boolean;
   finalBody?: string; // Response body from final successful request (for content probing)
   shouldTriggerHeuristic?: boolean; // Force heuristic search even for certain error statuses
+  skippedByText?: string; // Set when skip_text phrase was found in response body
 }
 
 export interface RedirectChainEntry {
@@ -136,7 +138,7 @@ export interface Summary {
   antibotAccepted: number;  // Antibot detected, but accepted by config
   antibotBlocked: number;  // Antibot detected and NOT accepted (counted in failed)
   replacements: ReplacementPair[];
-  errors: Array<{ siteName: string; error: string; domain?: string; type?: 'antibot_blocked' | 'antibot_accepted' | 'dns' | 'http' | 'probe' | 'network'; checkDurationMs?: number }>;
+  errors: Array<{ siteName: string; error: string; domain?: string; type?: 'antibot_blocked' | 'antibot_accepted' | 'dns' | 'http' | 'probe' | 'network' | 'skip_text'; checkDurationMs?: number }>;
   warnings: string[];
 }
 

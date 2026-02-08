@@ -663,3 +663,170 @@ describe('No URL configured', () => {
     expect(results[0].shouldUpdate).toBe(false);
   });
 });
+
+// ============================================================================
+// 7. skip_text scenarios
+// ============================================================================
+
+describe('7. skip_text scenarios', () => {
+  test('7.1 Scenario 1: main domain skipped, heuristic candidate OK → uses candidate', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
+      skip_text: ['This domain is parked'],
+    });
+    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
+    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        // Main domain returns 200 but with parked content → skippedByText
+        return {
+          ...makeFailResult('Skipped by skip_text: "This domain is parked"'),
+          statusCode: 200,
+          finalHost: 'turkifsaclub001.sbs',
+          skippedByText: 'This domain is parked',
+          shouldTriggerHeuristic: true,
+        };
+      }
+      // Heuristic candidate 2 succeeds
+      if (url.includes('turkifsaclub2.sbs')) return makeSuccessResult('turkifsaclub2.sbs');
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].shouldUpdate).toBe(true);
+  });
+
+  test('7.2 Scenario 2: main domain skipped, no heuristic candidates → error, potentially_dead', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
+      skip_text: ['This domain is parked'],
+    });
+    // No numeric pattern → no heuristic candidates
+    const site = makeSite({ last_known_mirror: 'example.com' });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockResolvedValue({
+      ...makeFailResult('Skipped by skip_text: "This domain is parked"'),
+      statusCode: 200,
+      finalHost: 'example.com',
+      skippedByText: 'This domain is parked',
+      shouldTriggerHeuristic: true,
+    } as never);
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].shouldUpdate).toBe(false);
+    expect(results[0].result.skippedByText).toBe('This domain is parked');
+  });
+
+  test('7.3 Scenario 3: all heuristic candidates skipped → no update', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
+      skip_text: ['This domain is parked'],
+    });
+    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
+    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        // Main domain fails
+        return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      }
+      // All heuristic candidates return parked content
+      return {
+        ...makeFailResult('Skipped by skip_text: "This domain is parked"'),
+        statusCode: 200,
+        finalHost: `turkifsaclub${callCount}.sbs`,
+        skippedByText: 'This domain is parked',
+        shouldTriggerHeuristic: true,
+      };
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // All candidates skipped, no update
+    expect(results[0].shouldUpdate).toBe(false);
+  });
+
+  test('7.4 skip_text candidate skipped, next candidate OK → uses next candidate', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
+      skip_text: ['This domain is parked'],
+    });
+    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
+    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      }
+      // First candidate is parked
+      if (url.includes('turkifsaclub2.sbs')) {
+        return {
+          ...makeFailResult('Skipped by skip_text: "This domain is parked"'),
+          statusCode: 200,
+          finalHost: 'turkifsaclub2.sbs',
+          skippedByText: 'This domain is parked',
+          shouldTriggerHeuristic: true,
+        };
+      }
+      // Second candidate is OK
+      if (url.includes('turkifsaclub3.sbs')) return makeSuccessResult('turkifsaclub3.sbs');
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Should skip parked candidate and use the next one
+    expect(results[0].newHost).toBe('turkifsaclub3.sbs');
+    expect(results[0].shouldUpdate).toBe(true);
+  });
+
+  test('7.5 no skip_text configured → normal behavior', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: false, maxAttempts: 0, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      // No skip_text configured
+    });
+    const site = makeSite({ last_known_mirror: 'example.com' });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    // Returns success with parked content — but no skip_text configured, so it passes
+    jest.spyOn(resolver, 'resolve').mockResolvedValue(
+      makeSuccessResult('example.com', { finalBody: 'This domain is parked' }) as never,
+    );
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Without skip_text, parked content is treated as success
+    expect(results[0].result.success).toBe(true);
+  });
+});

@@ -11,7 +11,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.0.1";
+const VERSION = "1.0.2";
 
 function formatDateTime(date: Date): string {
   const year = date.getFullYear();
@@ -111,11 +111,13 @@ async function main() {
 
     if (isFailed) {
       // Determine error type
-      let errorType: 'antibot_blocked' | 'antibot_accepted' | 'dns' | 'http' | 'probe' | 'network' | undefined;
+      let errorType: 'antibot_blocked' | 'antibot_accepted' | 'dns' | 'http' | 'probe' | 'network' | 'skip_text' | undefined;
       const errorMsg = result.error || result.result.error || "Unknown error";
       const checkedDomain = result.actualCheckedDomain || result.startedHost || result.oldHost;
 
-      if (isAntibotDetected) {
+      if (result.result.skippedByText) {
+        errorType = 'skip_text';
+      } else if (isAntibotDetected) {
         errorType = 'antibot_blocked';
       } else if (errorMsg.includes('DNS') || errorMsg.includes('ENOTFOUND') || errorMsg.includes('EAI_AGAIN')) {
         errorType = 'dns';
