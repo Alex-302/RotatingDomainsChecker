@@ -1,8 +1,8 @@
-import type { Config, Watchers, CheckResult, HeuristicTask, RedirectResult } from "./types.js";
-import { HttpResolver } from "./httpResolver.js";
-import { ContentProbe } from "./probe.js";
-import { Logger, LogLevel } from "./logger.js";
-import { promises as dns } from "dns";
+import type { Config, Watchers, CheckResult, HeuristicTask, RedirectResult, WatcherSite } from './types.js';
+import { HttpResolver } from './httpResolver.js';
+import { ContentProbe } from './probe.js';
+import { Logger, LogLevel } from './logger.js';
+import { promises as dns } from 'dns';
 
 export class BatchProcessor {
   private probe: ContentProbe;
@@ -71,7 +71,7 @@ export class BatchProcessor {
   private generateCandidates(
     siteName: string,
     siteIndex: number,
-    site: any,
+    site: WatcherSite,
     failedUrl: string
   ): HeuristicTask[] {
     // Try pattern 1: domain[N].tld or domain[N][text].tld (number after letters)

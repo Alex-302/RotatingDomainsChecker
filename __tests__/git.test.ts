@@ -3,8 +3,22 @@ import type { Config, Summary } from '../src/types.js';
 
 // ESM mock for child_process
 const mockedExecSync = jest.fn();
+const mockedExecFileSync = jest.fn();
 jest.unstable_mockModule('child_process', () => ({
   execSync: mockedExecSync,
+  execFileSync: mockedExecFileSync,
+}));
+
+// ESM mock for fs — spread real module, override only temp-file helpers
+const realFs = await import('fs');
+const mockedWriteFileSync = jest.fn();
+const mockedMkdtempSync = jest.fn(() => '/tmp/pr-temp-xyz');
+const mockedRmSync = jest.fn();
+jest.unstable_mockModule('fs', () => ({
+  ...realFs,
+  writeFileSync: mockedWriteFileSync,
+  mkdtempSync: mockedMkdtempSync,
+  rmSync: mockedRmSync,
 }));
 
 // Dynamic import after mock setup
@@ -49,6 +63,10 @@ function makeSummaryWithReplacements(): Summary {
 
 beforeEach(() => {
   mockedExecSync.mockReset();
+  mockedExecFileSync.mockReset();
+  mockedWriteFileSync.mockReset();
+  mockedMkdtempSync.mockReset().mockReturnValue('/tmp/pr-temp-xyz');
+  mockedRmSync.mockReset();
 });
 
 // ============================================================================
@@ -178,13 +196,46 @@ describe('10.2 commitOrCreatePR', () => {
       if (cmd.includes('gh pr view')) return '42';
       return '';
     });
+    mockedExecFileSync.mockReturnValue('');
 
     const git = new GitManager(makeConfig('debug'));
     const summary = makeSummaryWithReplacements();
     const result = await git.commitOrCreatePR(summary, false);
 
-    expect(mockedExecSync).toHaveBeenCalledWith(expect.stringContaining('gh pr create'), expect.any(Object));
+    // gh pr create must use execFileSync (no shell) to prevent command injection
+    expect(mockedExecFileSync).toHaveBeenCalledWith(
+      'gh',
+      expect.arrayContaining(['pr', 'create', '--title', expect.any(String)]),
+      expect.any(Object),
+    );
     expect(result).toHaveProperty('prNumber');
+  });
+
+  test('gh pr create uses execFileSync (no shell) to prevent command injection', async () => {
+    mockedExecSync.mockImplementation((...args: unknown[]) => {
+      const cmd = args[0] as string;
+      if (cmd.includes('status --porcelain')) return 'M file.txt';
+      if (cmd.includes('rev-parse HEAD')) return 'def456';
+      if (cmd.includes('gh pr view')) return '42';
+      return '';
+    });
+    mockedExecFileSync.mockReturnValue('');
+
+    const git = new GitManager(makeConfig('debug'));
+    const summary = makeSummaryWithReplacements();
+    await git.commitOrCreatePR(summary, false);
+
+    // Verify execSync is NEVER called with 'gh pr create' (would be shell injection risk)
+    for (const call of mockedExecSync.mock.calls) {
+      const cmd = call[0] as string;
+      expect(cmd).not.toContain('gh pr create');
+    }
+
+    // Verify execFileSync IS called with 'gh' as first arg (no shell)
+    expect(mockedExecFileSync).toHaveBeenCalledTimes(1);
+    expect(mockedExecFileSync.mock.calls[0][0]).toBe('gh');
+    expect(mockedExecFileSync.mock.calls[0][1]).toContain('pr');
+    expect(mockedExecFileSync.mock.calls[0][1]).toContain('create');
   });
 });
 
@@ -240,5 +291,31 @@ describe('10.4 Git simulation (dry run)', () => {
     const summary = makeSummaryWithReplacements();
     await git.commitOrCreatePR(summary, true);
     expect(mockedExecSync).not.toHaveBeenCalledWith(expect.stringContaining('git push'), expect.any(Object));
+  });
+});
+
+// ============================================================================
+// 10.5 Static analysis: shell injection prevention
+// ============================================================================
+
+describe('10.5 Shell injection prevention (static analysis)', () => {
+  test('git.ts must not use execSync with template literals containing variables for gh commands', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const gitSource = fs.readFileSync(path.join(process.cwd(), 'src', 'git.ts'), 'utf8');
+
+    // Pattern: execSync(`...gh ...${...}...`) — shell injection risk
+    // This regex catches execSync with backtick template literals that interpolate variables into gh CLI commands
+    const dangerousPattern = /execSync\s*\(\s*`[^`]*gh\s[^`]*\$\{/;
+    expect(dangerousPattern.test(gitSource)).toBe(false);
+  });
+
+  test('git.ts must use execFileSync (no shell) for gh pr create', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const gitSource = fs.readFileSync(path.join(process.cwd(), 'src', 'git.ts'), 'utf8');
+
+    // Verify execFileSync is used for gh commands
+    expect(gitSource).toContain("execFileSync('gh'");
   });
 });

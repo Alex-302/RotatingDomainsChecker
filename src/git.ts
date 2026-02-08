@@ -1,8 +1,8 @@
-import { execSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdtempSync, rmSync } from "fs";
-import { join } from "path";
-import type { Config, Summary } from "./types.js";
-import { Logger, LogLevel } from "./logger.js";
+import { execSync, execFileSync } from 'child_process';
+import { writeFileSync, mkdtempSync, rmSync } from 'fs';
+import { join } from 'path';
+import type { Config, Summary } from './types.js';
+import { Logger, LogLevel } from './logger.js';
 
 export class GitManager {
   constructor(private config: Config, private logger?: Logger) {}
@@ -21,7 +21,7 @@ export class GitManager {
       // Dry run - simulate git operations
       if (this.logger) {
         this.logger.logGlobal(LogLevel.INFO, "⬇️ ⬇️ ⬇️  💡 💡 💡  DRY RUN: Simulating Git Operations 💡 💡 💡  ⬇️ ⬇️ ⬇️");
-        this.logger.logGlobal(LogLevel.INFO, `Mode: ${this.config.git.mode === "debug" ? "Pull Request" : "Direct Commit"}`);
+        this.logger.logGlobal(LogLevel.INFO, `Mode: ${this.config.git.mode === 'debug' ? 'Pull Request' : 'Direct Commit'}`);
         this.logger.logGlobal(LogLevel.INFO, `Target branch: ${this.config.git.branch}`);
         this.logger.logGlobal(LogLevel.INFO, `Replacements: ${summary.replacements.length}`);
         this.logger.logGlobal(LogLevel.INFO, "Commit message:");
@@ -233,11 +233,17 @@ Please review the changes before merging.
       
       try {
         writeFileSync(prBodyFile, prBody, 'utf8');
-        execSync(`gh pr create --title "${prTitle}" --body-file "${prBodyFile}" --head "${branchName}" --base "${this.config.git.branch}"`, { encoding: 'utf8' });
+        // Use execFileSync to bypass shell entirely — prevents injection via prTitle
+        execFileSync('gh', [
+          'pr', 'create',
+          '--title', prTitle,
+          '--body-file', prBodyFile,
+          '--head', branchName,
+          '--base', this.config.git.branch,
+        ], { encoding: 'utf8' });
       } finally {
-        // Clean up temporary file and directory
+        // Clean up temporary directory and file
         try {
-          unlinkSync(prBodyFile);
           rmSync(tempDir, { recursive: true, force: true });
         } catch {
           // Ignore cleanup errors
@@ -269,7 +275,7 @@ Please review the changes before merging.
   getPRModeInfo(summary: Summary, dryRun: boolean): string[] {
     const lines: string[] = [];
 
-    if (dryRun || this.config.git.mode === "debug") {
+    if (dryRun || this.config.git.mode === 'debug') {
       lines.push("⬇️ ⬇️ ⬇️  💡 💡 💡  Pull Request Mode 💡 💡 💡  ⬇️ ⬇️ ⬇️");
       lines.push(`Branch: ${this.config.git.prBranchPrefix}/${new Date().toISOString().split("T")[0]}`);
       lines.push("Commit message:");
