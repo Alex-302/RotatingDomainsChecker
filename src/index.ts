@@ -199,6 +199,19 @@ async function main() {
         checkDurationMs: result.checkDurationMs,
       });
 
+      // Add replacements for additional working domains (force_search_ahead)
+      if (result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0) {
+        for (const additionalDomain of result.additionalWorkingDomains) {
+          summary.replacements.push({
+            oldHost: result.oldHost,
+            newHost: additionalDomain,
+            siteName: result.siteName,
+            startedHost: result.startedHost || "",
+            checkDurationMs: result.checkDurationMs,
+          });
+        }
+      }
+
       // Update watcher on successful change
       // Extract only domain if initial_domain doesn't contain URL
       const shouldExtractDomain = !site.initial_domain || !site.initial_domain.includes("/");
@@ -224,6 +237,19 @@ async function main() {
         startedHost: result.startedHost || "",
         checkDurationMs: result.checkDurationMs,
       });
+
+      // Add replacements for additional working domains (force_search_ahead)
+      if (result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0) {
+        for (const additionalDomain of result.additionalWorkingDomains) {
+          summary.replacements.push({
+            oldHost: result.oldHost,
+            newHost: additionalDomain,
+            siteName: result.siteName,
+            startedHost: result.startedHost || "",
+            checkDurationMs: result.checkDurationMs,
+          });
+        }
+      }
 
       // Update watcher on successful change
       // Extract only domain if initial_domain doesn't contain URL

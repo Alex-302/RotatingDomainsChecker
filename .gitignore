@@ -3,3 +3,5 @@ logs/
 node_modules/
 .vscode/
 coverage/
+TODO.md
+AGENTS.md

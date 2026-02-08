@@ -180,27 +180,27 @@ describe('2.1 processLine — Cosmetic rules (comma-separated domains before ##)
   const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
 
   test('single domain replacement: old.com##.ads → new.com##.ads', () => {
-    expect(processLine('old.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('new.com##.ads');
+    expect(processLine('old.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['new.com##.ads']);
   });
 
   test('replacement in list: a.com,old.com,b.com##.ads → a.com,new.com,b.com##.ads', () => {
-    expect(processLine('a.com,old.com,b.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('a.com,new.com,b.com##.ads');
+    expect(processLine('a.com,old.com,b.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['a.com,new.com,b.com##.ads']);
   });
 
   test('no change if domain not in hostMap: unknown.com##.ads → unchanged', () => {
-    expect(processLine('unknown.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('unknown.com##.ads');
+    expect(processLine('unknown.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['unknown.com##.ads']);
   });
 
   test('empty line → skip', () => {
-    expect(processLine('', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('');
+    expect(processLine('', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['']);
   });
 
   test('comment → skip', () => {
-    expect(processLine('! comment', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('! comment');
+    expect(processLine('! comment', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['! comment']);
   });
 
   test('regex rule → skip', () => {
-    expect(processLine('/regex/', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('/regex/');
+    expect(processLine('/regex/', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['/regex/']);
   });
 });
 
@@ -210,15 +210,15 @@ describe('2.2 processLine — URL rules (||domain^)', () => {
   const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
 
   test('||old.com^ → ||new.com^', () => {
-    expect(processLine('||old.com^', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('||new.com^');
+    expect(processLine('||old.com^', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['||new.com^']);
   });
 
   test('||old.com^$domain=... → ||new.com^$domain=...', () => {
-    expect(processLine('||old.com^$domain=example.com', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('||new.com^$domain=example.com');
+    expect(processLine('||old.com^$domain=example.com', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['||new.com^$domain=example.com']);
   });
 
   test('wildcard ||turkifsaclub*.sbs/*.gif → unchanged (contains *)', () => {
-    expect(processLine('||turkifsaclub*.sbs/*.gif', hostMap, emptyInitialMap, emptyPriorityMap)).toBe('||turkifsaclub*.sbs/*.gif');
+    expect(processLine('||turkifsaclub*.sbs/*.gif', hostMap, emptyInitialMap, emptyPriorityMap)).toEqual(['||turkifsaclub*.sbs/*.gif']);
   });
 });
 
@@ -229,17 +229,17 @@ describe('2.3 processLine — Parameters ($domain=, $denyallow=)', () => {
 
   test('$domain=old1.com|old2.com → $domain=new1.com|new2.com', () => {
     expect(processLine('||example.com^$domain=old1.com|old2.com', hostMap, emptyInitialMap, emptyPriorityMap))
-      .toBe('||example.com^$domain=new1.com|new2.com');
+      .toEqual(['||example.com^$domain=new1.com|new2.com']);
   });
 
   test('$domain=old1.com|unknown.com → $domain=new1.com|unknown.com', () => {
     expect(processLine('||example.com^$domain=old1.com|unknown.com', hostMap, emptyInitialMap, emptyPriorityMap))
-      .toBe('||example.com^$domain=new1.com|unknown.com');
+      .toEqual(['||example.com^$domain=new1.com|unknown.com']);
   });
 
   test('single domain in parameter: $domain=old1.com → $domain=new1.com', () => {
     expect(processLine('||example.com^$domain=old1.com', hostMap, emptyInitialMap, emptyPriorityMap))
-      .toBe('||example.com^$domain=new1.com');
+      .toEqual(['||example.com^$domain=new1.com']);
   });
 });
 
@@ -292,16 +292,16 @@ describe('2.5 Cross-group predicted mirror isolation (dizipa clone test)', () =>
   test('dizipa100 group: predicted mirrors removed, only dizipa101.com stays', () => {
     const line = 'dizipa100.com,dizipa101.com,dizipa102.com##.ads';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
-    expect(result).toBe('dizipa101.com##.ads');
+    expect(result).toEqual(['dizipa101.com##.ads']);
   });
 
   test('dizipa0100 group: predicted mirrors removed, dizipa0101.com stays', () => {
     const line = 'dizipa0100.com,dizipa0101.com,dizipa0102.com##.ads';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
     // dizipa0101.com stays (last_known_mirror for this group)
-    expect(result).toContain('dizipa0101.com');
+    expect(result[0]).toContain('dizipa0101.com');
     // dizipa0102.com removed as predicted mirror
-    expect(result).not.toContain('dizipa0102.com');
+    expect(result[0]).not.toContain('dizipa0102.com');
     // Note: dizipa101.com may also appear because it shares base pattern dizipa{N}.com
     // and is in the priorityMap keep set — this is expected behavior
   });
@@ -310,9 +310,9 @@ describe('2.5 Cross-group predicted mirror isolation (dizipa clone test)', () =>
     const line = 'dizipa0100.com,dizipa0101.com,dizipa0102.com##.ads';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
     // dizipa0101.com should stay (it's the last_known_mirror for dizipa0100 group)
-    expect(result).toContain('dizipa0101.com');
+    expect(result[0]).toContain('dizipa0101.com');
     // dizipa0102.com should be removed as predicted mirror of dizipa0101.com
-    expect(result).not.toContain('dizipa0102.com');
+    expect(result[0]).not.toContain('dizipa0102.com');
   });
 });
 
@@ -387,7 +387,7 @@ describe('2.10 Preventing empty domain lists in parameters', () => {
     const line = '||example.com^$domain=turkifsaclub001.sbs|turkifsaclub002.sbs|turkifsaclub003.sbs';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
     // Should not have empty domain list — fallback to last_known_mirror
-    expect(result).toContain('turkifsaclub020.sbs');
+    expect(result[0]).toContain('turkifsaclub020.sbs');
   });
 });
 
@@ -432,6 +432,118 @@ describe('2.11 findTargetFiles', () => {
     const root = process.cwd();
     const files = await findTargetFiles(root + '/TestFilters', 'Filter', '*.txt');
     expect(files.every(f => f.endsWith('.txt'))).toBe(true);
+  });
+});
+
+// ============================================================================
+// 3. Additional domains from force_search_ahead
+// ============================================================================
+
+describe('3.1 processLine — additional domains in cosmetic rules', () => {
+  const hostMap = new Map([['old.com', 'new432.com']]);
+  const emptyInitialMap = new Map<string, string>();
+  const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+  const additionalDomainsMap = new Map([['new432.com', ['new433.com', 'new434.com']]]);
+
+  test('single domain with additional: old.com##.ads → new432.com,new433.com,new434.com##.ads', () => {
+    const result = processLine('old.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result).toEqual(['new432.com,new433.com,new434.com##.ads']);
+  });
+
+  test('domain list with additional: a.com,old.com##.ads → a.com,new432.com,new433.com,new434.com##.ads', () => {
+    const result = processLine('a.com,old.com,b.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result).toEqual(['a.com,new432.com,b.com,new433.com,new434.com##.ads']);
+  });
+
+  test('no additional domains when map is empty', () => {
+    const emptyAdditional = new Map<string, string[]>();
+    const result = processLine('old.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, emptyAdditional);
+    expect(result).toEqual(['new432.com##.ads']);
+  });
+
+  test('additional domains already present are not duplicated', () => {
+    const result = processLine('old.com,new433.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result[0]).toContain('new432.com');
+    expect(result[0]).toContain('new433.com');
+    expect(result[0]).toContain('new434.com');
+    // new433.com should appear only once
+    const domains = result[0].split('##')[0].split(',');
+    const count433 = domains.filter(d => d === 'new433.com').length;
+    expect(count433).toBe(1);
+  });
+});
+
+describe('3.2 processLine — additional domains in ||domain^ URL rules', () => {
+  const hostMap = new Map([['old.com', 'new432.com']]);
+  const emptyInitialMap = new Map<string, string>();
+  const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+  const additionalDomainsMap = new Map([['new432.com', ['new433.com']]]);
+
+  test('||old.com^ → [||new432.com^, ||new433.com^]', () => {
+    const result = processLine('||old.com^', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result).toEqual(['||new432.com^', '||new433.com^']);
+  });
+
+  test('||old.com^$third-party → duplicated with modifiers', () => {
+    const result = processLine('||old.com^$third-party', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe('||new432.com^$third-party');
+    expect(result[1]).toBe('||new433.com^$third-party');
+  });
+
+  test('no extra lines when additionalDomainsMap is empty', () => {
+    const emptyAdditional = new Map<string, string[]>();
+    const result = processLine('||old.com^', hostMap, emptyInitialMap, emptyPriorityMap, emptyAdditional);
+    expect(result).toEqual(['||new432.com^']);
+  });
+
+  test('regex lastIndex regression: .test() with /g flag must not affect .replace()', () => {
+    // Bug: RegExp.test() with /g flag advances lastIndex, causing subsequent .replace() to skip matches
+    // This test ensures the fix (tokenRe.lastIndex = 0) works correctly
+    const result = processLine('||old.com^$third-party', hostMap, emptyInitialMap, emptyPriorityMap);
+    expect(result).toEqual(['||new432.com^$third-party']);
+  });
+});
+
+describe('3.3 processLine — additional domains in $domain= parameters', () => {
+  const hostMap = new Map([['old.com', 'new432.com']]);
+  const emptyInitialMap = new Map<string, string>();
+  const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+  const additionalDomainsMap = new Map([['new432.com', ['new433.com']]]);
+
+  test('$domain=old.com|other.com → $domain=new432.com|other.com|new433.com', () => {
+    const result = processLine('||example.com^$domain=old.com|other.com', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result[0]).toContain('new432.com');
+    expect(result[0]).toContain('new433.com');
+    expect(result[0]).toContain('other.com');
+  });
+});
+
+describe('3.4 processDomainList — additional domains appending', () => {
+  const hostMap = new Map([['old.com', 'new432.com']]);
+  const emptyInitialMap = new Map<string, string>();
+  const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+  const additionalDomainsMap = new Map([['new432.com', ['new433.com', 'new434.com']]]);
+
+  test('appends additional domains after replacement', () => {
+    const { processed, changed } = processDomainList(['old.com'], hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(processed).toEqual(['new432.com', 'new433.com', 'new434.com']);
+    expect(changed).toBe(true);
+  });
+
+  test('does not append when no additional domains', () => {
+    const emptyAdditional = new Map<string, string[]>();
+    const { processed } = processDomainList(['old.com'], hostMap, emptyInitialMap, emptyPriorityMap, emptyAdditional);
+    expect(processed).toEqual(['new432.com']);
+  });
+
+  test('does not duplicate existing domains', () => {
+    const { processed } = processDomainList(['old.com', 'new433.com'], hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(processed).toContain('new432.com');
+    expect(processed).toContain('new433.com');
+    expect(processed).toContain('new434.com');
+    const count = processed.filter(d => d === 'new433.com').length;
+    expect(count).toBe(1);
   });
 });
 

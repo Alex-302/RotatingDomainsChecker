@@ -73,6 +73,8 @@ export interface WatcherSite {
   disable_heuristic?: boolean;
   /** Accept antibot responses (403/Cloudflare) as working domains */
   accept_antibot?: boolean;
+  /** Continue searching all heuristic candidates even after finding first working domain */
+  force_search_ahead?: boolean;
   /** Informational field for geo-blocking (e.g., TR for Turkey) */
   geoblock?: string;
   // Auto-updated fields
@@ -117,6 +119,7 @@ export interface CheckResult {
   error?: string;
   checkDurationMs: number;
   actualCheckedDomain?: string; // The actual domain that was checked for accurate error reporting
+  additionalWorkingDomains?: string[]; // Additional working domains found with force_search_ahead
 }
 
 export interface ReplacementPair {

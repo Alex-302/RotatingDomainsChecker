@@ -241,6 +241,7 @@ sites:
     probe_text: "Example Domain"      # Key phrases for content verification
     disable_heuristic: false          # Disable heuristic search
     accept_antibot: false             # Accept antibot responses as working
+    force_search_ahead: false         # Continue searching all candidates after finding first working domain
     geoblock: ""                      # Country code for geo-blocking (e.g. "TR")
     
     # Auto-generated fields (updated by the script)
@@ -602,8 +603,6 @@ npm test              # All tests must pass
 The project uses Jest with ESM support. Tests use `jest.unstable_mockModule` for mocking Node.js core modules like `dns` and `child_process`. All test files are configured to run with `--experimental-vm-modules` flag.
 
 ## Troubleshooting
-
-### Common Issues
 
 1. **Git identity errors**: Configure `git` user before running
 2. **Permission denied**: Check `PAT_TOKEN` permissions

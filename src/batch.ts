@@ -264,6 +264,7 @@ export class BatchProcessor {
         // Step 3: HTTP checks with unified queue
         const heuristicParallel = this.config.processing.heuristicParallel ?? this.config.processing.parallel;
         const foundSites = new Set<number>();
+        const foundDomainsPerSite = new Map<number, Array<{ domain: string; result: RedirectResult; candidateUrl: string }>>();
         const activePromises = new Map<number, Promise<{ taskIndex: number; task: HeuristicTask & { dnsOk: boolean }; result: RedirectResult }>>();
         let nextTaskIndex = 0;
 
@@ -275,9 +276,14 @@ export class BatchProcessor {
 
         // Start initial window with early site-found check
         while (activePromises.size < heuristicParallel && nextTaskIndex < dnsOkTasks.length) {
-          // Skip tasks for sites that are already found
-          while (nextTaskIndex < dnsOkTasks.length && foundSites.has(dnsOkTasks[nextTaskIndex].siteIndex)) {
-            nextTaskIndex++;
+          // Skip tasks for sites that are already found (unless force_search_ahead is enabled)
+          while (nextTaskIndex < dnsOkTasks.length) {
+            const currentTask = dnsOkTasks[nextTaskIndex];
+            if (foundSites.has(currentTask.siteIndex) && !currentTask.site.force_search_ahead) {
+              nextTaskIndex++;
+            } else {
+              break;
+            }
           }
           if (nextTaskIndex >= dnsOkTasks.length) break;
 
@@ -297,9 +303,12 @@ export class BatchProcessor {
 
           const { task, result } = completed;
 
-          // Atomic check-and-process: only first completion for a site gets processed
-          if (foundSites.has(task.siteIndex)) {
-            // Site already found by another task, skip processing
+          // Atomic check-and-process: handle force_search_ahead differently
+          const alreadyFound = foundSites.has(task.siteIndex);
+          const continueSearch = task.site.force_search_ahead;
+          
+          if (alreadyFound && !continueSearch) {
+            // Site already found and not force_search_ahead, skip processing
             this.logger.debug(task.siteName, `Heuristic: skipping ${task.candidateUrl} (site already found)`);
           } else if (result.success) {
             this.logger.debug(task.siteName, `Heuristic candidate ${task.candidateUrl}: HTTP ${result.statusCode}${result.antibotDetected ? ' (antibot)' : ''}`);
@@ -319,31 +328,47 @@ export class BatchProcessor {
             }
 
             if (probeOk) {
-              // Success! Mark site as found immediately to prevent race conditions
-              foundSites.add(task.siteIndex);
               const oldHost = this.resolver.extractHostWithoutQuery(task.oldMirror);
               const newHost = result.finalHost.toLowerCase();
               const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
               this.logger.info(task.siteName, `Heuristic SUCCESS: ${task.candidateUrl}`);
               this.logger.info(task.siteName, `Heuristic redirect chain: ${chainFormatted}`);
 
-              // Normalize URL before extracting host for heuristic success
-              const heuristicStartUrl = task.site.initial_domain || task.site.last_known_mirror;
-              const heuristicNormalized = heuristicStartUrl.startsWith("http://") || heuristicStartUrl.startsWith("https://")
-                ? heuristicStartUrl
-                : `https://${heuristicStartUrl}`;
-              const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
-              results[task.siteIndex] = {
-                siteName: task.siteName,
-                oldHost,
-                newHost,
-                hostChanged: true,
-                startedHost: this.resolver.extractHostWithoutQuery(heuristicNormalized),
-                result,
-                shouldUpdate: true,
-                checkDurationMs: siteDuration,
-                actualCheckedDomain: task.candidateUrl,
-              };
+              // If force_search_ahead, collect multiple domains
+              if (task.site.force_search_ahead) {
+                if (!foundDomainsPerSite.has(task.siteIndex)) {
+                  foundDomainsPerSite.set(task.siteIndex, []);
+                }
+                foundDomainsPerSite.get(task.siteIndex)!.push({
+                  domain: newHost,
+                  result,
+                  candidateUrl: task.candidateUrl,
+                });
+                this.logger.info(task.siteName, `force_search_ahead: collected domain ${newHost}, continuing search...`);
+              }
+
+              // Mark site as found (first success or non-force_search_ahead)
+              if (!foundSites.has(task.siteIndex)) {
+                foundSites.add(task.siteIndex);
+                // Normalize URL before extracting host for heuristic success
+                const heuristicStartUrl = task.site.initial_domain || task.site.last_known_mirror;
+                const heuristicNormalized = heuristicStartUrl.startsWith('http://') || heuristicStartUrl.startsWith('https://')
+                  ? heuristicStartUrl
+                  : `https://${heuristicStartUrl}`;
+                const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
+                results[task.siteIndex] = {
+                  siteName: task.siteName,
+                  oldHost,
+                  newHost,
+                  hostChanged: true,
+                  startedHost: this.resolver.extractHostWithoutQuery(heuristicNormalized),
+                  result,
+                  shouldUpdate: true,
+                  checkDurationMs: siteDuration,
+                  actualCheckedDomain: task.candidateUrl,
+                  additionalWorkingDomains: [], // Will be populated later if force_search_ahead
+                };
+              }
             }
           } else if (result.skippedByText) {
             // Domain matched skip_text (parked/expired) — skip candidate, continue search
@@ -404,9 +429,14 @@ export class BatchProcessor {
 
           // Start next task if available and below parallel limit
           while (nextTaskIndex < dnsOkTasks.length && activePromises.size < heuristicParallel) {
-            // Skip tasks for sites that are already found
-            while (nextTaskIndex < dnsOkTasks.length && foundSites.has(dnsOkTasks[nextTaskIndex].siteIndex)) {
-              nextTaskIndex++;
+            // Skip tasks for sites that are already found (unless force_search_ahead is enabled)
+            while (nextTaskIndex < dnsOkTasks.length) {
+              const currentTask = dnsOkTasks[nextTaskIndex];
+              if (foundSites.has(currentTask.siteIndex) && !currentTask.site.force_search_ahead) {
+                nextTaskIndex++;
+              } else {
+                break;
+              }
             }
             if (nextTaskIndex >= dnsOkTasks.length) break;
 
@@ -415,6 +445,22 @@ export class BatchProcessor {
             const promise = checkCandidate(nextTask).then(result => ({ taskIndex: idx, task: nextTask, result }));
             activePromises.set(idx, promise);
             nextTaskIndex++;
+          }
+        }
+
+        // Populate additionalWorkingDomains for force_search_ahead sites
+        if (foundDomainsPerSite.size > 0) {
+          for (const [siteIndex, domains] of foundDomainsPerSite.entries()) {
+            const siteName = siteEntries[siteIndex][0];
+            if (results[siteIndex] && domains.length > 1) {
+              // Extract domain names excluding the first one (which is already in newHost)
+              const firstDomain = results[siteIndex].newHost;
+              results[siteIndex].additionalWorkingDomains = domains
+                .map((d: { domain: string }) => d.domain)
+                .filter(domain => domain !== firstDomain);
+              
+              this.logger.info(siteName, `force_search_ahead: collected ${domains.length} working domains: ${domains.map((d: { domain: string }) => d.domain).join(', ')}`);
+            }
           }
         }
 
