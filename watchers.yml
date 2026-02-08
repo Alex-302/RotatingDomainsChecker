@@ -3,38 +3,22 @@
 sites:
   Dead site test - deadexample24.com:
     initial_domain: deadexample24.com
-    last_known_mirror: ''
-    path: ''
-    probe_text: []
-  Randomized mirrors (CN) — dd.*:
-    initial_domain: dd.yvhoyh.com/download/2278_0.html
-    last_known_mirror: https://dd.yvhoyh.com/download/2278_0.html
-    path: /download/2278_0.html
-    probe_text: []
   Test Probe Fail - example.org:
     initial_domain: null
     last_known_mirror: example.org
-    path: ''
     probe_text:
       - not existing text
   Test Probe Success - example.de:
     initial_domain: null
     last_known_mirror: example.de
-    path: ''
     probe_text:
       - Malerei der Gruppe 3erlei
   Frequently changed domains — Saha TV:
     initial_domain: sahatv2.top
-    last_known_mirror: sahatv4.top
-    path: ''
-    probe_text: []
+    last_known_mirror: sahatv3.top
   Frequently changed domains — YavasGir:
     initial_domain: null
     last_known_mirror: yavasgir31.com
-    path: ''
-    probe_text: []
   Frequently changed domains — Kralsports HD:
     initial_domain: null
     last_known_mirror: kralsportshd7.com
-    path: ''
-    probe_text: []

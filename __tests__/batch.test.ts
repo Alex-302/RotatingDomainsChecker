@@ -830,3 +830,135 @@ describe('7. skip_text scenarios', () => {
     expect(results[0].result.success).toBe(true);
   });
 });
+
+describe('8. force_search_ahead scenarios', () => {
+  test('8.1 force_search_ahead disabled → stop after first success', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({ 
+      last_known_mirror: 'turkifsaclub1.sbs',
+      force_search_ahead: false,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
+      }
+      // First candidate succeeds
+      if (url.includes('turkifsaclub2.sbs')) return Promise.resolve(makeSuccessResult('turkifsaclub2.sbs'));
+      // Second candidate (should not be checked due to early stop)
+      if (url.includes('turkifsaclub3.sbs')) return Promise.resolve(makeSuccessResult('turkifsaclub3.sbs'));
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Should stop after finding first candidate
+    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].shouldUpdate).toBe(true);
+    // Should only call resolve twice: initial + first candidate
+    expect(callCount).toBeLessThanOrEqual(3);
+  });
+
+  test('8.2 force_search_ahead enabled → check all candidates', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({ 
+      last_known_mirror: 'turkifsaclub1.sbs',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    const successfulCandidates: string[] = [];
+    
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
+      }
+      // Multiple candidates succeed
+      if (url.includes('turkifsaclub2.sbs')) {
+        successfulCandidates.push('turkifsaclub2.sbs');
+        return Promise.resolve(makeSuccessResult('turkifsaclub2.sbs'));
+      }
+      if (url.includes('turkifsaclub3.sbs')) {
+        successfulCandidates.push('turkifsaclub3.sbs');
+        return Promise.resolve(makeSuccessResult('turkifsaclub3.sbs'));
+      }
+      if (url.includes('turkifsaclub4.sbs')) {
+        successfulCandidates.push('turkifsaclub4.sbs');
+        return Promise.resolve(makeSuccessResult('turkifsaclub4.sbs'));
+      }
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Should return first successful candidate
+    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].shouldUpdate).toBe(true);
+    // Should check multiple candidates (more than just stopping at first)
+    expect(callCount).toBeGreaterThan(3);
+    expect(successfulCandidates.length).toBeGreaterThan(1);
+  });
+
+  test('8.3 force_search_ahead with probe_text → only working domains collected', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({ 
+      last_known_mirror: 'turkifsaclub1.sbs',
+      force_search_ahead: true,
+      probe_text: ['Expected Content'],
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
+      }
+      // Candidate 2: success with correct content
+      if (url.includes('turkifsaclub2.sbs')) {
+        return Promise.resolve(makeSuccessResult('turkifsaclub2.sbs', { finalBody: 'Expected Content here' }));
+      }
+      // Candidate 3: success but wrong content (probe fails)
+      if (url.includes('turkifsaclub3.sbs')) {
+        return Promise.resolve(makeSuccessResult('turkifsaclub3.sbs', { finalBody: 'Wrong Content' }));
+      }
+      // Candidate 4: success with correct content
+      if (url.includes('turkifsaclub4.sbs')) {
+        return Promise.resolve(makeSuccessResult('turkifsaclub4.sbs', { finalBody: 'Expected Content again' }));
+      }
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Should use first candidate that passes probe
+    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].shouldUpdate).toBe(true);
+    // Should check multiple candidates
+    expect(callCount).toBeGreaterThan(2);
+  });
+});

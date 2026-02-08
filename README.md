@@ -241,6 +241,7 @@ sites:
     probe_text: "Example Domain"      # Key phrases for content verification
     disable_heuristic: false          # Disable heuristic search
     accept_antibot: false             # Accept antibot responses as working
+    force_search_ahead: false         # Continue searching all candidates after finding first working domain
     geoblock: ""                      # Country code for geo-blocking (e.g. "TR")
     
     # Auto-generated fields (updated by the script)
