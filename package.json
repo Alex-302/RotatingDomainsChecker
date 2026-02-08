@@ -15,9 +15,11 @@
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
     "new:branch": "tsx scripts/new-branch.ts",
     "sync-version": "node sync-version.js",
-    "version-sync": "npm run sync-version && git add package.json"
+    "version-sync": "npm run sync-version && git add package.json",
+    "prepare": "husky"
   },
   "keywords": [
     "adguard",
@@ -42,6 +44,7 @@
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
+    "husky": "^9.1.7",
     "jest": "^30.2.0",
     "markdownlint-cli": "^0.47.0",
     "prettier": "^3.2.4",

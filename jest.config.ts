@@ -30,6 +30,10 @@ const config: Config = {
       statements: 80,
     },
   },
+  // Suppress console logs during tests for cleaner output
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  // Show detailed test results
+  // verbose: true,
 };
 
 export default config;

@@ -529,8 +529,11 @@ The project includes a comprehensive test suite covering all core functionality.
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests - summary only
 npm test
+
+# Run tests with detailed output - shows each test
+npm test -- --verbose
 
 # Run tests without coverage (faster)
 npm run test:run
@@ -539,8 +542,13 @@ npm run test:run
 npm run test:coverage
 
 # Run specific test file
-npm test -- --testNamePattern="batch"
+npm test -- --testNamePattern="hooks"
+
+# Run hooks tests only
+npm test -- --testPathPattern="hooks"
 ```
+
+**Note:** To make verbose mode the default, uncomment `verbose: true` in `jest.config.ts`.
 
 ### Test Structure
 
@@ -552,10 +560,12 @@ The test suite is organized in the `__tests__/` directory:
 - **`probe.test.ts`** - Tests content probe verification
 - **`git.test.ts`** - Tests Git operations, commit message generation, and PR creation
 - **`config.test.ts`** - Tests configuration loading and YAML handling
+- **`hooks.test.ts`** - Tests pre-commit hook validation (Conventional Commits, English-only messages)
 
 ### Test Coverage
 
 The test suite provides comprehensive coverage of:
+
 - Domain pattern matching (`domain[N].tld`, `[N]domain.tld`, `domain[N][text].tld`)
 - Heuristic candidate generation and validation
 - DNS pre-check and HTTP resolution
@@ -563,6 +573,23 @@ The test suite provides comprehensive coverage of:
 - Git operations (commits and pull requests)
 - Configuration parsing and validation
 - Error handling and edge cases
+- Pre-commit hook validation (Conventional Commits, English-only messages)
+
+### Pre-commit Hooks
+
+The project uses Husky for pre-commit hooks:
+
+```bash
+# commit-msg hook validates:
+- Conventional Commits format (feat:, fix:, chore:, etc.)
+- Auto-generated messages (Rotating Domains Checker: ...)
+- English-only messages (rejects Cyrillic)
+
+# pre-commit hook runs:
+npm run lint          # ESLint checks
+npm run format:check  # Prettier formatting check  
+npm test              # All tests must pass
+```
 
 ### ESM Support
 
