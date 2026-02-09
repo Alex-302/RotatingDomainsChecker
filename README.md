@@ -26,6 +26,7 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 - [Project Structure](#project-structure)
 - [Local Usage](#local-usage)
 - [Troubleshooting](#troubleshooting)
+- [Cloudflare / Antibot Sites with Rotating Domains](#cloudflare--antibot-sites-with-rotating-domains)
 - [Requirements](#requirements)
 - [Creating Personal Access Token (PAT)](#creating-personal-access-token-pat)
 - [License](#license)
@@ -41,7 +42,7 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 - Verify URLs/paths via `path` to avoid redirects to unrelated sites
 - Log complete redirect chains
 - Automatic replacement in filter files
-- Detect antibot/Cloudflare
+- Detect and handle antibot/Cloudflare protection with `accept_antibot` option
 - Detect parked/expired domains to avoid false positives
 - Batch checks with parallelism
 - Failure day counter with warnings for potentially dead sites
@@ -233,21 +234,29 @@ List of sites to monitor with their verification rules.
 sites:
   example.com:
     # Required: at least one of these must be specified
-    initial_domain: "example.com"     # Initial site domain (recommended for new sites)
-    last_known_mirror: "example.com"  # Last working mirror (auto-updated by script)
+    initial_domain: "example.com"       # Initial site domain (recommended for new sites)
+    last_known_mirror: "example.com"    # Last working mirror (auto-updated by script)
     
-    # Optional fields
-    path: "/"                         # Path to check on domain
-    probe_text: "Example Domain"      # Key phrases for content verification
-    disable_heuristic: false          # Disable heuristic search
-    accept_antibot: false             # Accept antibot responses as working
-    force_search_ahead: false         # Continue searching all candidates after finding first working domain
-    geoblock: ""                      # Country code for geo-blocking (e.g. "TR")
+    # Optional verification fields
+    path: "/"                           # Path to check on domain (default: "/")
+    probe_text: "Example Domain"        # Key phrases for content verification (array or string)
+    skip_text: "This domain is parked"  # Skip domains containing this text (array or string)
+    
+    # Optional heuristic control
+    disable_heuristic: false            # Disable heuristic search (default: false)
+    force_search_ahead: false           # Continue searching all candidates after finding first working domain (default: false)
+    
+    # Optional antibot handling
+    accept_antibot: false               # Accept Cloudflare/antibot responses as working (default: false)
+    
+    # Optional geo-blocking
+    geoblock: ""                        # Country code for geo-blocking (e.g. "TR", "US"). Not used, just for information.
     
     # Auto-generated fields (updated by the script)
-    last_seen: "2026-01-21 12:00"     # Last successful check
-    last_failed: ""                   # Last failed check
-    failed_days: 0                    # Days since last failure
+    last_seen: "2026-01-21 12:00"       # Last successful check
+    last_failed: ""                     # Last failed check
+    failed_days: 0                      # Days since last failure
+    potentially_dead: false             # Marked as potentially dead after many failures
 ```
 
 </details>
@@ -376,6 +385,32 @@ INPUT_CONFIG_PATH: './config.yml'  # Must exist in repository root
 - Check token has `repo` permissions
 - Ensure git user is configured in workflow
 
+### Cloudflare / Antibot Sites with Rotating Domains
+
+For sites behind Cloudflare or other antibot protection that also rotate domains (e.g. `example39.com` → `example40.com`), use the combination of `accept_antibot` and `force_search_ahead`:
+
+```yaml
+sites:
+  example16.com:
+    last_known_mirror: example39.com
+    accept_antibot: true          # Accept Cloudflare 403 as "working"
+    force_search_ahead: true      # Run heuristic to find additional domains
+```
+
+**How it works:**
+
+- The initial check accepts the antibot response as successful
+- `force_search_ahead` triggers heuristic search to find neighboring domains (example39.com, example40.com, etc.)
+- All found domains (even behind antibot) are added to filter rules
+- This is preferred over missing actual domains — better to have extra domains in the rule than to miss a working one
+
+**Important:** Ensure `forceHeuristicOnCodes` in `config.yml` includes `403`:
+
+```yaml
+heuristic:
+  forceHeuristicOnCodes: [403, 404, 500, 502, 503, 504]
+```
+
 ### Testing Best Practices
 
 #### 1. Start with Dry Modes
@@ -455,7 +490,7 @@ git:
 - Processes only files located in the configured filter directory
 - **Loop protection**: Prevents infinite redirect chains
 - **Content verification**: Checks `probe_text` and `path` before accepting domains
-- **Antibot detection**: Skips sites with Cloudflare/antibot protection
+- **Antibot handling**: Detects Cloudflare/antibot protection with option to accept or skip protected sites
 - **Parallelism limits**: Configurable concurrency to avoid server overload
 - **Dry run modes**: Testing without making changes
 

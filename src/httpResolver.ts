@@ -70,6 +70,8 @@ export class HttpResolver {
                 await response.arrayBuffer();
               }
             } catch {}
+            // When force_search_ahead is enabled, signal heuristic to collect more domains
+            const shouldTriggerHeuristic = Boolean(site.force_search_ahead) || this.config.heuristic.forceHeuristicOnCodes.includes(response.status);
             return {
               success: true,
               finalUrl: currentUrl,
@@ -78,6 +80,7 @@ export class HttpResolver {
               redirectChain: chain,
               antibotDetected: true, // Keep flag for logging
               finalBody,
+              shouldTriggerHeuristic,
             };
           }
           

@@ -247,7 +247,7 @@ export class BatchProcessor {
         const failed = !r.result.success;
         const antibot = r.result.antibotDetected;
         const forceHeuristic = r.result.shouldTriggerHeuristic;
-        const skipHeuristic = Boolean(site.disable_heuristic) || (antibot && this.config.heuristic.skipOnAntibot);
+        const skipHeuristic = Boolean(site.disable_heuristic) || (antibot && this.config.heuristic.skipOnAntibot && !forceHeuristic);
 
         if ((failed || forceHeuristic) && !skipHeuristic) {
           const failedUrl = site.initial_domain || site.last_known_mirror;
@@ -608,28 +608,34 @@ export class BatchProcessor {
 
     // Content probe (if configured)
     if (site.probe_text && site.probe_text.length > 0) {
-      const probeOk = await this.probe.verify(site.probe_text, result.finalBody);
-      result.contentProbeOk = probeOk;
+      // Skip probe for antibot responses when accept_antibot is true
+      // (Cloudflare challenge page won't contain probe_text, but the site is still considered working)
+      if (result.antibotDetected && site.accept_antibot) {
+        this.logger.info(siteName, "Skipping content probe for antibot response (accept_antibot=true)");
+      } else {
+        const probeOk = await this.probe.verify(site.probe_text, result.finalBody);
+        result.contentProbeOk = probeOk;
 
-      this.logger.debug(siteName, `Probe text found: ${probeOk}`);
+        this.logger.debug(siteName, `Probe text found: ${probeOk}`);
 
-      if (!probeOk) {
-        this.logger.error(siteName, "Content probe failed (key phrases not found)");
-        const siteDuration = Date.now() - siteStartTime;
-        this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PROBE FAILED`);
+        if (!probeOk) {
+          this.logger.error(siteName, "Content probe failed (key phrases not found)");
+          const siteDuration = Date.now() - siteStartTime;
+          this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PROBE FAILED`);
 
-        return {
-          siteName,
-          oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
-          newHost: result.finalHost,
-          hostChanged: false,
-          startedHost,
-          result,
-          shouldUpdate: false,
-          error: "Content probe failed",
-          checkDurationMs: siteDuration,
-          actualCheckedDomain: result.finalUrl || urlToCheck,
-        };
+          return {
+            siteName,
+            oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
+            newHost: result.finalHost,
+            hostChanged: false,
+            startedHost,
+            result,
+            shouldUpdate: false,
+            error: "Content probe failed",
+            checkDurationMs: siteDuration,
+            actualCheckedDomain: result.finalUrl || urlToCheck,
+          };
+        }
       }
     }
 

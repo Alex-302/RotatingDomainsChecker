@@ -962,3 +962,362 @@ describe('8. force_search_ahead scenarios', () => {
     expect(callCount).toBeGreaterThan(2);
   });
 });
+
+// ============================================================================
+// 9. Antibot + force_search_ahead: heuristic should run even when accept_antibot succeeds
+// ============================================================================
+
+describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
+  test('9.1 accept_antibot + force_search_ahead: heuristic runs despite successful antibot check', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'dizi39.life',
+      accept_antibot: true,
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'dizi16.life': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    const collectedDomains: string[] = [];
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      // Initial check: dizi39.life → antibot accepted (success: true, shouldTriggerHeuristic: true)
+      if (callCount === 1) {
+        return Promise.resolve(makeSuccessResult('dizi39.life', {
+          antibotDetected: true,
+          statusCode: 403,
+          shouldTriggerHeuristic: true,
+        }));
+      }
+      // Heuristic candidates: dizi40, dizi41 also behind antibot
+      if (url.includes('dizi40.life')) {
+        collectedDomains.push('dizi40.life');
+        return Promise.resolve(makeSuccessResult('dizi40.life', {
+          antibotDetected: true,
+          statusCode: 403,
+        }));
+      }
+      if (url.includes('dizi41.life')) {
+        collectedDomains.push('dizi41.life');
+        return Promise.resolve(makeSuccessResult('dizi41.life', {
+          antibotDetected: true,
+          statusCode: 403,
+        }));
+      }
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Heuristic should have run (callCount > 1 means candidates were checked)
+    expect(callCount).toBeGreaterThan(1);
+    // Should have collected additional domains via force_search_ahead
+    expect(collectedDomains.length).toBeGreaterThan(0);
+    expect(results[0].shouldUpdate).toBe(true);
+  });
+
+  test('9.2 accept_antibot WITHOUT force_search_ahead but 403 in forceHeuristicOnCodes: heuristic runs but stops after first', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'dizi39.life',
+      accept_antibot: true,
+      // force_search_ahead NOT set — heuristic will stop after first found
+    });
+    const watchers = makeWatchers({ 'dizi16.life': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      // Initial check: antibot accepted, shouldTriggerHeuristic: true (403 in forceHeuristicOnCodes)
+      if (callCount === 1) {
+        return Promise.resolve(makeSuccessResult('dizi39.life', {
+          antibotDetected: true,
+          statusCode: 403,
+          shouldTriggerHeuristic: true, // Real httpResolver sets this because 403 is in forceHeuristicOnCodes
+        }));
+      }
+      // Heuristic candidate: dizi40 also behind antibot
+      if (url.includes('dizi40.life')) {
+        return Promise.resolve(makeSuccessResult('dizi40.life', {
+          antibotDetected: true,
+          statusCode: 403,
+        }));
+      }
+      // dizi41 should NOT be checked (no force_search_ahead → stops after first)
+      if (url.includes('dizi41.life')) {
+        return Promise.resolve(makeSuccessResult('dizi41.life', {
+          antibotDetected: true,
+          statusCode: 403,
+        }));
+      }
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Heuristic should have run (because 403 in forceHeuristicOnCodes triggers it)
+    expect(callCount).toBeGreaterThan(1);
+    // But without force_search_ahead, should NOT collect additional domains
+    expect(results[0].additionalWorkingDomains?.length ?? 0).toBe(0);
+  });
+
+  test('9.2b accept_antibot WITHOUT force_search_ahead and 403 NOT in forceHeuristicOnCodes: heuristic does NOT run', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404, 500] }, // 403 NOT included
+    });
+    const site = makeSite({
+      last_known_mirror: 'dizi39.life',
+      accept_antibot: true,
+      // force_search_ahead NOT set
+    });
+    const watchers = makeWatchers({ 'dizi16.life': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(() => {
+      callCount++;
+      // Initial check: antibot accepted, shouldTriggerHeuristic: false (403 NOT in forceHeuristicOnCodes)
+      return Promise.resolve(makeSuccessResult('dizi39.life', {
+        antibotDetected: true,
+        statusCode: 403,
+        shouldTriggerHeuristic: false, // Real httpResolver: force_search_ahead=false, 403 not in forceHeuristicOnCodes
+      }));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Only initial check, no heuristic (neither force_search_ahead nor forceHeuristicOnCodes triggered)
+    expect(callCount).toBe(1);
+    expect(results[0].newHost).toBe('dizi39.life');
+  });
+
+  test('9.3 forceHeuristicOnCodes overrides skipOnAntibot when shouldTriggerHeuristic is true', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'turkifsaclub1.sbs',
+      // accept_antibot NOT set — antibot means failure
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        // Initial check: antibot detected, NOT accepted → success: false
+        // But 403 is in forceHeuristicOnCodes → shouldTriggerHeuristic: true
+        return Promise.resolve(makeFailResult('Antibot detected: 403', {
+          antibotDetected: true,
+          statusCode: 403,
+          shouldTriggerHeuristic: true,
+          finalHost: 'turkifsaclub1.sbs',
+        }));
+      }
+      // Heuristic candidate succeeds
+      if (url.includes('turkifsaclub2.sbs')) {
+        return Promise.resolve(makeSuccessResult('turkifsaclub2.sbs'));
+      }
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Heuristic should have run despite antibot + skipOnAntibot, because forceHeuristicOnCodes overrides
+    expect(callCount).toBeGreaterThan(1);
+    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].shouldUpdate).toBe(true);
+  });
+
+  test('9.4 antibot without forceHeuristicOnCodes match: heuristic is skipped (skipOnAntibot=true)', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404, 500] }, // 403 NOT included
+    });
+    const site = makeSite({
+      last_known_mirror: 'turkifsaclub1.sbs',
+      // accept_antibot NOT set
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(() => {
+      callCount++;
+      // Antibot detected, 403 NOT in forceHeuristicOnCodes → shouldTriggerHeuristic: false
+      return Promise.resolve(makeFailResult('Antibot detected: 403', {
+        antibotDetected: true,
+        statusCode: 403,
+        shouldTriggerHeuristic: false,
+        finalHost: 'turkifsaclub1.sbs',
+      }));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Only initial check, heuristic skipped due to skipOnAntibot + no forceHeuristic override
+    expect(callCount).toBe(1);
+    expect(results[0].shouldUpdate).toBe(false);
+  });
+
+  test('9.5 accept_antibot + probe_text: probe skipped for antibot response in Phase 1', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'dizi39.life',
+      accept_antibot: true,
+      probe_text: ['some unique text on the real site'],
+    });
+    const watchers = makeWatchers({ 'dizi16.life': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(() => {
+      // Cloudflare 403 — body does NOT contain probe_text
+      return Promise.resolve(makeSuccessResult('dizi39.life', {
+        antibotDetected: true,
+        statusCode: 403,
+        shouldTriggerHeuristic: true,
+        finalBody: '<html><title>Just a moment...</title></html>',
+      }));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Phase 1: probe should be SKIPPED for antibot response (accept_antibot=true)
+    // Site should still be accepted as working
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].error).toBeUndefined();
+  });
+
+  test('9.6 accept_antibot + probe_text: probe checked normally for 200 response (no antibot)', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: false },
+    });
+    const site = makeSite({
+      last_known_mirror: 'dizi39.life',
+      accept_antibot: true,
+      probe_text: ['some unique text on the real site'],
+    });
+    const watchers = makeWatchers({ 'dizi16.life': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(() => {
+      // Normal 200 response — body does NOT contain probe_text
+      return Promise.resolve(makeSuccessResult('dizi39.life', {
+        antibotDetected: false,
+        statusCode: 200,
+        finalBody: '<html><title>Wrong site</title></html>',
+      }));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Phase 1: probe should be CHECKED for non-antibot response, even with accept_antibot=true
+    // Probe fails → shouldUpdate: false
+    expect(results[0].shouldUpdate).toBe(false);
+    expect(results[0].error).toBe('Content probe failed');
+  });
+
+  test('9.7 accept_antibot + probe_text + force_search_ahead: antibot candidates skip probe, 200 candidates check probe', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'dizi39.life',
+      accept_antibot: true,
+      force_search_ahead: true,
+      probe_text: ['real site content'],
+    });
+    const watchers = makeWatchers({ 'dizi16.life': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    const checkedUrls: string[] = [];
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      checkedUrls.push(url);
+      // Initial: dizi39 behind antibot
+      if (callCount === 1) {
+        return Promise.resolve(makeSuccessResult('dizi39.life', {
+          antibotDetected: true,
+          statusCode: 403,
+          shouldTriggerHeuristic: true,
+          finalBody: '<html><title>Just a moment...</title></html>',
+        }));
+      }
+      // Heuristic: dizi40 behind antibot (probe should be skipped)
+      if (url.includes('dizi40.life')) {
+        return Promise.resolve(makeSuccessResult('dizi40.life', {
+          antibotDetected: true,
+          statusCode: 403,
+          finalBody: '<html><title>Just a moment...</title></html>',
+        }));
+      }
+      // Heuristic: dizi41 responds 200 with correct content (probe should pass)
+      if (url.includes('dizi41.life')) {
+        return Promise.resolve(makeSuccessResult('dizi41.life', {
+          antibotDetected: false,
+          statusCode: 200,
+          finalBody: '<html>real site content here</html>',
+        }));
+      }
+      // Heuristic: dizi42 responds 200 with WRONG content (probe should fail → not collected)
+      if (url.includes('dizi42.life')) {
+        return Promise.resolve(makeSuccessResult('dizi42.life', {
+          antibotDetected: false,
+          statusCode: 200,
+          finalBody: '<html>parked domain page</html>',
+        }));
+      }
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Heuristic should have run
+    expect(callCount).toBeGreaterThan(1);
+    expect(results[0].shouldUpdate).toBe(true);
+    // dizi40 (antibot, probe skipped) and dizi41 (200, probe passed) should be collected
+    // dizi42 (200, probe failed) should NOT be collected
+    const additional = results[0].additionalWorkingDomains ?? [];
+    expect(additional).toContain('dizi41.life');
+    expect(additional).not.toContain('dizi42.life');
+  });
+});
