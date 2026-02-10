@@ -43,7 +43,6 @@ jobs:
     permissions:
       contents: write          # Required for commits
       pull-requests: write     # Required for PR creation
-      actions: read            # Required for reading workflow info
 
     steps:
       - name: 📥 Checkout repository

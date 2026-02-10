@@ -43,16 +43,20 @@ jobs:
     permissions:
       contents: write          # Required for commits
       pull-requests: write     # Required for PR creation
-      actions: read            # Required for reading workflow info
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 1
 
-      - name:  Run Rotating Domains Checker
+      - name: Configure git user
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Run Rotating Domains Checker
         uses: Alex-302/RotatingDomainsChecker@v1.0.2
         with:
           mode: ${{ github.event.inputs.mode || '' }}

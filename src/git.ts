@@ -146,8 +146,9 @@ export class GitManager {
         return {};
       }
 
-      // Add and commit changes directly to master
+      // Add and commit changes directly to master (exclude logs/)
       execSync('git add -A', { encoding: 'utf8' });
+      execSync('git reset -- logs/', { encoding: 'utf8' });
       
       // Use stdin to avoid command injection from commit message
       execSync('git commit -F -', { input: message, encoding: 'utf8' });
@@ -203,8 +204,9 @@ export class GitManager {
 
       execSync(`git checkout -b "${branchName}"`, { encoding: 'utf8' });
       
-      // Add and commit changes
+      // Add and commit changes (exclude logs/)
       execSync('git add -A', { encoding: 'utf8' });
+      execSync('git reset -- logs/', { encoding: 'utf8' });
       // Use stdin to avoid command injection from commit message
       execSync('git commit -F -', { input: message, encoding: 'utf8' });
       

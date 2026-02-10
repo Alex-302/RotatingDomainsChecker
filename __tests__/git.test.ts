@@ -170,6 +170,7 @@ describe('10.2 commitOrCreatePR', () => {
 
     expect(mockedExecSync).toHaveBeenCalledWith('git status --porcelain', expect.any(Object));
     expect(mockedExecSync).toHaveBeenCalledWith('git add -A', expect.any(Object));
+    expect(mockedExecSync).toHaveBeenCalledWith('git reset -- logs/', expect.any(Object));
     expect(mockedExecSync).toHaveBeenCalledWith('git commit -F -', expect.objectContaining({ input: expect.any(String) }));
     expect(mockedExecSync).toHaveBeenCalledWith(expect.stringContaining('git push origin'), expect.any(Object));
     expect(result).toHaveProperty('commitSha');
@@ -201,6 +202,9 @@ describe('10.2 commitOrCreatePR', () => {
     const git = new GitManager(makeConfig('debug'));
     const summary = makeSummaryWithReplacements();
     const result = await git.commitOrCreatePR(summary, false);
+
+    // Verify logs/ excluded from commit
+    expect(mockedExecSync).toHaveBeenCalledWith('git reset -- logs/', expect.any(Object));
 
     // gh pr create must use execFileSync (no shell) to prevent command injection
     expect(mockedExecFileSync).toHaveBeenCalledWith(

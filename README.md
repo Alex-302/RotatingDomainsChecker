@@ -9,8 +9,9 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 
 - [Purpose](#purpose)
 - [Installation](#installation)
-- [Quick Setup](#quick-setup)
-- [Required Setup](#required-setup)
+- [GitHub Actions Integration](#github-actions-integration)
+  - [Quick Setup](#quick-setup)
+  - [Required Setup](#required-setup)
 - [Usage](#usage)
   - [Run Modes](#run-modes)
 - [Configuration](#configuration)
@@ -36,22 +37,55 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 
 ## Installation
 
-### Quick Install (Recommended)
+Create `.github/workflows/rotating-domains-checker.yml` in your repository:
+
+<details>
+<summary>Workflow YAML example</summary>
 
 ```yaml
-- uses: Alex-302/RotatingDomainsChecker@v1
-  with:
-    mode: prod_live
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+name: Rotating Domains Checker
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: false
+        default: 'prod_live'
+        type: choice
+        options:
+          - ''
+          - 'prod_live'
+          - 'prod_dry'
+          - 'test_live'
+          - 'test_dry'
+
+jobs:
+  check-domains:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure git user
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+      - uses: Alex-302/RotatingDomainsChecker@v1
+        with:
+          mode: ${{ github.event.inputs.mode || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### Alternative Integration
+</details>
 
-For advanced use cases, see the [Integration Guide](#integration-guide) for:
-- Using your own fork
-- Local testing workflows
-- Custom configuration options
+Then add [`config.yml`](#configyml) and [`watchers.yml`](#watchersyml) to your repository root.
+
+For advanced use cases (fork, customization), see the [Integration Guide](#integration-guide).
 
 ## Purpose
 
@@ -75,73 +109,9 @@ For advanced use cases, see the [Integration Guide](#integration-guide) for:
 
 ### Quick Setup
 
-Add this workflow to your repository (`.github/workflows/rotating-domains-checker.yml`):
+See [Installation](#installation) for a minimal workflow you can copy directly.
 
-<details>
-<summary>Workflow YAML example</summary>
-
-```yaml
-name: Rotating Domains Checker
-
-on:
-  # Automatic run daily at 02:00 UTC
-  schedule:
-    - cron: '0 2 * * *'
-  # Manual run with mode selection
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Run mode' # Overrides config.yml setting
-        required: false
-        default: 'prod_live'
-        type: choice
-        options:
-          - ''              # Use config.yml setting
-          - 'prod_live'     # Production mode with changes
-          - 'prod_dry'      # Production mode without changes (git operations simulation)
-          - 'test_live'     # Test directory with changes
-          - 'test_dry'      # Test directory without changes (git operations simulation)
-
-      config-path:
-        description: 'Path to configuration file'
-        required: false
-        default: './config.yml'
-        type: string
-
-      filters-path:
-        description: 'Path to filters directory'
-        required: false
-        default: './'
-        type: string
-
-jobs:
-  check-domains:
-    name: Rotating Domains Checker
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write          # Required for commits
-      pull-requests: write     # Required for PR creation
-      actions: read            # Required for reading workflow info
-
-    steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 1
-
-      - name:  Run Rotating Domains Checker
-        uses: Alex-302/RotatingDomainsChecker@v1.0.2
-        with:
-          mode: ${{ github.event.inputs.mode || '' }}
-          config-path: ${{ github.event.inputs.config-path || './config.yml' }}
-          filters-path: ${{ github.event.inputs.filters-path || './' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-</details>
+For a full workflow with all options (custom config path, filters path, comments), see [example-external-public.yml](.github/workflows/example-external-public.yml).
 
 ### Required Setup
 
@@ -365,7 +335,7 @@ permissions:
 
 ```yaml
 # Verify config path is correct
-INPUT_CONFIG_PATH: './config.yml'  # Must exist in repository root
+config-path: './config.yml'  # Must exist in repository root
 ```
 
 **No Changes Detected**
@@ -377,8 +347,8 @@ INPUT_CONFIG_PATH: './config.yml'  # Must exist in repository root
 
 **Git Operations Failed**
 
-- Verify `GITHUB_TOKEN` secret has correct permissions
-- Ensure git user is configured in workflow
+- Verify `GITHUB_TOKEN` has correct permissions
+- Ensure workflow has `contents: write` and `pull-requests: write` permissions
 
 ### Cloudflare / Antibot Sites with Rotating Domains
 

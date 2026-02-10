@@ -17366,8 +17366,9 @@ class GitManager {
                 }
                 return {};
             }
-            // Add and commit changes directly to master
+            // Add and commit changes directly to master (exclude logs/)
             (0,external_child_process_namespaceObject.execSync)('git add -A', { encoding: 'utf8' });
+            (0,external_child_process_namespaceObject.execSync)('git reset -- logs/', { encoding: 'utf8' });
             // Use stdin to avoid command injection from commit message
             (0,external_child_process_namespaceObject.execSync)('git commit -F -', { input: message, encoding: 'utf8' });
             // Get commit SHA
@@ -17412,8 +17413,9 @@ class GitManager {
                 this.logger.logGlobal(LogLevel.INFO, `Creating branch: ${branchName}`);
             }
             (0,external_child_process_namespaceObject.execSync)(`git checkout -b "${branchName}"`, { encoding: 'utf8' });
-            // Add and commit changes
+            // Add and commit changes (exclude logs/)
             (0,external_child_process_namespaceObject.execSync)('git add -A', { encoding: 'utf8' });
+            (0,external_child_process_namespaceObject.execSync)('git reset -- logs/', { encoding: 'utf8' });
             // Use stdin to avoid command injection from commit message
             (0,external_child_process_namespaceObject.execSync)('git commit -F -', { input: message, encoding: 'utf8' });
             // Push branch
