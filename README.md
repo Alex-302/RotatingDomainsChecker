@@ -349,6 +349,7 @@ config-path: './config.yml'  # Must exist in repository root
 
 - Verify `GITHUB_TOKEN` has correct permissions
 - Ensure workflow has `contents: write` and `pull-requests: write` permissions
+- Enable "Allow GitHub Actions to create and approve pull requests" in repository `Settings` → `Actions` → `General`
 
 ### Cloudflare / Antibot Sites with Rotating Domains
 
