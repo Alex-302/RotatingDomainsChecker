@@ -28,7 +28,6 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 - [Troubleshooting](#troubleshooting)
 - [Cloudflare / Antibot Sites with Rotating Domains](#cloudflare--antibot-sites-with-rotating-domains)
 - [Requirements](#requirements)
-- [Creating Personal Access Token (PAT)](#creating-personal-access-token-pat)
 - [License](#license)
 
 ## Purpose
@@ -97,7 +96,6 @@ jobs:
     name: Rotating Domains Checker
     runs-on: ubuntu-latest
 
-    # Permissions for git operations
     permissions:
       contents: write          # Required for commits
       pull-requests: write     # Required for PR creation
@@ -105,42 +103,19 @@ jobs:
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 1       # Only last commit for speed
+          fetch-depth: 1
 
-      - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v4
+      - name:  Run Rotating Domains Checker
+        uses: Alex-302/RotatingDomainsChecker@v1.0.2
         with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: 🚀 Run Rotating Domains Checker
-        id: check-domains
-        run: |
-          # Configure git user for commits
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          
-          # Clone Rotating Domains Checker repository
-          # For public repository: use simple clone without token
-          git clone https://github.com/%YOUR_USERNAME%/RotatingDomainsChecker.git /tmp/checker
-          # For private repository: use PAT token
-          # git clone https://${{ secrets.PAT_TOKEN }}@github.com/%YOUR_USERNAME%/RotatingDomainsChecker.git /tmp/checker
-          
-          cd /tmp/checker
-          npm install
-          npm run build
-          
-          # Return to repository and run Rotating Domains Checker
-          cd $GITHUB_WORKSPACE
-          node /tmp/checker/dist/index.js
+          mode: ${{ github.event.inputs.mode || '' }}
+          config-path: ${{ github.event.inputs.config-path || './config.yml' }}
+          filters-path: ${{ github.event.inputs.filters-path || './' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-          INPUT_CONFIG_PATH: ${{ github.event.inputs.config-path || './config.yml' }}
-          INPUT_MODE: ${{ github.event.inputs.mode || '' }}
-          INPUT_FILTERS_PATH: ${{ github.event.inputs.filters-path || './' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 </details>
@@ -148,8 +123,6 @@ jobs:
 ### Required Setup
 
 Create `config.yml` and `watchers.yml` files in your repository root. See detailed field descriptions in the [Configuration](#configuration) section.
-
-> **Note:** If the Rotating Domains Checker repository is **private**, you'll need to configure a Personal Access Token. See [Creating Personal Access Token](#creating-personal-access-token-pat) section.
 
 ## Usage
 
@@ -269,11 +242,10 @@ Integrate Rotating Domains Checker into your ad blocking filters repository.
 
 #### Step 1: Add Workflow
 
-Copy one of the example workflows from `.github/workflows/` to your filters repository:
+Copy the example workflow to your filters repository:
 
-- **[example-external-public.yml](.github/workflows/example-external-public.yml)** - For public RotatingDomainsChecker repository
-- **[example-external-private.yml](.github/workflows/example-external-private.yml)** - For private RotatingDomainsChecker repository  
-- **[example-local-testing.yml](.github/workflows/example-local-testing.yml)** - For local testing
+- **[example-external-public.yml](.github/workflows/example-external-public.yml)** - For external filters repository (uses `uses:` action syntax)
+- **[example-local-testing.yml](.github/workflows/example-local-testing.yml)** - For local testing (runs in this repository)
 
 Rename it to `.github/workflows/rotating-domains-checker.yml` and adjust as needed.
 
@@ -317,7 +289,7 @@ cd RotatingDomainsChecker
 
 ```bash
 # Review the code
-npm install
+npm ci
 npm run build
 
 # Run tests
@@ -331,8 +303,9 @@ npm run test_dry
 Update the workflow to use your fork:
 
 ```yaml
-# Clone your fork instead
-git clone https://github.com/%YOUR_USERNAME%/RotatingDomainsChecker.git /tmp/checker
+- uses: %YOUR_USERNAME%/RotatingDomainsChecker@v1.0.2
+  with:
+    mode: prod_live
 ```
 
 #### Step 4: Keep Updated
@@ -381,8 +354,7 @@ INPUT_CONFIG_PATH: './config.yml'  # Must exist in repository root
 
 **Git Operations Failed**
 
-- Verify `PAT_TOKEN` secret is configured
-- Check token has `repo` permissions
+- Verify `GITHUB_TOKEN` secret has correct permissions
 - Ensure git user is configured in workflow
 
 ### Cloudflare / Antibot Sites with Rotating Domains
@@ -640,7 +612,7 @@ The project uses Jest with ESM support. Tests use `jest.unstable_mockModule` for
 ## Troubleshooting
 
 1. **Git identity errors**: Configure `git` user before running
-2. **Permission denied**: Check `PAT_TOKEN` permissions
+2. **Permission denied**: Check `GITHUB_TOKEN` permissions
 3. **Timeout errors**: Increase `http.timeout` in config.yml
 4. **No replacements found**: Check `probe_text` and patterns
 
@@ -649,64 +621,6 @@ The project uses Jest with ESM support. Tests use `jest.unstable_mockModule` for
 - Node.js 20+
 - npm
 - Git
-- Personal Access Token (for GitHub Actions)
-
-## Creating Personal Access Token (PAT)
-
-**When needed:** Only required if:
-
-- The Rotating Domains Checker repository is **private**
-- You need to create Pull Requests (requires `repo` scope)
-
-**Not needed if:**
-
-- The Rotating Domains Checker repository is **public** (default `GITHUB_TOKEN` is sufficient)
-- You only use direct commits mode
-
-### How to Create PAT
-
-1. **Open GitHub Settings**:
-   - Click your avatar (top right) → **Settings**
-   - Scroll down to **Developer settings** (left panel)
-
-2. **Create token**:
-   - Click **Personal access tokens** → **Tokens (classic)**
-   - Click **Generate new token** → **Generate new token (classic)**
-
-3. **Configure token**:
-   - **Note**: `RotatingDomainsChecker` (or any descriptive name)
-   - **Expiration**: Choose expiration period (recommended 90 days or No expiration)
-   - **Scopes**: ✅ Check `repo` (Full control of private repositories)
-   - Click **Generate token**
-
-4. **Copy token**:
-   - ⚠️ **IMPORTANT**: Copy the token immediately - it won't be shown again!
-   - Save it in a secure place (password manager recommended)
-
-### How to Add PAT to Repository
-
-1. **Open repository settings**:
-   - Go to your target repository (e.g., `YourUsername/AdguardFilters`)
-   - Click **Settings** tab
-
-2. **Add secret**:
-   - Left panel → **Secrets and variables** → **Actions**
-   - Click **New repository secret**
-
-3. **Configure secret**:
-   - **Name**: `PAT_TOKEN` (exactly as shown)
-   - **Value**: Paste the copied token
-   - Click **Add secret**
-
-4. **Update workflow**:
-
-   - Uncomment the line with PAT token in the workflow:
-
-   ```yaml
-   # git clone https://${{ secrets.PAT_TOKEN }}@github.com/%YOUR_USERNAME%/RotatingDomainsChecker.git /tmp/checker
-   ```
-
-✅ **Done!** The workflow will now use `PAT_TOKEN` for accessing private repository.
 
 ## License
 

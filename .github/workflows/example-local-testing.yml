@@ -4,6 +4,9 @@
 
 name: Rotating Domains Checker (Local Testing)
 
+env:
+  NODE_VERSION: 24
+
 on:
   # Manual run only (for testing)
   workflow_dispatch:
@@ -52,11 +55,11 @@ jobs:
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: 📦 Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: 🔨 Build
         run: npm run build
