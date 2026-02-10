@@ -1,10 +1,14 @@
 # Rotating Domains Checker
 
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Rotating%20Domains%20Checker-blue?logo=github)](https://github.com/marketplace/actions/rotating-domains-checker)
+[![GitHub release](https://img.shields.io/github/v/release/Alex-302/RotatingDomainsChecker)](https://github.com/Alex-302/RotatingDomainsChecker/releases)
+
 Automates redirect checking for ad blocking filter lists. Tracks frequently changing domains and automatically updates filter rules. Available as both a standalone tool and a GitHub Action.
 
 ## Table of Contents
 
 - [Purpose](#purpose)
+- [Installation](#installation)
 - [Quick Setup](#quick-setup)
 - [Required Setup](#required-setup)
 - [Usage](#usage)
@@ -29,6 +33,25 @@ Automates redirect checking for ad blocking filter lists. Tracks frequently chan
 - [Cloudflare / Antibot Sites with Rotating Domains](#cloudflare--antibot-sites-with-rotating-domains)
 - [Requirements](#requirements)
 - [License](#license)
+
+## Installation
+
+### Quick Install (Recommended)
+
+```yaml
+- uses: Alex-302/RotatingDomainsChecker@v1
+  with:
+    mode: prod_live
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Alternative Integration
+
+For advanced use cases, see the [Integration Guide](#integration-guide) for:
+- Using your own fork
+- Local testing workflows
+- Custom configuration options
 
 ## Purpose
 
