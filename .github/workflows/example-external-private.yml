@@ -47,13 +47,13 @@ jobs:
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.PAT_TOKEN }}
           fetch-depth: 1
 
       - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
@@ -81,7 +81,7 @@ jobs:
 
       - name: 📋 Upload log file
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rotating-domains-checker-log
           path: logs/rotating-domains-checker.log
