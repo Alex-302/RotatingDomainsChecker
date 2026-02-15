@@ -79,14 +79,40 @@ function hasSchemeChangeInList(
 
 function handleSchemeChange(
   originalDomains: string[],
-  replacedDomains: string[]
+  replacedDomains: string[],
+  priorityMap: Map<string, { initial: string | null; lastKnown: string; oldHost: string }>
 ): string[] {
   // Find any numeric pattern domain to extract pattern
   const numericDomain = originalDomains.find(d => matchesNumericPattern(d));
   if (!numericDomain) return replacedDomains;
   
   const oldPattern = extractBasePattern(numericDomain);
-  return replacedDomains.filter(d => !matchesPattern(d, oldPattern));
+  const filtered = replacedDomains.filter(d => !matchesPattern(d, oldPattern));
+  
+  // CRITICAL: Prevent empty domain list - restore fallback if all domains were removed
+  if (filtered.length === 0) {
+    // Priority 1: last_known_mirror matching the same pattern
+    if (priorityMap.size > 0) {
+      for (const { lastKnown } of priorityMap.values()) {
+        if (matchesNumericPattern(lastKnown) && extractBasePattern(lastKnown) === oldPattern) {
+          return [lastKnown];
+        }
+      }
+    }
+    
+    // Priority 2: first valid original domain as fallback
+    const validOriginal = originalDomains.find(d => d && d.trim() !== '');
+    if (validOriginal) {
+      return [validOriginal];
+    }
+    
+    // Priority 3: first replaced domain (safety net if logic failed)
+    if (replacedDomains.length > 0) {
+      return [replacedDomains[0]];
+    }
+  }
+  
+  return filtered;
 }
 
 function deduplicateDomains(domains: string[]): string[] {
@@ -117,7 +143,7 @@ function processDomainList(
   
   // 3. Handle scheme change (remove ALL domains of old pattern)
   if (schemeChangeDetected) {
-    processed = handleSchemeChange(domains, replaced);
+    processed = handleSchemeChange(domains, replaced, priorityMap);
   }
   
   // 4. Remove predicted mirrors and deduplicate
@@ -614,18 +640,8 @@ function processLine(
         // Process domain list with unified logic (includes additional domains appending)
         const { processed, changed } = processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
         
-        // Update if domains changed OR if predicted mirrors were removed OR if list was empty
-        if (changed || processed.length !== domains.length || processed.length === 0) {
-          // Prevent empty domain lists - add last_known_mirror if available and matches pattern
-          if (processed.length === 0 && priorityMap.size > 0 && domains.length > 0) {
-            const currentPattern = extractBasePattern(domains[0]);
-            for (const { lastKnown } of priorityMap.values()) {
-              if (matchesNumericPattern(lastKnown) && extractBasePattern(lastKnown) === currentPattern) {
-                processed.push(lastKnown);
-                break;
-              }
-            }
-          }
+        // Update if domains changed OR if predicted mirrors were removed
+        if (changed || processed.length !== domains.length) {
           newPairs.push(`${paramName}=${processed.join("|")}`);
         } else {
           newPairs.push(pair);

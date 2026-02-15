@@ -326,7 +326,8 @@ describe('2.6 Scheme change detection', () => {
   test('handleSchemeChange removes all domains of old pattern', () => {
     const original = ['turkifsaclub001.sbs', 'turkifsaclub002.sbs', 'newsite.com'];
     const replaced = ['newsite.com', 'turkifsaclub002.sbs', 'newsite.com'];
-    const result = handleSchemeChange(original, replaced);
+    const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    const result = handleSchemeChange(original, replaced, emptyPriorityMap);
     expect(result).not.toContain('turkifsaclub002.sbs');
     expect(result).toContain('newsite.com');
   });
@@ -575,5 +576,80 @@ describe('Edge cases and regressions', () => {
     // Should contain last_known_mirror as fallback
     expect(processed).toContain('turkifsaclub020.sbs');
     expect(processed.length).toBeGreaterThan(0);
+  });
+
+  test('CRITICAL: prevent empty domain list in cosmetic rules (scheme change)', () => {
+    // Scenario: kodtimetv15.com redirects to kodtimetv16-com.l.ink (link shortener)
+    // This causes scheme change detection and removal of all old pattern domains
+    const hostMap = new Map([
+      ['kodtimetv15.com', 'kodtimetv16-com.l.ink'], // Redirect to link shortener
+    ]);
+    const initialToLastKnownMap = new Map<string, string>();
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    
+    // Original cosmetic rule: kodtimetv15.com##a[href^="https://cutt.ly/"]
+    const line = 'kodtimetv15.com##a[href^="https://cutt.ly/"]';
+    const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
+    
+    // MUST NOT produce empty domain list (##a[href...] would be global rule!)
+    expect(result[0]).not.toBe('##a[href^="https://cutt.ly/"]');
+    // Should keep original domain as fallback
+    expect(result[0]).toBe('kodtimetv15.com##a[href^="https://cutt.ly/"]');
+  });
+
+  test('CRITICAL: prevent empty domain list in cosmetic rules (multiple domains)', () => {
+    // Multiple domains, all removed by scheme change
+    const hostMap = new Map([
+      ['kodtimetv15.com', 'kodtimetv16-com.l.ink'],
+      ['kodtimetv14.com', 'kodtimetv15-com.l.ink'],
+    ]);
+    const initialToLastKnownMap = new Map<string, string>();
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    
+    const line = 'kodtimetv14.com,kodtimetv15.com##a[href^="https://cutt.ly/"]';
+    const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
+    
+    // MUST NOT produce empty domain list
+    expect(result[0]).not.toMatch(/^##/);
+    // Should keep at least one original domain
+    expect(result[0]).toContain('kodtimetv');
+    expect(result[0]).toContain('##');
+  });
+
+  test('CRITICAL: prevent empty domain list in parameters ($domain=)', () => {
+    // Parameters with | separator, all removed by scheme change
+    const hostMap = new Map([
+      ['kodtimetv14.com', 'kodtimetv16-com.l.ink'],
+      ['kodtimetv15.com', 'kodtimetv17-com.l.ink'],
+    ]);
+    const initialToLastKnownMap = new Map<string, string>();
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    
+    const line = '$domain=kodtimetv14.com|kodtimetv15.com';
+    const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
+    
+    // MUST NOT produce empty parameter value
+    expect(result[0]).not.toBe('$domain=');
+    // Should keep at least one original domain as fallback
+    expect(result[0]).toContain('kodtimetv');
+    expect(result[0]).toMatch(/^\$domain=/);
+  });
+
+  test('CRITICAL: prevent empty domain list in parameters with priorityMap fallback', () => {
+    // Parameters with priorityMap providing last_known_mirror (same TLD pattern)
+    const hostMap = new Map([
+      ['kodtimetv14.com', 'kodtimetv16-com.l.ink'],
+      ['kodtimetv15.com', 'kodtimetv17-com.l.ink'],
+    ]);
+    const initialToLastKnownMap = new Map<string, string>();
+    const priorityMap = new Map([
+      ['kodtimetv020.com', { initial: null, lastKnown: 'kodtimetv020.com', oldHost: '' }],
+    ]);
+    
+    const line = '$domain=kodtimetv14.com|kodtimetv15.com';
+    const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
+    
+    // Should restore last_known_mirror from priorityMap (same TLD pattern)
+    expect(result[0]).toBe('$domain=kodtimetv020.com');
   });
 });
