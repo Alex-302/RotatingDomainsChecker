@@ -42,6 +42,7 @@ skip_text:
   - "router.parklogic.com"
   - "Redirecting..."
   - "spinny-cogs"             # betist{N}tv.live
+  - "internal error, please contact" # Cloudflare, HTTP 500
 
 logging:
   saveToFile: true       # save logs to file
