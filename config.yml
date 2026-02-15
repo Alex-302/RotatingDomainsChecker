@@ -39,6 +39,10 @@ heuristic:
 # Global skip_text — skip domains whose response body contains these phrases (parked/expired domains)
 skip_text:
   - "This domain is parked"
+  - "router.parklogic.com"
+  - "Redirecting..."
+  - "spinny-cogs"                    # betist{N}tv.live
+  - "internal error, please contact" # Cloudflare, HTTP 500
 
 logging:
   saveToFile: true       # save logs to file
