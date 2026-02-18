@@ -296,7 +296,7 @@ export class FilterReplacer {
       }
     }
 
-    // Build additionalDomainsMap: primary domain → additional domains from force_search_ahead
+    // Build additionalDomainsMap: primary domain → additional domains from force_search_ahead + patternChangedDomain
     // Key is normalized primary domain, value is array of additional domains to add to filter lines
     const additionalDomainsMap = new Map<string, string[]>();
     const seenPrimary = new Map<string, string>(); // siteName → primary newHost
@@ -304,6 +304,17 @@ export class FilterReplacer {
       if (!seenPrimary.has(r.siteName)) {
         // First replacement for this site is the primary domain
         seenPrimary.set(r.siteName, r.newHost);
+        
+        // Add patternChangedDomain if present (pattern_changed: true case)
+        if (r.patternChangedDomain) {
+          const key = normalizeDomain(r.newHost);
+          if (!additionalDomainsMap.has(key)) {
+            additionalDomainsMap.set(key, []);
+          }
+          if (!additionalDomainsMap.get(key)!.includes(r.patternChangedDomain)) {
+            additionalDomainsMap.get(key)!.push(r.patternChangedDomain);
+          }
+        }
       } else {
         // Subsequent replacements are additional domains from force_search_ahead
         const primary = seenPrimary.get(r.siteName)!;

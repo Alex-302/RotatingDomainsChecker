@@ -130,6 +130,27 @@ export class HttpResolver {
             };
           }
 
+          // Check for JS / meta-refresh redirects in body
+          const jsRedirectUrl = this.extractJsRedirect(finalBody, currentUrl);
+          if (jsRedirectUrl) {
+            // Update the already-pushed chain entry with the JS redirect location
+            chain[chain.length - 1].location = jsRedirectUrl;
+            currentUrl = jsRedirectUrl;
+            depth++;
+
+            if (depth > this.config.processing.redirectDepth) {
+              return {
+                success: false,
+                finalUrl: currentUrl,
+                finalHost: new URL(currentUrl).hostname,
+                statusCode: response.status,
+                redirectChain: chain,
+                error: `Exceeded max redirect depth (${this.config.processing.redirectDepth})`,
+              };
+            }
+            continue;
+          }
+
           return {
             success: true,
             finalUrl: currentUrl,
@@ -339,6 +360,50 @@ export class HttpResolver {
     }
 
     throw lastError || new Error("Fetch failed after retries");
+  }
+
+  /**
+   * Extract redirect URL from JS redirects and meta refresh tags in HTML body.
+   * Handles: location.replace(), window.location.href=, location.href=, meta http-equiv="refresh"
+   * @returns Absolute redirect URL, or undefined if none found
+   */
+  extractJsRedirect(body: string | undefined, baseUrl: string): string | undefined {
+    if (!body) return undefined;
+
+    // meta refresh: <meta http-equiv="refresh" content="0;URL=https://...">
+    const metaMatch = body.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["'][^"']*(?:url=|URL=)([^"'\s>]+)/i)
+      ?? body.match(/<meta[^>]+content=["'][^"']*(?:url=|URL=)([^"'\s>]+)[^"']*["'][^>]+http-equiv=["']?refresh["']?/i);
+    if (metaMatch) {
+      try {
+        return new URL(metaMatch[1].replace(/['"]/g, ''), baseUrl).href;
+      } catch {}
+    }
+
+    // JS: location.replace("url") or location.replace('url')
+    const replaceMatch = body.match(/location\.replace\(\s*["']([^"']+)["']\s*\)/);
+    if (replaceMatch) {
+      try {
+        return new URL(replaceMatch[1], baseUrl).href;
+      } catch {}
+    }
+
+    // JS: window.location.href = "url" or window.location = "url"
+    const windowLocMatch = body.match(/window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/);
+    if (windowLocMatch) {
+      try {
+        return new URL(windowLocMatch[1], baseUrl).href;
+      } catch {}
+    }
+
+    // JS: location.href = "url" (without window.)
+    const locHrefMatch = body.match(/(?<![.\w])location\.href\s*=\s*["']([^"']+)["']/);
+    if (locHrefMatch) {
+      try {
+        return new URL(locHrefMatch[1], baseUrl).href;
+      } catch {}
+    }
+
+    return undefined;
   }
 
   /**

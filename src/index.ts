@@ -191,12 +191,18 @@ async function main() {
         summary.unchanged++;
       }
 
+      // Get last pattern domain from history if pattern_changed is true
+      const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
+        ? site.heuristic_history[site.heuristic_history.length - 1]
+        : undefined;
+
       summary.replacements.push({
         oldHost: result.oldHost,
         newHost: result.newHost,
         siteName: result.siteName,
         startedHost: result.startedHost || "",
         checkDurationMs: result.checkDurationMs,
+        patternChangedDomain,
       });
 
       // Add replacements for additional working domains (force_search_ahead)
@@ -208,6 +214,7 @@ async function main() {
             siteName: result.siteName,
             startedHost: result.startedHost || "",
             checkDurationMs: result.checkDurationMs,
+            patternChangedDomain,
           });
         }
       }
@@ -230,12 +237,18 @@ async function main() {
         summary.unchanged++;
       }
 
+      // Get last pattern domain from history if pattern_changed is true
+      const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
+        ? site.heuristic_history[site.heuristic_history.length - 1]
+        : undefined;
+
       summary.replacements.push({
         oldHost: result.oldHost,
         newHost: result.newHost,
         siteName: result.siteName,
         startedHost: result.startedHost || "",
         checkDurationMs: result.checkDurationMs,
+        patternChangedDomain,
       });
 
       // Add replacements for additional working domains (force_search_ahead)
@@ -247,6 +260,7 @@ async function main() {
             siteName: result.siteName,
             startedHost: result.startedHost || "",
             checkDurationMs: result.checkDurationMs,
+            patternChangedDomain,
           });
         }
       }
