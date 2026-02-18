@@ -90,6 +90,7 @@ For advanced use cases (fork, customization), see the [Integration Guide](#integ
 ## Purpose
 
 - Track HTTP redirects to new website mirrors with loop protection
+- Follow JavaScript and `<meta>` refresh redirects (`location.replace()`, `window.location.href`, `location.href`, `<meta http-equiv="refresh">`)
 - Heuristics for sequentially numbered domains:
   - `domain[N].tld` - number after domain name (e.g., `example1916.com`)
   - `domain[N][text].tld` - number with text suffix (e.g., `example126aa.de`)
@@ -489,10 +490,12 @@ sites:
 ## Replacement Logic
 
 1. **Redirect Resolution**: Follow HTTP 3xx redirects
-2. **Heuristic Search**: Try numbered domain patterns
-3. **Content Verification**: Check `probe_text` and `path`
-4. **Filter Updates**: Replace old domains with new ones
-5. **Git Operations**: Create commits or PRs
+2. **JS/Meta Redirect Resolution**: Parse HTML body for JavaScript (`location.replace()`, `window.location.href`, `location.href`) and `<meta http-equiv="refresh">` redirects and follow them as part of the same redirect chain
+3. **Parked Domain Detection**: Check response body against `skip_text` phrases before following client-side redirects — if matched, the domain is considered parked/expired and heuristic search is triggered
+4. **Heuristic Search**: Try numbered domain patterns
+5. **Content Verification**: Check `probe_text` and `path`
+6. **Filter Updates**: Replace old domains with new ones
+7. **Git Operations**: Create commits or PRs
 
 ## Logging
 

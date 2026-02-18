@@ -200,7 +200,61 @@ describe('3. Heuristic candidate generation', () => {
     expect(results[0].newHost).toBe('betist128tv.live');
   });
 
-  test('3.4 no numeric pattern → empty candidates, no heuristic', async () => {
+  test('3.4 www. prefix with domain[N].tld: www.inattvizle375.top → generates www.inattvizle376.top...', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
+    });
+    const site = makeSite({ last_known_mirror: 'www.inattvizle375.top' });
+    const watchers = makeWatchers({ 'inattvizle': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      // parseInt('375') = 375, startNum = 376, candidates: www.inattvizle376.top, www.inattvizle377.top...
+      if (url.includes('www.inattvizle377')) return makeSuccessResult('www.inattvizle377.top');
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results.length).toBe(1);
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('www.inattvizle377.top');
+  });
+
+  test('3.5 www. prefix with [N]domain.tld: www.91taraftarium.top → generates www.92taraftarium.top...', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
+    });
+    const site = makeSite({ last_known_mirror: 'www.91taraftarium.top' });
+    const watchers = makeWatchers({ 'taraftarium': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      // parseInt('91') = 91, startNum = 92, candidates: www.92taraftarium.top, www.93taraftarium.top...
+      if (url.includes('www.93taraftarium')) return makeSuccessResult('www.93taraftarium.top');
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results.length).toBe(1);
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('www.93taraftarium.top');
+  });
+
+  test('3.6 no numeric pattern → empty candidates, no heuristic', async () => {
     const config = makeConfig({
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
@@ -219,7 +273,7 @@ describe('3. Heuristic candidate generation', () => {
     expect(results[0].shouldUpdate).toBe(false);
   });
 
-  test('3.5 heuristic.enabled: false → no heuristic even on failure', async () => {
+  test('3.7 heuristic.enabled: false → no heuristic even on failure', async () => {
     const config = makeConfig({
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: false, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
@@ -238,7 +292,7 @@ describe('3. Heuristic candidate generation', () => {
     expect(results[0].shouldUpdate).toBe(false);
   });
 
-  test('3.6 disable_heuristic on site → no heuristic for that site', async () => {
+  test('3.8 disable_heuristic on site → no heuristic for that site', async () => {
     const config = makeConfig({
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },

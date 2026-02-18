@@ -77,6 +77,12 @@ export interface WatcherSite {
   force_search_ahead?: boolean;
   /** Informational field for geo-blocking (e.g., TR for Turkey) */
   geoblock?: string;
+  /** Historical fallback: last 5 working domains (chronological order, oldest first) */
+  heuristic_history?: string[];
+  /** Pattern change detection: true when current domain is non-pattern (deleted when pattern found) */
+  pattern_changed?: boolean;
+  /** Current non-pattern domain when pattern_changed is true (deleted when pattern found) */
+  non_pattern_mirror?: string;
   // Auto-updated fields
   last_seen: string;        // Format: YYYY-MM-DD HH:MM
   last_failed: string;      // Format: YYYY-MM-DD HH:MM
@@ -130,6 +136,8 @@ export interface ReplacementPair {
   startedHost: string;
   /** Total check duration in milliseconds */
   checkDurationMs?: number;
+  /** Last pattern domain from history when pattern_changed is true */
+  patternChangedDomain?: string;
 }
 
 export interface Summary {
@@ -153,4 +161,20 @@ export interface HeuristicTask {
   oldMirror: string;
   probeText?: string[];
   site: WatcherSite;
+}
+
+/**
+ * Runtime-only domain token (not persisted to watchers.yml)
+ * Used for pattern detection and comparison
+ */
+export interface DomainToken {
+  original: string;                 // Original domain string
+  hostname: string;                 // Normalized hostname (no www., no protocol)
+  isPattern: boolean;               // Whether domain matches a pattern
+  patternType?: 'numeric';          // Type of pattern detected (currently only numeric)
+  parts?: {
+    prefix: string;                 // Domain prefix (e.g., "kodtimetv")
+    variable: string;               // Variable part (e.g., "16")
+    suffix: string;                 // Domain suffix (e.g., ".com")
+  };
 }
