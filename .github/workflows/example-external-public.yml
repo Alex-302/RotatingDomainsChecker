@@ -1,8 +1,8 @@
 # Example workflow for external repository (filters repository)
-# Use this when: RotatingDomainsChecker repository is PUBLIC
+# Copy this file to your filters repository: .github/workflows/rotating-domains-checker.yml
 # No secrets needed - uses default GITHUB_TOKEN
 
-name: Rotating Domains Checker (External - Public)
+name: Rotating Domains Checker
 
 on:
   # Automatic run daily at 02:00 UTC
@@ -43,44 +43,27 @@ jobs:
     permissions:
       contents: write          # Required for commits
       pull-requests: write     # Required for PR creation
-      actions: read            # Required for reading workflow info
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 1
 
-      - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: 🚀 Run Rotating Domains Checker
+      - name: Configure git user
         run: |
-          # Configure git user for commits
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          
-          # Clone Rotating Domains Checker repository (public, no token needed)
-          git clone https://github.com/Alex-302/RotatingDomainsChecker.git /tmp/checker
-          cd /tmp/checker
-          # SECURITY: Pinned to a specific commit to prevent malicious code injection
-          # Update this commit when you want to upgrade to newer version
-          git checkout 06000c9
-          npm install
-          npm run build
-          
-          # Return to filters repository and run checker
-          cd $GITHUB_WORKSPACE
-          node /tmp/checker/dist/index.js
+
+      - name: Run Rotating Domains Checker
+        uses: Alex-302/RotatingDomainsChecker@v1.1.2
+        with:
+          mode: ${{ github.event.inputs.mode || '' }}
+          config-path: ${{ github.event.inputs.config-path || './config.yml' }}
+          filters-path: ${{ github.event.inputs.filters-path || './' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_CONFIG_PATH: ${{ github.event.inputs.config-path || './config.yml' }}
-          INPUT_MODE: ${{ github.event.inputs.mode || '' }}
-          INPUT_FILTERS_PATH: ${{ github.event.inputs.filters-path || './' }}
 
       - name: 📋 Upload log file
         if: always()

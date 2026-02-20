@@ -1,6 +1,8 @@
 # Rotating Domains Checker - monitored websites
 
 sites:
+  Frequently changed domains — betist213tv.live:
+    last_known_mirror: betist213tv.live
   Frequently changed domains — Saha TV:
     initial_domain: sahatv2.top
     last_known_mirror: sahatv2.top
@@ -26,6 +28,7 @@ sites:
   liderfilm.cc:
     last_known_mirror: liderfilm.cc
   patronspor04548a2wer45awes.cfd:
+    initial_domain: https://t.co/sRxEaOU2pj
     last_known_mirror: patronspor04548a2wer45awes.cfd
   piabettv14.live:
     last_known_mirror: piabettv14.live
@@ -37,6 +40,7 @@ sites:
     last_known_mirror: spotube.krtirtho.dev
   sultansportv562.com:
     last_known_mirror: sultansportv562.com
+    accept_antibot: true
   taraftarium24.xyz:
     last_known_mirror: taraftarium24.xyz
   turkifsaclub-12.sbs:
