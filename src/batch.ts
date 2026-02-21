@@ -90,23 +90,19 @@ export class BatchProcessor {
       delete site.pattern_changed;
       delete site.non_pattern_mirror;
 
-      // Add to history ONLY if we had a pattern change before
-      // This means we're returning to pattern after being on non-pattern
-      if (site.heuristic_history && site.heuristic_history.length > 0) {
-        const filtered = site.heuristic_history.filter((d: string) => d !== newDomain);
-        filtered.push(newDomain);
-        
-        if (filtered.length > 5) {
-          filtered.splice(0, filtered.length - 5);
-        }
-        
-        site.heuristic_history = filtered;
-      }
+      // Store only the latest pattern domain (for fallback when switching to non-pattern)
+      // We don't need multiple pattern domains - only the last one to return to
+      site.heuristic_history = [newDomain];
     } else {
       // Non-pattern domain - set flags
+      // IMPORTANT: Save current last_known_mirror (pattern domain) to history BEFORE overwriting
+      if (site.last_known_mirror && this.matchesNumericPattern(site.last_known_mirror)) {
+        // Store only the last pattern domain before switching to non-pattern
+        site.heuristic_history = [site.last_known_mirror];
+      }
+      
       site.pattern_changed = true;
       site.non_pattern_mirror = newDomain;
-      // Do NOT add to history
     }
   }
 

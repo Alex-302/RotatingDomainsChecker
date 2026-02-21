@@ -46,8 +46,8 @@ sahatv2.top,sahatv3.top,sahatv4.top,sahatv5.top,sahatv6.top,sahatv7.top,sahatv8.
 ! Frequently changed domains — yavasgir19.com
 ||yavasgir*.com/*.gif
 [$domain=/yavasgir\d+\.com/]##a[href^="https://cutt.ly/"]
-||example.com^$script,domain=yavasgir19.com|yavasgir20.com|yavasgir21.com|yavasgir22.com|yavasgir23.com|yavasgir24.com|yavasgir25.com|yavasgir26.com|yavasgir27.com|yavasgir28.com|yavasgir29.com|yavasgir30.com|yavasgir31.com|yavasgir32.com|yavasgir33.com|yavasgir35.com|yavasgir36.com|yavasgir37.com|yavasgir38.com
-yavasgir19.com,yavasgir20.com,yavasgir21.com,yavasgir22.com,yavasgir23.com,yavasgir24.com,yavasgir25.com,yavasgir26.com,yavasgir27.com,yavasgir28.com,yavasgir29.com,yavasgir30.com,yavasgir31.com,yavasgir32.com,yavasgir33.com,yavasgir35.com,yavasgir36.com,yavasgir37.com,yavasgir38.com##a[href^="https://cutt.ly/"]
+||example.com^$script,domain=yavasgir55.com
+yavasgir55.com##a[href^="https://cutt.ly/"]
 
 ! Frequently changed domains — kralsportshd*.com
 ||kralsportshd*.com/assets/img/*.gif
