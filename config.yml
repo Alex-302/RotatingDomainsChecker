@@ -41,6 +41,7 @@ skip_text:
   - "This domain is parked"
   - "router.parklogic.com"
   - "Redirecting..."
+  - patronmarketing                  # skip redirets back to patronmarketing landing pages. TODO: replace by less wide
   - "spinny-cogs"                    # betist{N}tv.live
   - "internal error, please contact" # Cloudflare, HTTP 500
 

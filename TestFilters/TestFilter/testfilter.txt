@@ -41,13 +41,13 @@ turkifsaclub001.sbs,turkifsaclub002.sbs,turkifsaclub003.sbs,turkifsaclub004.sbs,
 ! Frequently changed domains — sahatv2.top
 ||sahatv*.top/assets/img/*.gif
 [$domain=/sahatv\d+\.top/]##header > a + ul
-sahatv2.top,sahatv3.top,sahatv4.top,sahatv5.top,sahatv6.top,sahatv7.top,sahatv8.top,sahatv9.top,sahatv10.top,sahatv11.top,sahatv12.top,sahatv13.top,sahatv14.top,sahatv15.top,sahatv16.top,sahatv17.top,sahatv18.top,sahatv19.top,sahatv20.top,sahatv21.top,sahatv22.top,sahatv23.top,sahatv24.top,sahatv25.top,sahatv26.top,sahatv27.top,sahatv28.top,sahatv29.top,sahatv30.top,sahatv31.top,sahatv32.top,sahatv33.top,sahatv34.top,sahatv35.top,sahatv36.top##header > a + ul
+sahatv5.top##header > a + ul
 
 ! Frequently changed domains — yavasgir19.com
 ||yavasgir*.com/*.gif
 [$domain=/yavasgir\d+\.com/]##a[href^="https://cutt.ly/"]
-||example.com^$script,domain=yavasgir19.com|yavasgir20.com|yavasgir21.com|yavasgir22.com|yavasgir23.com|yavasgir24.com|yavasgir25.com|yavasgir26.com|yavasgir27.com|yavasgir28.com|yavasgir29.com|yavasgir30.com|yavasgir31.com|yavasgir32.com|yavasgir33.com|yavasgir35.com|yavasgir36.com|yavasgir37.com|yavasgir38.com
-yavasgir19.com,yavasgir20.com,yavasgir21.com,yavasgir22.com,yavasgir23.com,yavasgir24.com,yavasgir25.com,yavasgir26.com,yavasgir27.com,yavasgir28.com,yavasgir29.com,yavasgir30.com,yavasgir31.com,yavasgir32.com,yavasgir33.com,yavasgir35.com,yavasgir36.com,yavasgir37.com,yavasgir38.com##a[href^="https://cutt.ly/"]
+||example.com^$script,domain=yavasgir55.com
+yavasgir55.com##a[href^="https://cutt.ly/"]
 
 ! Frequently changed domains — kralsportshd*.com
 ||kralsportshd*.com/assets/img/*.gif

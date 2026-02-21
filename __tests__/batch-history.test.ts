@@ -76,12 +76,12 @@ describe('Domain History Management', () => {
     resolver = new HttpResolver(config);
   });
 
-  test('updateDomainHistory maintains chronological order', () => {
+  test('updateDomainHistory stores only latest pattern domain', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
           last_known_mirror: 'kodtimetv15.com',
-          heuristic_history: ['kodtimetv13.com', 'kodtimetv14.com'],
+          heuristic_history: ['kodtimetv13.com'],
           last_seen: '2026-02-15 10:00',
           last_failed: '',
           failed_days: 0,
@@ -92,18 +92,19 @@ describe('Domain History Management', () => {
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
     
-    // Access private method via any cast for testing
-    (processor as any).updateDomainHistory(site, 'kodtimetv15.com');
+    // Update to new pattern domain
+    (processor as any).updateDomainHistory(site, 'kodtimetv16.com');
     
-    expect(site.heuristic_history).toEqual(['kodtimetv13.com', 'kodtimetv14.com', 'kodtimetv15.com']);
+    // Should replace old pattern with new one (only one domain stored)
+    expect(site.heuristic_history).toEqual(['kodtimetv16.com']);
   });
 
-  test('updateDomainHistory rotates old domains when exceeding limit', () => {
+  test('updateDomainHistory replaces pattern when updating to newer pattern', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
           last_known_mirror: 'kodtimetv17.com',
-          heuristic_history: ['kodtimetv13.com', 'kodtimetv14.com', 'kodtimetv15.com', 'kodtimetv16.com', 'kodtimetv17.com'],
+          heuristic_history: ['kodtimetv17.com'],
           last_seen: '2026-02-15 10:00',
           last_failed: '',
           failed_days: 0,
@@ -116,17 +117,17 @@ describe('Domain History Management', () => {
     
     (processor as any).updateDomainHistory(site, 'kodtimetv18.com');
     
-    // Should remove oldest (kodtimetv13.com) and add newest
-    expect(site.heuristic_history).toEqual(['kodtimetv14.com', 'kodtimetv15.com', 'kodtimetv16.com', 'kodtimetv17.com', 'kodtimetv18.com']);
-    expect(site.heuristic_history?.length).toBe(5);
+    // Should replace with newest pattern (only one domain)
+    expect(site.heuristic_history).toEqual(['kodtimetv18.com']);
+    expect(site.heuristic_history?.length).toBe(1);
   });
 
-  test('updateDomainHistory removes duplicates before adding', () => {
+  test('updateDomainHistory overwrites when re-adding same pattern', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
           last_known_mirror: 'kodtimetv15.com',
-          heuristic_history: ['kodtimetv13.com', 'kodtimetv14.com', 'kodtimetv15.com'],
+          heuristic_history: ['kodtimetv15.com'],
           last_seen: '2026-02-15 10:00',
           last_failed: '',
           failed_days: 0,
@@ -137,19 +138,19 @@ describe('Domain History Management', () => {
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
     
-    // Re-add existing domain
-    (processor as any).updateDomainHistory(site, 'kodtimetv14.com');
+    // Re-add same domain
+    (processor as any).updateDomainHistory(site, 'kodtimetv15.com');
     
-    // Should move kodtimetv14.com to end
-    expect(site.heuristic_history).toEqual(['kodtimetv13.com', 'kodtimetv15.com', 'kodtimetv14.com']);
+    // Should still be just one domain
+    expect(site.heuristic_history).toEqual(['kodtimetv15.com']);
   });
 
-  test('updateDomainHistory only stores pattern-matching domains', () => {
+  test('updateDomainHistory saves current pattern when switching to non-pattern', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
-          last_known_mirror: 'kodtimetv15.com',
-          heuristic_history: ['kodtimetv13.com', 'kodtimetv14.com'],
+          last_known_mirror: 'kodtimetv15.com',  // Current pattern domain
+          heuristic_history: ['kodtimetv15.com'],
           last_seen: '2026-02-15 10:00',
           last_failed: '',
           failed_days: 0,
@@ -160,19 +161,21 @@ describe('Domain History Management', () => {
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
     
-    // Try to add non-pattern domain (link shortener)
+    // Switch to non-pattern domain (link shortener)
     (processor as any).updateDomainHistory(site, 'kodtimetv16-com.l.ink');
     
-    // History should NOT be updated
-    expect(site.heuristic_history).toEqual(['kodtimetv13.com', 'kodtimetv14.com']);
+    // Should save current pattern (kodtimetv15.com) to history before switching
+    expect(site.heuristic_history).toEqual(['kodtimetv15.com']);
+    expect(site.pattern_changed).toBe(true);
+    expect(site.non_pattern_mirror).toBe('kodtimetv16-com.l.ink');
   });
 
   test('updateDomainHistory stores pattern-matching domain', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
-          last_known_mirror: 'kodtimetv15.com',
-          heuristic_history: ['kodtimetv13.com', 'kodtimetv14.com'],
+          last_known_mirror: 'kodtimetv14.com',
+          heuristic_history: ['kodtimetv14.com'],
           last_seen: '2026-02-15 10:00',
           last_failed: '',
           failed_days: 0,
@@ -183,11 +186,11 @@ describe('Domain History Management', () => {
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
     
-    // Add pattern-matching domain
+    // Add new pattern domain
     (processor as any).updateDomainHistory(site, 'kodtimetv15.com');
     
-    // History should be updated
-    expect(site.heuristic_history).toEqual(['kodtimetv13.com', 'kodtimetv14.com', 'kodtimetv15.com']);
+    // History should be replaced with new pattern
+    expect(site.heuristic_history).toEqual(['kodtimetv15.com']);
   });
 
   test('matchesNumericPattern detects pattern-matching domains', () => {
@@ -204,6 +207,85 @@ describe('Domain History Management', () => {
     expect((processor as any).matchesNumericPattern('kodtimetv16-com.l.ink')).toBe(false);
     expect((processor as any).matchesNumericPattern('example.com')).toBe(false);
     expect((processor as any).matchesNumericPattern('short.com')).toBe(false); // Too short
+  });
+
+  test('updateDomainHistory saves pattern to history when switching to non-pattern (first time)', () => {
+    const watchers: Watchers = {
+      sites: {
+        'yavasgir': {
+          last_known_mirror: 'yavasgir55.com',  // Pattern domain
+          // No heuristic_history yet
+          last_seen: '2026-02-15 10:00',
+          last_failed: '',
+          failed_days: 0,
+        },
+      },
+    };
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const site = watchers.sites['yavasgir'];
+    
+    // Switch to non-pattern domain
+    (processor as any).updateDomainHistory(site, 'example.com');
+    
+    // Should save pattern domain to history before switching
+    expect(site.heuristic_history).toEqual(['yavasgir55.com']);
+    expect(site.pattern_changed).toBe(true);
+    expect(site.non_pattern_mirror).toBe('example.com');
+  });
+
+  test('updateDomainHistory preserves history when switching to another non-pattern', () => {
+    const watchers: Watchers = {
+      sites: {
+        'yavasgir': {
+          last_known_mirror: 'example.com',  // Non-pattern domain
+          pattern_changed: true,
+          non_pattern_mirror: 'example.com',
+          heuristic_history: ['yavasgir55.com'],  // Pattern saved from previous switch
+          last_seen: '2026-02-15 10:00',
+          last_failed: '',
+          failed_days: 0,
+        },
+      },
+    };
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const site = watchers.sites['yavasgir'];
+    
+    // Switch to another non-pattern domain
+    (processor as any).updateDomainHistory(site, 'another-example.com');
+    
+    // History should remain unchanged (no pattern to save)
+    expect(site.heuristic_history).toEqual(['yavasgir55.com']);
+    expect(site.pattern_changed).toBe(true);
+    expect(site.non_pattern_mirror).toBe('another-example.com');
+  });
+
+  test('updateDomainHistory clears flags when returning to pattern from non-pattern', () => {
+    const watchers: Watchers = {
+      sites: {
+        'yavasgir': {
+          last_known_mirror: 'example.com',  // Non-pattern domain
+          pattern_changed: true,
+          non_pattern_mirror: 'example.com',
+          heuristic_history: ['yavasgir55.com'],  // Pattern saved from previous switch
+          last_seen: '2026-02-15 10:00',
+          last_failed: '',
+          failed_days: 0,
+        },
+      },
+    };
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const site = watchers.sites['yavasgir'];
+    
+    // Return to pattern domain
+    (processor as any).updateDomainHistory(site, 'yavasgir99.com');
+    
+    // Flags should be cleared, history replaced with new pattern (only one domain)
+    expect(site.heuristic_history).toEqual(['yavasgir99.com']);
+    expect(site.pattern_changed).toBeUndefined();
+    expect(site.non_pattern_mirror).toBeUndefined();
   });
 });
 
@@ -254,8 +336,8 @@ describe('Scheme Change Scenario', () => {
       (processor as any).updateDomainHistory(site, finalHost);
     }
     
-    // History should contain the pattern domain (kodtimetv16.com), not the non-pattern one
-    expect(site.heuristic_history).toEqual(['kodtimetv12.com', 'kodtimetv16.com']);
+    // History should contain only the latest pattern domain (kodtimetv16.com)
+    expect(site.heuristic_history).toEqual(['kodtimetv16.com']);
   });
 
   test('saves final domain when both candidate and final are pattern domains', () => {
@@ -290,8 +372,8 @@ describe('Scheme Change Scenario', () => {
       (processor as any).updateDomainHistory(site, finalHost);
     }
     
-    // History should contain the final domain
-    expect(site.heuristic_history).toEqual(['sahatv3.top', 'sahatv5.top']);
+    // History should contain only the latest pattern domain (sahatv5.top)
+    expect(site.heuristic_history).toEqual(['sahatv5.top']);
   });
 
   test('triggers history-based heuristic when site is working on non-pattern domain', () => {
@@ -323,5 +405,73 @@ describe('Scheme Change Scenario', () => {
                                          (processor as any).matchesNumericPattern(lastHistoryDomain);
     
     expect(shouldTriggerHistoryHeuristic).toBe(true);
+  });
+
+  test('does not update history when pattern domain unchanged', () => {
+    const watchers: Watchers = {
+      sites: {
+        'sahatv': {
+          last_known_mirror: 'sahatv5.top',
+          heuristic_history: ['sahatv5.top'],
+          last_seen: '2026-02-15 10:00',
+          last_failed: '',
+          failed_days: 0,
+        },
+      },
+    };
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const site = watchers.sites['sahatv'];
+    
+    // Simulate heuristic finding the same domain (sahatv5.top)
+    const candidateHost = 'sahatv5.top';
+    const finalHost = 'sahatv5.top';
+    const domainToUpdate = finalHost;
+    
+    // Get last history domain (or last_known_mirror if history empty)
+    const lastHistoryDomain = site.heuristic_history && site.heuristic_history.length > 0
+      ? site.heuristic_history[site.heuristic_history.length - 1]
+      : processor['resolver'].extractHostWithoutQuery(site.last_known_mirror);
+    
+    // Should NOT update history because domain is the same
+    if (domainToUpdate !== lastHistoryDomain) {
+      (processor as any).updateDomainHistory(site, domainToUpdate);
+    }
+    
+    // History should still contain only one entry
+    expect(site.heuristic_history).toEqual(['sahatv5.top']);
+    expect(site.heuristic_history?.length).toBe(1);
+  });
+
+  test('does not update history when pattern domain unchanged (empty history)', () => {
+    const watchers: Watchers = {
+      sites: {
+        'sahatv': {
+          last_known_mirror: 'https://sahatv5.top',
+          last_seen: '2026-02-15 10:00',
+          last_failed: '',
+          failed_days: 0,
+        },
+      },
+    };
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const site = watchers.sites['sahatv'];
+    
+    // Simulate heuristic finding the same domain (sahatv5.top) when history is empty
+    const finalHost = 'sahatv5.top';
+    const domainToUpdate = finalHost;
+    
+    // Get last history domain (or last_known_mirror if history empty)
+    const lastHistoryDomain = site.heuristic_history && site.heuristic_history.length > 0
+      ? site.heuristic_history[site.heuristic_history.length - 1]
+      : processor['resolver'].extractHostWithoutQuery(site.last_known_mirror);
+    
+    // Verify that condition would prevent update
+    expect(domainToUpdate).toBe(lastHistoryDomain);
+    
+    // Should NOT update history because domain matches last_known_mirror
+    const shouldUpdate = domainToUpdate !== lastHistoryDomain;
+    expect(shouldUpdate).toBe(false);
   });
 });

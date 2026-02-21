@@ -90,23 +90,19 @@ export class BatchProcessor {
       delete site.pattern_changed;
       delete site.non_pattern_mirror;
 
-      // Add to history ONLY if we had a pattern change before
-      // This means we're returning to pattern after being on non-pattern
-      if (site.heuristic_history && site.heuristic_history.length > 0) {
-        const filtered = site.heuristic_history.filter((d: string) => d !== newDomain);
-        filtered.push(newDomain);
-        
-        if (filtered.length > 5) {
-          filtered.splice(0, filtered.length - 5);
-        }
-        
-        site.heuristic_history = filtered;
-      }
+      // Store only the latest pattern domain (for fallback when switching to non-pattern)
+      // We don't need multiple pattern domains - only the last one to return to
+      site.heuristic_history = [newDomain];
     } else {
       // Non-pattern domain - set flags
+      // IMPORTANT: Save current last_known_mirror (pattern domain) to history BEFORE overwriting
+      if (site.last_known_mirror && this.matchesNumericPattern(site.last_known_mirror)) {
+        // Store only the last pattern domain before switching to non-pattern
+        site.heuristic_history = [site.last_known_mirror];
+      }
+      
       site.pattern_changed = true;
       site.non_pattern_mirror = newDomain;
-      // Do NOT add to history
     }
   }
 
@@ -502,13 +498,20 @@ export class BatchProcessor {
                   additionalWorkingDomains: [], // Will be populated later if force_search_ahead
                 };
                 
-                // Update heuristic history after successful heuristic
+                // Update heuristic history after successful heuristic (only if domain changed)
                 // If final domain is non-pattern, save the candidate URL (pattern domain) instead
                 const candidateHost = this.resolver.extractHostWithoutQuery(task.candidateUrl);
-                if (!this.matchesNumericPattern(newHost) && this.matchesNumericPattern(candidateHost)) {
-                  this.updateDomainHistory(task.site, candidateHost);
-                } else {
-                  this.updateDomainHistory(task.site, newHost);
+                const domainToUpdate = (!this.matchesNumericPattern(newHost) && this.matchesNumericPattern(candidateHost)) 
+                  ? candidateHost 
+                  : newHost;
+                
+                // Only update history if domain actually changed from last history entry or last_known_mirror
+                const lastHistoryDomain = task.site.heuristic_history && task.site.heuristic_history.length > 0
+                  ? task.site.heuristic_history[task.site.heuristic_history.length - 1]
+                  : this.resolver.extractHostWithoutQuery(task.site.last_known_mirror);
+                
+                if (domainToUpdate !== lastHistoryDomain) {
+                  this.updateDomainHistory(task.site, domainToUpdate);
                 }
               }
             }
@@ -568,13 +571,20 @@ export class BatchProcessor {
               actualCheckedDomain: task.candidateUrl,
             };
             
-            // Update heuristic history after successful antibot accepted
+            // Update heuristic history after successful antibot accepted (only if domain changed)
             // If final domain is non-pattern, save the candidate URL (pattern domain) instead
             const candidateHost = this.resolver.extractHostWithoutQuery(task.candidateUrl);
-            if (!this.matchesNumericPattern(newHost) && this.matchesNumericPattern(candidateHost)) {
-              this.updateDomainHistory(task.site, candidateHost);
-            } else {
-              this.updateDomainHistory(task.site, newHost);
+            const domainToUpdate = (!this.matchesNumericPattern(newHost) && this.matchesNumericPattern(candidateHost)) 
+              ? candidateHost 
+              : newHost;
+            
+            // Only update history if domain actually changed from last history entry or last_known_mirror
+            const lastHistoryDomain = task.site.heuristic_history && task.site.heuristic_history.length > 0
+              ? task.site.heuristic_history[task.site.heuristic_history.length - 1]
+              : this.resolver.extractHostWithoutQuery(task.site.last_known_mirror);
+            
+            if (domainToUpdate !== lastHistoryDomain) {
+              this.updateDomainHistory(task.site, domainToUpdate);
             }
           }
 
@@ -833,8 +843,10 @@ export class BatchProcessor {
     const siteDuration = Date.now() - siteStartTime;
     this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms)`);
 
-    // Update domain history on successful check
-    this.updateDomainHistory(site, newHost);
+    // Update domain history only if domain actually changed
+    if (hostChanged) {
+      this.updateDomainHistory(site, newHost);
+    }
 
     // shouldUpdate: process filters if domain changed OR if we need to clean up predicted mirrors
     // (to clean up predicted mirrors even when last_known_mirror didn't change)

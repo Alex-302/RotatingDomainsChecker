@@ -3,57 +3,144 @@
 sites:
   Frequently changed domains — Saha TV:
     initial_domain: sahatv2.top
-    last_known_mirror: sahatv2.top
+    last_known_mirror: sahatv5.top
+    heuristic_history:
+      - sahatv5.top
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   Frequently changed domains — YavasGir:
     initial_domain: null
-    last_known_mirror: yavasgir45.com
+    last_known_mirror: yavasgir55.com
+    heuristic_history:
+      - yavasgir55.com
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   Frequently changed domains — Kralsports HD:
     initial_domain: null
     last_known_mirror: kralsportshd1.com
+    last_failed: 2026-02-21 19:44
+    failed_days: 1
+    potentially_dead: true
   Frequently changed domains — kodtimetv*.com:
-    last_known_mirror: kodtimetv1.com
+    last_known_mirror: kodtimetv16.com
+    heuristic_history:
+      - kodtimetv16.com
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   amp-6392fa66a0.selcuksportshdamp-aa805a079c.click:
     last_known_mirror: amp-6392fa66a0.selcuksportshdamp-aa805a079c.click
     accept_antibot: true
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   dizigom104.com:
     last_known_mirror: dizigom104.com
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   dizipod.com:
     last_known_mirror: dizipod.com
     accept_antibot: true
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   diziwatch.to:
     last_known_mirror: diziwatch.to
     accept_antibot: true
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   liderfilm.cc:
-    last_known_mirror: liderfilm.cc
+    last_known_mirror: liderfilmizle.com
+    pattern_changed: true
+    non_pattern_mirror: liderfilmizle.com
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   patronspor04548a2wer45awes.cfd:
     last_known_mirror: patronspor04548a2wer45awes.cfd
+    last_failed: 2026-02-21 19:44
+    failed_days: 1
+    potentially_dead: true
   piabettv14.live:
     last_known_mirror: piabettv14.live
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   restmacizle23.cfd:
     last_known_mirror: restmacizle23.cfd
+    last_failed: 2026-02-21 19:44
+    failed_days: 1
+    potentially_dead: true
   selcukspor-tv.net:
     last_known_mirror: selcukspor-tv.net
+    last_failed: 2026-02-21 19:44
+    failed_days: 1
+    potentially_dead: true
   spotube.krtirtho.dev:
     last_known_mirror: spotube.krtirtho.dev
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   sultansportv562.com:
-    last_known_mirror: sultansportv562.com
+    last_known_mirror: sultansportv795.com
+    heuristic_history:
+      - sultansportv795.com
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   taraftarium24.xyz:
     last_known_mirror: taraftarium24.xyz
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   turkifsaclub-12.sbs:
-    last_known_mirror: turkifsaclub-12.sbs
+    last_known_mirror: turkifsaclub-18.sbs
+    heuristic_history:
+      - turkifsaclub-18.sbs
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   tvjustin.com:
     last_known_mirror: tvjustin.com
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   www.hotspringsofbc.ca:
     last_known_mirror: www.hotspringsofbc.ca
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   www.inattvizle375.top:
-    last_known_mirror: www.inattvizle375.top
+    last_known_mirror: www.inattvizle399.top
     accept_antibot: true
+    heuristic_history:
+      - www.inattvizle399.top
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   www.papazsports924.pro:
-    last_known_mirror: www.papazsports924.pro
+    last_known_mirror: www.papazsports947.pro
     accept_antibot: true
+    heuristic_history:
+      - www.papazsports947.pro
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   www.selcuksportshd8443661f57.xyz:
     last_known_mirror: www.selcuksportshd8443661f57.xyz
     accept_antibot: true
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
   www.taraftarium91.top:
-    last_known_mirror: www.taraftarium91.top
+    last_known_mirror: www.taraftarium118.top
     accept_antibot: true
+    heuristic_history:
+      - www.taraftarium118.top
+    last_seen: 2026-02-21 19:50
+    failed_days: 0
+    last_failed: ""
