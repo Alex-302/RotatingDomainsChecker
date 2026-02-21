@@ -357,3 +357,186 @@ describe('6.10 extractJsRedirect', () => {
     expect(resolver.extractJsRedirect(body, base)).toBe('https://raw.githack.com/eniyiyayinci/redirect-cdn/main/inattv.html');
   });
 });
+
+// ============================================================================
+// 6.11 probe_text priority over skip_text (overlapping patterns)
+// ============================================================================
+
+describe('6.11 probe_text priority over skip_text (isolated mocks)', () => {
+  // Test constants - completely isolated from real sites
+  const TEST_SKIP_PHRASE = 'TEST_SKIP_PHRASE_12345';
+  const TEST_PROBE_PHRASE = 'TEST_PROBE_PHRASE_67890';
+  const TEST_PROBE_PHRASE_2 = 'TEST_PROBE_PHRASE_ABCDE';
+  
+  function makeFakeResponse(status: number, body: string, headers: Record<string, string> = {}): Response {
+    return {
+      status,
+      headers: {
+        get: (name: string) => headers[name.toLowerCase()] ?? null,
+      },
+      text: async () => body,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response;
+  }
+
+  test('skip_text present but probe_text matches → success (not skipped)', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      skip_text: [TEST_SKIP_PHRASE],
+    });
+    const resolver = new HttpResolver(config);
+
+    // Working site body: has both skip phrase AND probe phrase
+    const workingSiteBody = `<html><body>
+      <script>function ${TEST_PROBE_PHRASE}() { /* video player */ }</script>
+      <div id="player">Video content</div>
+      <footer>Powered by ${TEST_SKIP_PHRASE}</footer>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, workingSiteBody, { 'content-type': 'text/html' }));
+
+    const probeText = [TEST_PROBE_PHRASE];
+    const result = await resolver.resolve('https://mock-working-site.test/', false, undefined, probeText);
+
+    expect(result.success).toBe(true);
+    expect(result.skippedByText).toBeUndefined();
+    expect(result.finalHost).toBe('mock-working-site.test');
+  });
+
+  test('skip_text present and probe_text does NOT match → skipped', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      skip_text: [TEST_SKIP_PHRASE],
+    });
+    const resolver = new HttpResolver(config);
+
+    // Landing page body: has skip phrase but NO probe phrase
+    const landingPageBody = `<html><body>
+      <h1>MOCK LANDING PAGE</h1>
+      <div>Mock bonus content</div>
+      <footer>Powered by ${TEST_SKIP_PHRASE}</footer>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, landingPageBody, { 'content-type': 'text/html' }));
+
+    const probeText = [TEST_PROBE_PHRASE];
+    const result = await resolver.resolve('https://mock-landing-page.test/', false, undefined, probeText);
+
+    expect(result.success).toBe(false);
+    expect(result.skippedByText).toBe(TEST_SKIP_PHRASE);
+    expect(result.shouldTriggerHeuristic).toBe(true);
+  });
+
+  test('no skip_text present, probe_text matches → success', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      skip_text: [TEST_SKIP_PHRASE],
+    });
+    const resolver = new HttpResolver(config);
+
+    // Clean working site: has probe phrase but NO skip phrase
+    const cleanWorkingBody = `<html><body>
+      <script>function ${TEST_PROBE_PHRASE}() { /* video player */ }</script>
+      <div id="player">Video content</div>
+      <footer>Normal footer</footer>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, cleanWorkingBody, { 'content-type': 'text/html' }));
+
+    const probeText = [TEST_PROBE_PHRASE];
+    const result = await resolver.resolve('https://mock-clean-site.test/', false, undefined, probeText);
+
+    expect(result.success).toBe(true);
+    expect(result.skippedByText).toBeUndefined();
+    expect(result.finalHost).toBe('mock-clean-site.test');
+  });
+
+  test('no probe_text provided, skip_text present → skipped (backward compatibility)', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      skip_text: [TEST_SKIP_PHRASE],
+    });
+    const resolver = new HttpResolver(config);
+
+    const bodyWithSkipText = `<html><body>Content with ${TEST_SKIP_PHRASE} link</body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, bodyWithSkipText, { 'content-type': 'text/html' }));
+
+    // No probe_text provided - should behave as before (skip)
+    const result = await resolver.resolve('https://mock-test-site.test/', false, undefined, undefined);
+
+    expect(result.success).toBe(false);
+    expect(result.skippedByText).toBe(TEST_SKIP_PHRASE);
+  });
+
+  test('probe_text provided but empty array → skip_text works normally', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      skip_text: [TEST_SKIP_PHRASE],
+    });
+    const resolver = new HttpResolver(config);
+
+    const bodyWithSkipText = `<html><body>Content with ${TEST_SKIP_PHRASE} link</body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, bodyWithSkipText, { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve('https://mock-empty-probe.test/', false, undefined, []);
+
+    expect(result.success).toBe(false);
+    expect(result.skippedByText).toBe(TEST_SKIP_PHRASE);
+  });
+
+  test('multiple probe_text phrases, all must match to override skip_text', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      skip_text: [TEST_SKIP_PHRASE],
+    });
+    const resolver = new HttpResolver(config);
+
+    // Body has only one of two required probe phrases
+    const bodyWithOneProbe = `<html><body>
+      <script>function ${TEST_PROBE_PHRASE}() {}</script>
+      <footer>${TEST_SKIP_PHRASE}</footer>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, bodyWithOneProbe, { 'content-type': 'text/html' }));
+
+    // Two probe phrases required, but body only has one
+    const probeText = [TEST_PROBE_PHRASE, TEST_PROBE_PHRASE_2];
+    const result = await resolver.resolve('https://mock-partial-probe.test/', false, undefined, probeText);
+
+    expect(result.success).toBe(false);
+    expect(result.skippedByText).toBe(TEST_SKIP_PHRASE);
+  });
+
+  test('multiple probe_text phrases, all match → success (overrides skip_text)', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      skip_text: [TEST_SKIP_PHRASE],
+    });
+    const resolver = new HttpResolver(config);
+
+    // Body has both required probe phrases AND skip phrase
+    const bodyWithAllProbes = `<html><body>
+      <script>function ${TEST_PROBE_PHRASE}() {}</script>
+      <div id="${TEST_PROBE_PHRASE_2}">Content</div>
+      <footer>${TEST_SKIP_PHRASE}</footer>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, bodyWithAllProbes, { 'content-type': 'text/html' }));
+
+    const probeText = [TEST_PROBE_PHRASE, TEST_PROBE_PHRASE_2];
+    const result = await resolver.resolve('https://mock-full-probe.test/', false, undefined, probeText);
+
+    expect(result.success).toBe(true);
+    expect(result.skippedByText).toBeUndefined();
+    expect(result.finalHost).toBe('mock-full-probe.test');
+  });
+});

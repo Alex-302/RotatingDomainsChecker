@@ -403,7 +403,7 @@ export class BatchProcessor {
 
         const checkCandidate = async (task: HeuristicTask & { dnsOk: boolean }) => {
           this.logger.debug(task.siteName, `Heuristic checking candidate: ${task.candidateUrl}`);
-          const httpResult = await this.resolver.resolve(task.candidateUrl, true, task.site);
+          const httpResult = await this.resolver.resolve(task.candidateUrl, true, task.site, task.probeText);
           return httpResult;
         };
 
@@ -720,7 +720,7 @@ export class BatchProcessor {
 
     // Resolve redirects
     const resolveStartTime = Date.now();
-    const result = await this.resolver.resolve(urlToCheck, false, site);
+    const result = await this.resolver.resolve(urlToCheck, false, site, site.probe_text);
     const resolveDuration = Date.now() - resolveStartTime;
 
     const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);

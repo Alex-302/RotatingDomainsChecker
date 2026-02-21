@@ -29,7 +29,7 @@ export class HttpResolver {
     return url;
   }
 
-  async resolve(url: string, useHeuristicTimeout = false, site?: WatcherSite): Promise<RedirectResult> {
+  async resolve(url: string, useHeuristicTimeout = false, site?: WatcherSite, probeText?: string[]): Promise<RedirectResult> {
     const chain: RedirectChainEntry[] = [];
     let currentUrl = this.normalizeUrl(url);
     let depth = 0;
@@ -113,9 +113,17 @@ export class HttpResolver {
             // If body read fails, continue without it
           }
 
-          // Check global skip_text — detect parked/expired domains
+          // First check probe_text if provided - this helps distinguish working sites from landing pages
+          // that might share skip_text patterns (e.g., "patronmarketing" appears on both)
+          let hasProbeText = false;
+          if (probeText && probeText.length > 0 && finalBody) {
+            hasProbeText = probeText.every(text => finalBody.includes(text));
+          }
+
+          // Then check global skip_text — detect parked/expired domains
+          // Skip only if probe_text is NOT present (to avoid false positives)
           const skipPhrase = this.containsSkipText(finalBody);
-          if (skipPhrase) {
+          if (skipPhrase && !hasProbeText) {
             return {
               success: false,
               finalUrl: currentUrl,

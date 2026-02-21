@@ -258,6 +258,11 @@ sites:
     last_failed: ""                     # Last failed check
     failed_days: 0                      # Days since last failure
     potentially_dead: false             # Marked as potentially dead after many failures
+    
+    # Advanced auto-generated fields (rarely needed)
+    pattern_changed: false              # Flag: site changed from pattern to non-pattern
+    heuristic_history: []               # History of working pattern domains (auto-updated when switching between pattern/non-pattern)
+    non_pattern_mirror: ""              # Current non-pattern mirror when pattern_changed=true
 ```
 
 </details>
