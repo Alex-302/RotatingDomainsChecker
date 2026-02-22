@@ -80,7 +80,7 @@ function makeSite(overrides: Partial<WatcherSite> = {}): WatcherSite {
   return {
     last_known_mirror: 'turkifsaclub001.sbs',
     last_seen: '',
-    last_failed: '',
+    failed_since: '',
     failed_days: 0,
     ...overrides,
   };
@@ -1373,5 +1373,218 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
     const additional = results[0].additionalWorkingDomains ?? [];
     expect(additional).toContain('dizi41.life');
     expect(additional).not.toContain('dizi42.life');
+  });
+});
+
+// ============================================================================
+// 10. probe_text filtering in heuristic search
+// ============================================================================
+
+describe('10. probe_text filtering in heuristic search', () => {
+  test('10.1 probe_text matches → heuristic succeeds', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'hepbetspor12.cfd',
+      probe_text: ['banner-container'],
+    });
+    const watchers = makeWatchers({ 'hepbetspor': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      if (url.includes('hepbetspor13.cfd')) {
+        return makeSuccessResult('hepbetspor13.cfd', {
+          finalBody: '<html><div class="banner-container">content</div></html>',
+        });
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('hepbetspor13.cfd');
+  });
+
+  test('10.2 probe_text does NOT match → heuristic skips candidate, continues search', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'hepbetspor12.cfd',
+      probe_text: ['banner-container'],
+    });
+    const watchers = makeWatchers({ 'hepbetspor': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      // hepbetspor13 responds 200 but does NOT contain probe_text → should be skipped
+      if (url.includes('hepbetspor13.cfd')) {
+        return makeSuccessResult('hepbetspor13.cfd', {
+          finalBody: '<html><div class="other-content">parked page</div></html>',
+        });
+      }
+      // hepbetspor14 responds 200 and DOES contain probe_text → should be accepted
+      if (url.includes('hepbetspor14.cfd')) {
+        return makeSuccessResult('hepbetspor14.cfd', {
+          finalBody: '<html><div class="banner-container">real site</div></html>',
+        });
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('hepbetspor14.cfd');
+  });
+
+  test('10.3 probe_text does NOT match on any candidate → heuristic fails (no update)', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'hepbetspor12.cfd',
+      probe_text: ['aaaaaa-container'],
+    });
+    const watchers = makeWatchers({ 'hepbetspor': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      // All candidates respond 200 but none contain the probe_text
+      if (url.includes('hepbetspor') && url.includes('.cfd')) {
+        return makeSuccessResult(new URL(url).hostname, {
+          finalBody: '<html><div class="other-content">page without probe text</div></html>',
+        });
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].shouldUpdate).toBe(false);
+    expect(results[0].newHost).toBe('');
+  });
+
+  test('10.4 probe_text with accept_antibot=true → probe skipped for antibot, domain accepted', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'www.taraftarium109.top',
+      accept_antibot: true,
+      probe_text: ['aaaaaa-container'],
+    });
+    const watchers = makeWatchers({ 'www.taraftarium91.top': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      // Antibot response (403) — body not available, but accept_antibot=true → probe skipped, domain accepted
+      if (url.includes('taraftarium110')) {
+        return makeSuccessResult(new URL(url).hostname, {
+          statusCode: 403,
+          antibotDetected: true,
+          finalBody: undefined,
+        });
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // accept_antibot=true + antibot response → probe skipped, domain accepted
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('www.taraftarium110.top');
+  });
+
+  test('10.5 no probe_text → all 200 candidates accepted (existing behavior unchanged)', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'hepbetspor12.cfd',
+      // no probe_text
+    });
+    const watchers = makeWatchers({ 'hepbetspor': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      if (url.includes('hepbetspor13.cfd')) {
+        return makeSuccessResult('hepbetspor13.cfd', {
+          finalBody: '<html>any content without special text</html>',
+        });
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('hepbetspor13.cfd');
+  });
+
+  test('10.6 probe_text bypasses skip_text: domain has skip_text but also probe_text → accepted', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
+      skip_text: ['parked-domain-marker'],
+    });
+    const site = makeSite({
+      last_known_mirror: 'hepbetspor12.cfd',
+      probe_text: ['banner-container'],
+    });
+    const watchers = makeWatchers({ 'hepbetspor': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      if (url.includes('hepbetspor13.cfd')) {
+        // Contains both skip_text and probe_text → httpResolver should pass it through (probe_text wins)
+        return makeSuccessResult('hepbetspor13.cfd', {
+          finalBody: '<html><div class="banner-container">real site</div><span class="parked-domain-marker"></span></html>',
+        });
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('hepbetspor13.cfd');
   });
 });

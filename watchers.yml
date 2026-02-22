@@ -1,59 +1,21 @@
 # Rotating Domains Checker - monitored websites
 
 sites:
+  Dead site test - deadexample24.com:
+    initial_domain: deadexample24.com
+    last_known_mirror: ''
+  Test Probe Fail - example.org:
+    last_known_mirror: example.org
+    probe_text:
+      - not existing text
+  Test Probe Success - example.de:
+    last_known_mirror: example.de
+    probe_text:
+      - Malerei der Gruppe 3erlei
   Frequently changed domains — Saha TV:
     initial_domain: sahatv2.top
     last_known_mirror: sahatv2.top
   Frequently changed domains — YavasGir:
-    initial_domain: null
-    last_known_mirror: yavasgir45.com
+    last_known_mirror: yavasgir31.com
   Frequently changed domains — Kralsports HD:
-    initial_domain: null
-    last_known_mirror: kralsportshd1.com
-  Frequently changed domains — kodtimetv*.com:
-    last_known_mirror: kodtimetv1.com
-  amp-6392fa66a0.selcuksportshdamp-aa805a079c.click:
-    last_known_mirror: amp-6392fa66a0.selcuksportshdamp-aa805a079c.click
-    accept_antibot: true
-  dizigom104.com:
-    last_known_mirror: dizigom104.com
-  dizipod.com:
-    last_known_mirror: dizipod.com
-    accept_antibot: true
-  diziwatch.to:
-    last_known_mirror: diziwatch.to
-    accept_antibot: true
-  liderfilm.cc:
-    last_known_mirror: liderfilm.cc
-  patronspor04548a2wer45awes.cfd:
-    last_known_mirror: patronspor04548a2wer45awes.cfd
-  piabettv14.live:
-    last_known_mirror: piabettv14.live
-  restmacizle23.cfd:
-    last_known_mirror: restmacizle23.cfd
-  selcukspor-tv.net:
-    last_known_mirror: selcukspor-tv.net
-  spotube.krtirtho.dev:
-    last_known_mirror: spotube.krtirtho.dev
-  sultansportv562.com:
-    last_known_mirror: sultansportv562.com
-  taraftarium24.xyz:
-    last_known_mirror: taraftarium24.xyz
-  turkifsaclub-12.sbs:
-    last_known_mirror: turkifsaclub-12.sbs
-  tvjustin.com:
-    last_known_mirror: tvjustin.com
-  www.hotspringsofbc.ca:
-    last_known_mirror: www.hotspringsofbc.ca
-  www.inattvizle375.top:
-    last_known_mirror: www.inattvizle375.top
-    accept_antibot: true
-  www.papazsports924.pro:
-    last_known_mirror: www.papazsports924.pro
-    accept_antibot: true
-  www.selcuksportshd8443661f57.xyz:
-    last_known_mirror: www.selcuksportshd8443661f57.xyz
-    accept_antibot: true
-  www.taraftarium91.top:
-    last_known_mirror: www.taraftarium91.top
-    accept_antibot: true
+    last_known_mirror: kralsportshd7.com

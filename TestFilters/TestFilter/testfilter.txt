@@ -2,6 +2,10 @@
 ! Expected: no changes
 [$path=|/video/]buzz##body > .play-button-outer ~ .pppx
 
+! Heuristic history test
+! Expected: no replacement by a non-pattern domain
+hepbetspor12.cfd##body
+
 ! Probe fail test
 ! Expected: "Content probe failed" error in the log
 example.org##body
