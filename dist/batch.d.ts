@@ -49,4 +49,3 @@ export declare class BatchProcessor {
     processAll(): Promise<CheckResult[]>;
     private processSite;
 }
-//# sourceMappingURL=batch.d.ts.map

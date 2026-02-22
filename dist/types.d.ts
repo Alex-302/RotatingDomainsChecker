@@ -171,4 +171,3 @@ export interface DomainToken {
         suffix: string;
     };
 }
-//# sourceMappingURL=types.d.ts.map

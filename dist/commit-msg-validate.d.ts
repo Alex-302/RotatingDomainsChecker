@@ -8,4 +8,3 @@ export interface ValidationResult {
  * 2. Must not contain Cyrillic characters (English only)
  */
 export declare function validateCommitMessage(message: string): ValidationResult;
-//# sourceMappingURL=commit-msg-validate.d.ts.map

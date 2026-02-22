@@ -43,4 +43,3 @@ export declare class Logger {
     saveToFile(): void;
     private rotateLogs;
 }
-//# sourceMappingURL=logger.d.ts.map
