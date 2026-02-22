@@ -71,7 +71,7 @@ sites:
   turkifsaclub001.sbs:
     initial_domain: turkifsaclub001.sbs
     last_known_mirror: turkifsaclub020.sbs
-    last_seen: "2024-01-15 10:30"
+    last_seen: "2024-01-15"
     failed_since: ""
     failed_days: 0
 `;
@@ -91,7 +91,7 @@ sites:
   turkifsaclub001.sbs:
     initial_domain: turkifsaclub001.sbs
     last_known_mirror: turkifsaclub020.sbs
-    last_seen: "2024-01-15 10:30"
+    last_seen: "2024-01-15"
     failed_since: ""
     failed_days: 0
 `;
@@ -111,7 +111,7 @@ sites:
   site1:
     initial_domain: site1.com
     last_known_mirror: site1new.com
-    last_seen: "2024-01-15 10:30"
+    last_seen: "2024-01-15"
     failed_since: ""
     failed_days: 0
     probe_text:
