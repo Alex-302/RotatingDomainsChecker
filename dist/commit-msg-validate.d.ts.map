@@ -1,0 +1,1 @@
+{"version":3,"file":"commit-msg-validate.d.ts","sourceRoot":"","sources":["../src/commit-msg-validate.ts"],"names":[],"mappings":"AAUA,MAAM,WAAW,gBAAgB;IAC/B,KAAK,EAAE,OAAO,CAAC;IACf,KAAK,CAAC,EAAE,MAAM,CAAC;CAChB;AAED;;;;GAIG;AACH,wBAAgB,qBAAqB,CAAC,OAAO,EAAE,MAAM,GAAG,gBAAgB,CA8BvE"}
