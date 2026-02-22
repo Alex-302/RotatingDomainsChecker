@@ -13,4 +13,3 @@ declare class ConnectionDiagnostics {
 }
 export declare const connectionDiagnostics: ConnectionDiagnostics;
 export {};
-//# sourceMappingURL=diagnostics.d.ts.map

@@ -39,4 +39,3 @@ export declare class HttpResolver {
      */
     formatRedirectChain(chain: RedirectChainEntry[]): string;
 }
-//# sourceMappingURL=httpResolver.d.ts.map

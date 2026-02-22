@@ -13,4 +13,3 @@ export declare class GitManager {
     private createPullRequest;
     getPRModeInfo(summary: Summary, dryRun: boolean): string[];
 }
-//# sourceMappingURL=git.d.ts.map

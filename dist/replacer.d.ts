@@ -64,4 +64,3 @@ declare function processLine(line: string, hostMap: Map<string, string>, initial
     oldHost: string;
 }>, additionalDomainsMap?: Map<string, string[]>): string[];
 export { normalizeDomain, matchesNumericPattern, extractBasePattern, matchesSamePattern, matchesPattern, replaceDomain, hasSchemeChangeInList, handleSchemeChange, deduplicateDomains, processDomainList, isPredictedMirror, removePredictedMirrors, processLine, shouldSkipLine, findTargetFiles, escapeRegExp, };
-//# sourceMappingURL=replacer.d.ts.map
