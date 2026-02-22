@@ -82,31 +82,26 @@ export class BatchProcessor {
     return grouped;
   }
 
-  private updateDomainHistory(site: WatcherSite, newDomain: string): void {
+  public updateDomainHistory(site: WatcherSite, newDomain: string, oldLastKnownMirror?: string): void {
     const token = this.tokenizeDomain(newDomain);
 
     if (token.isPattern) {
       // Pattern domain - reset flags (delete from config)
       delete site.pattern_changed;
-      delete site.non_pattern_mirror;
-
-      // Add to history ONLY if we had a pattern change before
-      // This means we're returning to pattern after being on non-pattern
-      if (site.heuristic_history && site.heuristic_history.length > 0) {
-        const filtered = site.heuristic_history.filter((d: string) => d !== newDomain);
-        filtered.push(newDomain);
-        
-        if (filtered.length > 5) {
-          filtered.splice(0, filtered.length - 5);
-        }
-        
-        site.heuristic_history = filtered;
-      }
+      
+      // Pattern → Pattern: DO NOT create history (just rotation)
+      // History is only needed when switching FROM pattern TO non-pattern
+      // So we delete any existing history when staying on pattern domains
+      delete site.heuristic_history;
     } else {
-      // Non-pattern domain - set flags
+      // Non-pattern domain - set flag
+      // IMPORTANT: Save OLD last_known_mirror (pattern domain) to history BEFORE overwriting
+      if (oldLastKnownMirror && this.matchesNumericPattern(oldLastKnownMirror)) {
+        // Store only the last pattern domain before switching to non-pattern
+        site.heuristic_history = [oldLastKnownMirror];
+      }
+      
       site.pattern_changed = true;
-      site.non_pattern_mirror = newDomain;
-      // Do NOT add to history
     }
   }
 
@@ -157,6 +152,98 @@ export class BatchProcessor {
       }
       return false;
     }
+  }
+
+  /**
+   * Run heuristic search for a site and return first working pattern domain
+   * Returns null if no pattern domain found
+   */
+  private async runHeuristicSearch(
+    siteName: string,
+    siteIndex: number,
+    site: WatcherSite,
+    failedUrl: string
+  ): Promise<{ newHost: string; result: RedirectResult; candidateUrl: string } | null> {
+    const heuristicTasks = this.generateCandidates(siteName, siteIndex, site, failedUrl);
+    
+    if (heuristicTasks.length === 0) {
+      this.logger.debug(siteName, `No heuristic candidates generated`);
+      return null;
+    }
+    
+    const dnsCheckedTasks = await this.batchDnsCheck(heuristicTasks);
+    const dnsOkTasks = dnsCheckedTasks.filter(t => t.dnsOk);
+    
+    if (dnsOkTasks.length === 0) {
+      this.logger.debug(siteName, `No heuristic candidates passed DNS check`);
+      return null;
+    }
+    
+    return this.checkHeuristicCandidates(siteName, site, dnsOkTasks);
+  }
+
+  /**
+   * Check heuristic candidates and return first working pattern domain
+   * Returns null if no pattern domain found
+   */
+  private async checkHeuristicCandidates(
+    siteName: string,
+    site: WatcherSite,
+    tasks: Array<HeuristicTask & { dnsOk: boolean }>
+  ): Promise<{ newHost: string; result: RedirectResult; candidateUrl: string } | null> {
+    // Check candidates sequentially until we find a working pattern domain
+    for (const task of tasks) {
+      this.logger.debug(siteName, `Heuristic checking candidate: ${task.candidateUrl}`);
+      if (task.probeText && task.probeText.length > 0) {
+        this.logger.debug(siteName, `Heuristic probe_text for ${task.candidateUrl}: ${JSON.stringify(task.probeText)}`);
+      } else {
+        this.logger.debug(siteName, `Heuristic: content probe is not configured for ${task.candidateUrl}`);
+      }
+      const httpResult = await this.resolver.resolve(task.candidateUrl, true, site, task.probeText);
+      
+      if (httpResult.success) {
+        this.logger.debug(siteName, `Heuristic candidate ${task.candidateUrl}: HTTP ${httpResult.statusCode}${httpResult.antibotDetected ? ' (antibot)' : ''}`);
+        
+        // Content probe if needed
+        let probeOk = true;
+        if (task.probeText && task.probeText.length > 0) {
+          if (httpResult.antibotDetected && site.accept_antibot) {
+            this.logger.info(siteName, `Heuristic: content probe SKIPPED for antibot site (accept_antibot=true)`);
+            probeOk = true;
+          } else {
+            probeOk = await this.probe.verify(task.probeText, httpResult.finalBody);
+            if (probeOk) {
+              this.logger.info(siteName, `Heuristic: content probe PASSED on ${task.candidateUrl}`);
+            } else {
+              this.logger.info(siteName, `Heuristic: content probe FAILED on ${task.candidateUrl}, continuing search`);
+            }
+          }
+        }
+        
+        if (probeOk === true) {
+          const heuristicNewHost = httpResult.finalHost.toLowerCase();
+          const heuristicIsPattern = this.matchesNumericPattern(heuristicNewHost);
+          
+          if (heuristicIsPattern) {
+            // Found a pattern domain!
+            const chainFormatted = this.resolver.formatRedirectChain(httpResult.redirectChain);
+            this.logger.info(siteName, `Heuristic SUCCESS: ${task.candidateUrl}`);
+            this.logger.info(siteName, `Heuristic redirect chain: ${chainFormatted}`);
+            
+            return {
+              newHost: heuristicNewHost,
+              result: httpResult,
+              candidateUrl: task.candidateUrl,
+            };
+          } else {
+            // Heuristic found non-pattern domain, continue searching
+            this.logger.debug(siteName, `Heuristic found non-pattern domain: ${heuristicNewHost}, continuing search`);
+          }
+        }
+      }
+    }
+    
+    return null; // No pattern domain found
   }
 
   /**
@@ -403,6 +490,11 @@ export class BatchProcessor {
 
         const checkCandidate = async (task: HeuristicTask & { dnsOk: boolean }) => {
           this.logger.debug(task.siteName, `Heuristic checking candidate: ${task.candidateUrl}`);
+          if (task.probeText && task.probeText.length > 0) {
+            this.logger.debug(task.siteName, `Heuristic probe_text for ${task.candidateUrl}: ${JSON.stringify(task.probeText)}`);
+          } else {
+            this.logger.debug(task.siteName, `Heuristic: content probe not configured for ${task.candidateUrl}`);
+          }
           const httpResult = await this.resolver.resolve(task.candidateUrl, true, task.site, task.probeText);
           return httpResult;
         };
@@ -451,11 +543,14 @@ export class BatchProcessor {
             if (task.probeText && task.probeText.length > 0) {
               // Skip probe for antibot sites that accept antibot
               if (result.antibotDetected && task.site.accept_antibot) {
-                this.logger.info(task.siteName, `Skipping content probe for antibot site (accept_antibot=true)`);
+                this.logger.info(task.siteName, `Heuristic: content probe SKIPPED for antibot site (accept_antibot=true)`);
+                probeOk = true;
               } else {
                 probeOk = await this.probe.verify(task.probeText, result.finalBody);
-                if (!probeOk) {
-                  this.logger.debug(task.siteName, `Heuristic: content probe failed on ${task.candidateUrl} (likely parked domain or wrong site), continuing search`);
+                if (probeOk) {
+                  this.logger.info(task.siteName, `Heuristic: content probe PASSED on ${task.candidateUrl}`);
+                } else {
+                  this.logger.info(task.siteName, `Heuristic: content probe FAILED on ${task.candidateUrl}, continuing search`);
                 }
               }
             }
@@ -489,27 +584,31 @@ export class BatchProcessor {
                   ? heuristicStartUrl
                   : `https://${heuristicStartUrl}`;
                 const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
+
+                // Save old last_known_mirror BEFORE any mutation for history comparison
+                const oldLastKnownMirror = task.site.last_known_mirror;
+
+                // Update domain history now (we have the correct old value)
+                this.updateDomainHistory(task.site, newHost, oldLastKnownMirror);
+
+                // If new domain is non-pattern, do NOT update filters:
+                // the old pattern domain stays in the filter until we find a new pattern domain.
+                // We only record history and flags so next run can use heuristic_history.
+                const newHostIsPattern = this.matchesNumericPattern(newHost);
+
                 results[task.siteIndex] = {
                   siteName: task.siteName,
                   oldHost,
                   newHost,
-                  hostChanged: true,
+                  hostChanged: newHostIsPattern, // only treat as changed when new domain is pattern
                   startedHost: this.resolver.extractHostWithoutQuery(heuristicNormalized),
                   result,
-                  shouldUpdate: true,
+                  shouldUpdate: newHostIsPattern,
                   checkDurationMs: siteDuration,
                   actualCheckedDomain: task.candidateUrl,
                   additionalWorkingDomains: [], // Will be populated later if force_search_ahead
+                  historyUpdated: true, // already called updateDomainHistory above
                 };
-                
-                // Update heuristic history after successful heuristic
-                // If final domain is non-pattern, save the candidate URL (pattern domain) instead
-                const candidateHost = this.resolver.extractHostWithoutQuery(task.candidateUrl);
-                if (!this.matchesNumericPattern(newHost) && this.matchesNumericPattern(candidateHost)) {
-                  this.updateDomainHistory(task.site, candidateHost);
-                } else {
-                  this.updateDomainHistory(task.site, newHost);
-                }
               }
             }
           } else if (result.skippedByText) {
@@ -556,26 +655,28 @@ export class BatchProcessor {
               ? heuristicStartUrl
               : `https://${heuristicStartUrl}`;
             const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
+
+            // Save old last_known_mirror BEFORE any mutation for history comparison
+            const oldLastKnownMirrorAntibot = task.site.last_known_mirror;
+
+            // Update domain history now (we have the correct old value)
+            this.updateDomainHistory(task.site, newHost, oldLastKnownMirrorAntibot);
+
+            // If new domain is non-pattern, do NOT update filters
+            const newHostIsPatternAntibot = this.matchesNumericPattern(newHost);
+
             results[task.siteIndex] = {
               siteName: task.siteName,
               oldHost,
               newHost,
-              hostChanged: true,
+              hostChanged: newHostIsPatternAntibot,
               startedHost: this.resolver.extractHostWithoutQuery(heuristicNormalized),
               result,
-              shouldUpdate: true,
+              shouldUpdate: newHostIsPatternAntibot,
               checkDurationMs: siteDuration,
               actualCheckedDomain: task.candidateUrl,
+              historyUpdated: true, // already called updateDomainHistory above
             };
-            
-            // Update heuristic history after successful antibot accepted
-            // If final domain is non-pattern, save the candidate URL (pattern domain) instead
-            const candidateHost = this.resolver.extractHostWithoutQuery(task.candidateUrl);
-            if (!this.matchesNumericPattern(newHost) && this.matchesNumericPattern(candidateHost)) {
-              this.updateDomainHistory(task.site, candidateHost);
-            } else {
-              this.updateDomainHistory(task.site, newHost);
-            }
           }
 
           // Start next task if available and below parallel limit
@@ -680,6 +781,28 @@ export class BatchProcessor {
 
     this.logger.debug(siteName, `Checking: ${urlToCheck}`);
     // Normalize URL before extracting host (add https:// if missing)
+    if (typeof urlToCheck !== 'string') {
+      this.logger.error(siteName, `Invalid URL type: ${typeof urlToCheck}, value: ${urlToCheck}`);
+      const siteDuration = Date.now() - siteStartTime;
+      return {
+        siteName,
+        oldHost: "",
+        newHost: "",
+        hostChanged: false,
+        startedHost: "",
+        result: {
+          success: false,
+          finalUrl: "",
+          finalHost: "",
+          statusCode: 0,
+          redirectChain: [],
+          error: `Invalid URL type: ${typeof urlToCheck}`,
+        },
+        shouldUpdate: false,
+        checkDurationMs: siteDuration,
+        actualCheckedDomain: "",
+      };
+    }
     const normalizedUrl = urlToCheck.startsWith("http://") || urlToCheck.startsWith("https://")
       ? urlToCheck
       : `https://${urlToCheck}`;
@@ -762,15 +885,18 @@ export class BatchProcessor {
       // Skip probe for antibot responses when accept_antibot is true
       // (Cloudflare challenge page won't contain probe_text, but the site is still considered working)
       if (result.antibotDetected && site.accept_antibot) {
-        this.logger.info(siteName, "Skipping content probe for antibot response (accept_antibot=true)");
+        this.logger.info(siteName, `Content probe SKIPPED for antibot site (accept_antibot=true)`);
       } else {
         const probeOk = await this.probe.verify(site.probe_text, result.finalBody);
         result.contentProbeOk = probeOk;
 
-        this.logger.debug(siteName, `Probe text found: ${probeOk}`);
+        if (probeOk) {
+          this.logger.info(siteName, `Content probe PASSED on ${result.finalUrl || urlToCheck}`);
+        } else {
+          this.logger.info(siteName, `Content probe FAILED on ${result.finalUrl || urlToCheck}`);
+        }
 
         if (!probeOk) {
-          this.logger.error(siteName, "Content probe failed (key phrases not found)");
           const siteDuration = Date.now() - siteStartTime;
           this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PROBE FAILED`);
 
@@ -833,14 +959,55 @@ export class BatchProcessor {
     const siteDuration = Date.now() - siteStartTime;
     this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms)`);
 
-    // Update domain history on successful check
-    this.updateDomainHistory(site, newHost);
-
     // shouldUpdate: process filters if domain changed OR if we need to clean up predicted mirrors
     // (to clean up predicted mirrors even when last_known_mirror didn't change)
     const hasNumericPatterns = /\d+/.test(newHost);
     const hasWildcardInSiteName = siteName.includes('*');
-    const shouldUpdate = hostChanged || (!!startedHost && hasNumericPatterns) || hasWildcardInSiteName;
+
+    // If old domain was pattern and new domain is non-pattern: do NOT update filters.
+    // Record history/flags and let index.ts update last_known_mirror only.
+    const oldHostIsPattern = this.matchesNumericPattern(oldHost);
+    const newHostIsPattern = this.matchesNumericPattern(newHost);
+    const isPatternToNonPattern = hostChanged && oldHostIsPattern && !newHostIsPattern;
+
+    let shouldUpdate = hostChanged || (!!startedHost && hasNumericPatterns) || hasWildcardInSiteName;
+    let historyUpdated = false;
+
+    if (isPatternToNonPattern) {
+      // Pattern → Non-pattern detected: save history and try heuristic immediately
+      this.logger.warn(siteName, `Pattern domain redirected to non-pattern (${oldHost} → ${newHost})`);
+      this.updateDomainHistory(site, newHost, site.last_known_mirror);
+      historyUpdated = true;
+      shouldUpdate = false; // do not touch filter files yet
+      
+      // Try heuristic search immediately to find a new pattern domain
+      this.logger.info(siteName, `Triggering heuristic search to find new pattern domain...`);
+      const heuristicResult = await this.runHeuristicSearch(siteName, 0, site, oldHost);
+      
+      if (heuristicResult) {
+        // Found a pattern domain via heuristic!
+        this.logger.info(siteName, `Heuristic found new pattern domain: ${heuristicResult.newHost}`);
+        
+        // Update history: clear flags since we're back on pattern
+        this.updateDomainHistory(site, heuristicResult.newHost, oldHost);
+        
+        // Return heuristic result instead
+        return {
+          siteName,
+          oldHost,
+          newHost: heuristicResult.newHost,
+          hostChanged: true,
+          startedHost,
+          result: heuristicResult.result,
+          shouldUpdate: true, // Update filters with new pattern domain
+          checkDurationMs: Date.now() - siteStartTime,
+          actualCheckedDomain: heuristicResult.result.finalUrl || heuristicResult.candidateUrl,
+          historyUpdated: true,
+        };
+      } else {
+        this.logger.info(siteName, `Heuristic search found no working pattern domains`);
+      }
+    }
 
     return {
       siteName,
@@ -852,6 +1019,7 @@ export class BatchProcessor {
       shouldUpdate,
       checkDurationMs: siteDuration,
       actualCheckedDomain: result.finalUrl || urlToCheck,
+      historyUpdated,
     };
   }
 

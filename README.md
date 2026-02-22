@@ -254,8 +254,8 @@ sites:
     geoblock: ""                        # Country code for geo-blocking (e.g. "TR", "US"). Not used, just for information.
     
     # Auto-generated fields (updated by the script)
-    last_seen: "2026-01-21 12:00"       # Last successful check
-    last_failed: ""                     # Last failed check
+    last_seen: "2026-01-21"             # Last successful check (date only)
+    failed_since: ""                    # Date when site first failed
     failed_days: 0                      # Days since last failure
     potentially_dead: false             # Marked as potentially dead after many failures
     
@@ -522,7 +522,7 @@ sites:
     
     # These fields will be auto-updated by the script:
     # last_seen: "2026-01-21"
-    # last_failed: ""
+    # failed_since: ""
     # failed_days: 0
 ```
 

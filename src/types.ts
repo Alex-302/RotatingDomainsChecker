@@ -81,12 +81,10 @@ export interface WatcherSite {
   heuristic_history?: string[];
   /** Pattern change detection: true when current domain is non-pattern (deleted when pattern found) */
   pattern_changed?: boolean;
-  /** Current non-pattern domain when pattern_changed is true (deleted when pattern found) */
-  non_pattern_mirror?: string;
   // Auto-updated fields
   last_seen: string;        // Format: YYYY-MM-DD HH:MM
-  last_failed: string;      // Format: YYYY-MM-DD HH:MM
-  failed_days: number;      // Days since last_failed
+  failed_since?: string;    // Format: YYYY-MM-DD HH:MM (only when failed)
+  failed_days?: number;     // Days since failed_since (only when failed)
   potentially_dead?: boolean; // true if last_known_mirror and heuristic failed to find working domain
 }
 
@@ -126,6 +124,7 @@ export interface CheckResult {
   checkDurationMs: number;
   actualCheckedDomain?: string; // The actual domain that was checked for accurate error reporting
   additionalWorkingDomains?: string[]; // Additional working domains found with force_search_ahead
+  historyUpdated?: boolean; // True when updateDomainHistory was already called in batch.ts (heuristic path)
 }
 
 export interface ReplacementPair {

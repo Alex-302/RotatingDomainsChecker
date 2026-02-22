@@ -11,7 +11,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.1.2";
+const VERSION = "1.1.7";
 
 function formatDateTime(date: Date): string {
   const year = date.getFullYear();
@@ -20,6 +20,13 @@ function formatDateTime(date: Date): string {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`; // Date only to reduce git diff noise for last_seen
 }
 
 function calculateDaysSince(dateStr: string): number {
@@ -97,6 +104,7 @@ async function main() {
 
   const now = new Date();
   const nowFormatted = formatDateTime(now);
+  const nowDateOnly = formatDate(now);
 
   for (const result of results) {
     const site = watchers.sites[result.siteName];
@@ -106,8 +114,12 @@ async function main() {
     const isAntibotDetected = result.result.antibotDetected;
     const isAntibotAccepted = isAntibotDetected && site.accept_antibot;
 
+    // Heuristic found a non-pattern domain: history/flags already updated in batch.ts,
+    // last_known_mirror should be updated but filters must NOT be touched.
+    const isHeuristicNonPattern = result.historyUpdated && !result.shouldUpdate && result.result.success;
+
     // Check if failed: HTTP error OR content probe failed, but NOT accepted antibot
-    const isFailed = (!result.result.success || (result.error && !result.shouldUpdate)) && !isAntibotAccepted;
+    const isFailed = (!result.result.success || (result.error && !result.shouldUpdate)) && !isAntibotAccepted && !isHeuristicNonPattern;
 
     if (isFailed) {
       // Determine error type
@@ -143,24 +155,37 @@ async function main() {
         summary.antibotBlocked++;
       }
 
-      // Update last_failed and calculate failed_days
-      if (!site.last_failed) {
-        // First failure - set last_failed to now
-        site.last_failed = nowFormatted;
+      // Update failed_since and calculate failed_days
+      if (!site.failed_since) {
+        // First failure - set failed_since to now
+        site.failed_since = nowFormatted;
         site.failed_days = 0;
       } else {
         // Subsequent failure - calculate days since first failure
-        site.failed_days = calculateDaysSince(site.last_failed);
+        site.failed_days = calculateDaysSince(site.failed_since);
       }
 
       // Mark as potentially dead if no working domain found
       site.potentially_dead = true;
 
-      if (site.failed_days >= config.thresholds.failedDaysWarning) {
+      if ((site.failed_days || 0) >= config.thresholds.failedDaysWarning) {
         summary.warnings.push(
           `${result.siteName}: Failed for ${site.failed_days} days - consider removing from filters`
         );
       }
+    } else if (isHeuristicNonPattern) {
+      // Heuristic found a non-pattern domain (e.g. hepbetspor12.cfd → patronspor.is).
+      // History and flags already set in batch.ts. Update last_known_mirror and counters,
+      // but do NOT touch filter files — the old pattern domain stays until a new pattern is found.
+      summary.updated++;
+      site.last_known_mirror = result.newHost;
+      site.last_seen = nowDateOnly;
+      delete site.failed_days;
+      delete site.failed_since;
+      delete site.potentially_dead;
+      summary.warnings.push(
+        `${result.siteName}: Pattern domain redirected to non-pattern (${result.oldHost} → ${result.newHost}) - filter not updated, waiting for new pattern domain`
+      );
     } else if (isAntibotAccepted && result.shouldUpdate) {
       // Antibot accepted and domain changed - treat as successful update
       summary.antibotAccepted++;
@@ -220,67 +245,97 @@ async function main() {
       }
 
       // Update watcher on successful change
+      // Save old last_known_mirror before updating (for history comparison)
+      const oldLastKnownMirror = site.last_known_mirror;
+      
       // Extract only domain if initial_domain doesn't contain URL
       const shouldExtractDomain = !site.initial_domain || !site.initial_domain.includes("/");
       site.last_known_mirror = shouldExtractDomain
         ? result.newHost
         : result.result.finalUrl;
-      site.last_seen = nowFormatted;
-      site.failed_days = 0; // Reset on success
-      site.last_failed = "";
+      site.last_seen = nowDateOnly;
+      delete site.failed_days; // Reset on success
+      delete site.failed_since;
       delete site.potentially_dead; // Remove flag on success
+      
+      // Update domain history after last_known_mirror is updated
+      // Skip if already updated in batch.ts (heuristic path sets historyUpdated=true)
+      if (result.hostChanged && !result.historyUpdated) {
+        processor.updateDomainHistory(site, result.newHost, oldLastKnownMirror);
+      }
     } else if (result.shouldUpdate) {
-      // Count as updated only if domain actually changed
-      if (result.hostChanged) {
-        summary.updated++;
-      } else {
-        summary.unchanged++;
-      }
-
-      // Get last pattern domain from history if pattern_changed is true
-      const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
-        ? site.heuristic_history[site.heuristic_history.length - 1]
-        : undefined;
-
-      summary.replacements.push({
-        oldHost: result.oldHost,
-        newHost: result.newHost,
-        siteName: result.siteName,
-        startedHost: result.startedHost || "",
-        checkDurationMs: result.checkDurationMs,
-        patternChangedDomain,
-      });
-
-      // Add replacements for additional working domains (force_search_ahead)
-      if (result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0) {
-        for (const additionalDomain of result.additionalWorkingDomains) {
-          summary.replacements.push({
-            oldHost: result.oldHost,
-            newHost: additionalDomain,
-            siteName: result.siteName,
-            startedHost: result.startedHost || "",
-            checkDurationMs: result.checkDurationMs,
-            patternChangedDomain,
-          });
+      // Only update filters if check was successful
+      if (result.result.success) {
+        // Count as updated only if domain actually changed
+        if (result.hostChanged) {
+          summary.updated++;
+        } else {
+          summary.unchanged++;
         }
-      }
 
-      // Update watcher on successful change
-      // Extract only domain if initial_domain doesn't contain URL
-      const shouldExtractDomain = !site.initial_domain || !site.initial_domain.includes("/");
-      site.last_known_mirror = shouldExtractDomain
-        ? result.newHost
-        : result.result.finalUrl;
-      site.last_seen = nowFormatted;
-      site.failed_days = 0; // Reset on success
-      site.last_failed = "";
-      delete site.potentially_dead; // Remove flag on success
+        // Get last pattern domain from history if pattern_changed is true
+        const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
+          ? site.heuristic_history[site.heuristic_history.length - 1]
+          : undefined;
+
+        summary.replacements.push({
+          oldHost: result.oldHost,
+          newHost: result.newHost,
+          siteName: result.siteName,
+          startedHost: result.startedHost || "",
+          checkDurationMs: result.checkDurationMs,
+          patternChangedDomain,
+        });
+
+        // Add replacements for additional working domains (force_search_ahead)
+        if (result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0) {
+          for (const additionalDomain of result.additionalWorkingDomains) {
+            summary.replacements.push({
+              oldHost: result.oldHost,
+              newHost: additionalDomain,
+              siteName: result.siteName,
+              startedHost: result.startedHost || "",
+              checkDurationMs: result.checkDurationMs,
+              patternChangedDomain,
+            });
+          }
+        }
+
+        // Update watcher on successful change
+        // Extract only domain if initial_domain doesn't contain URL
+        const shouldExtractDomain = !site.initial_domain || !site.initial_domain.includes("/");
+        site.last_known_mirror = shouldExtractDomain
+          ? result.newHost
+          : result.result.finalUrl;
+        site.last_seen = nowDateOnly;
+        delete site.failed_days; // Reset on success
+        delete site.failed_since;
+        delete site.potentially_dead; // Remove flag on success
+      } else {
+        // Pattern change detected but check failed - requires manual review
+        summary.failed++;
+        
+        // Log structured warning
+        logger.warn(result.siteName, `⚠️ PATTERN CHANGE ALERT`);
+        logger.warn(result.siteName, `   From: ${result.oldHost}`);
+        logger.warn(result.siteName, `   To: ${result.newHost}`);
+        logger.warn(result.siteName, `   Status: FAILED`);
+        logger.warn(result.siteName, `   Action: Manual review required`);
+        
+        // Add to manual review list
+        summary.warnings.push(`${result.siteName}: ${result.oldHost} → ${result.newHost}`);
+        
+        // Update watcher with failed status
+        site.failed_since = nowFormatted;
+        site.failed_days = calculateDaysSince(site.failed_since);
+        site.potentially_dead = true;
+      }
     } else {
       // Success but no change - update last_seen, reset failed_days
       summary.unchanged++;
-      site.last_seen = nowFormatted;
-      site.failed_days = 0;
-      site.last_failed = "";
+      site.last_seen = nowDateOnly;
+      delete site.failed_days;
+      delete site.failed_since;
       delete site.potentially_dead; // Remove flag on success
     }
   }
@@ -375,9 +430,20 @@ async function main() {
     }
   }
 
-  if (summary.warnings.length > 0) {
+  // Separate pattern changes from other warnings
+  const patternChanges = summary.warnings.filter(w => w.includes('→'));
+  const otherWarnings = summary.warnings.filter(w => !w.includes('→'));
+  
+  if (patternChanges.length > 0) {
+    logger.logGlobal(LogLevel.WARN, " ⚠️  Pattern changes requiring manual review:");
+    for (const warning of patternChanges) {
+      logger.logGlobal(LogLevel.WARN, `     ${warning}`);
+    }
+  }
+  
+  if (otherWarnings.length > 0) {
     logger.logGlobal(LogLevel.RAW, " ⚠️  Warnings:");
-    for (const warning of summary.warnings) {
+    for (const warning of otherWarnings) {
       logger.logGlobal(LogLevel.RAW, `     - ${warning}`);
     }
   }

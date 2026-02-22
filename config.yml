@@ -41,8 +41,9 @@ skip_text:
   - "This domain is parked"
   - "router.parklogic.com"
   - "Redirecting..."
-  - "spinny-cogs"                    # betist{N}tv.live
-  - "internal error, please contact" # Cloudflare, HTTP 500
+  - "https://patronspor.is/?s={search_term_string}"  # skip redirets back to patronmarketing landing pages
+  - "spinny-cogs"                                    # betist{N}tv.live
+  - "internal error, please contact"                 # Cloudflare, HTTP 500
 
 logging:
   saveToFile: true       # save logs to file
