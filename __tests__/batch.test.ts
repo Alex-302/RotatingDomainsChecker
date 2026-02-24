@@ -1587,4 +1587,50 @@ describe('10. probe_text filtering in heuristic search', () => {
     expect(results[0].shouldUpdate).toBe(true);
     expect(results[0].newHost).toBe('hepbetspor13.cfd');
   });
+
+  test('9.8 probe_text failure sets result.success=false and triggers heuristic', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: false, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'betist219tv.live',
+      probe_text: ['const BASE_URL  = "https://betist'],
+    });
+    const watchers = makeWatchers({ 'betist site': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      // Phase 1: Main domain returns 200 but probe_text NOT found
+      if (callCount === 1) {
+        return makeSuccessResult('betist219tv.live', {
+          antibotDetected: false,
+          statusCode: 200,
+          finalBody: '<html><title>Wrong site - no probe text here</title></html>',
+        });
+      }
+      // Phase 2: Heuristic candidate betist220tv.live has probe_text
+      if (url.includes('betist220tv.live')) {
+        return makeSuccessResult('betist220tv.live', {
+          antibotDetected: false,
+          statusCode: 200,
+          finalBody: '<html><script>const BASE_URL  = "https://betist";</script></html>',
+        });
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Verify heuristic was triggered and found working domain
+    expect(callCount).toBeGreaterThan(1); // Main + heuristic candidates
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('betist220tv.live');
+  });
 });

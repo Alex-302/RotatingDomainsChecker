@@ -900,6 +900,10 @@ export class BatchProcessor {
           const siteDuration = Date.now() - siteStartTime;
           this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PROBE FAILED`);
 
+          // Mark result as failed to trigger heuristic search
+          result.success = false;
+          result.error = "Content probe failed";
+
           return {
             siteName,
             oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
