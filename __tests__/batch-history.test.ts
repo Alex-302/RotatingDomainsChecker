@@ -80,8 +80,8 @@ describe('Domain History Management', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
-          last_known_mirror: 'kodtimetv15.com',
-          heuristic_history: ['kodtimetv13.com'],
+          last_known_mirror: 'example15.com',
+          heuristic_history: ['example13.com'],
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -93,7 +93,7 @@ describe('Domain History Management', () => {
     const site = watchers.sites['test-site'];
     
     // Update to new pattern domain
-    (processor as any).updateDomainHistory(site, 'kodtimetv16.com', 'kodtimetv15.com');
+    (processor as any).updateDomainHistory(site, 'example16.com', 'example15.com');
     
     // Pattern → Pattern: history should be deleted (not needed)
     expect(site.heuristic_history).toBeUndefined();
@@ -103,8 +103,8 @@ describe('Domain History Management', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
-          last_known_mirror: 'kodtimetv17.com',
-          heuristic_history: ['kodtimetv17.com'],
+          last_known_mirror: 'example17.com',
+          heuristic_history: ['example17.com'],
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -115,7 +115,7 @@ describe('Domain History Management', () => {
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
     
-    (processor as any).updateDomainHistory(site, 'kodtimetv18.com', 'kodtimetv17.com');
+    (processor as any).updateDomainHistory(site, 'example18.com', 'example17.com');
     
     // Pattern → Pattern: history should be deleted
     expect(site.heuristic_history).toBeUndefined();
@@ -125,8 +125,8 @@ describe('Domain History Management', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
-          last_known_mirror: 'kodtimetv15.com',
-          heuristic_history: ['kodtimetv15.com'],
+          last_known_mirror: 'example15.com',
+          heuristic_history: ['example15.com'],
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -138,7 +138,7 @@ describe('Domain History Management', () => {
     const site = watchers.sites['test-site'];
     
     // Re-add same pattern
-    (processor as any).updateDomainHistory(site, 'kodtimetv15.com', 'kodtimetv15.com');
+    (processor as any).updateDomainHistory(site, 'example15.com', 'example15.com');
     
     // Pattern → Pattern: history should be deleted
     expect(site.heuristic_history).toBeUndefined();
@@ -148,8 +148,8 @@ describe('Domain History Management', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
-          last_known_mirror: 'kodtimetv15.com',  // Current pattern domain
-          heuristic_history: ['kodtimetv15.com'],
+          last_known_mirror: 'example15.com',  // Current pattern domain
+          heuristic_history: ['example15.com'],
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -161,10 +161,10 @@ describe('Domain History Management', () => {
     const site = watchers.sites['test-site'];
     
     // Switch to non-pattern domain (link shortener)
-    (processor as any).updateDomainHistory(site, 'kodtimetv16-com.l.ink', 'kodtimetv15.com');
+    (processor as any).updateDomainHistory(site, 'example16-com.l.ink', 'example15.com');
     
-    // Should save current pattern (kodtimetv15.com) to history before switching
-    expect(site.heuristic_history).toEqual(['kodtimetv15.com']);
+    // Should save current pattern (example15.com) to history before switching
+    expect(site.heuristic_history).toEqual(['example15.com']);
     expect(site.pattern_changed).toBe(true);
   });
 
@@ -172,7 +172,7 @@ describe('Domain History Management', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
-          last_known_mirror: 'kodtimetv14.com',
+          last_known_mirror: 'example14.com',
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -184,7 +184,7 @@ describe('Domain History Management', () => {
     const site = watchers.sites['test-site'];
     
     // Update to new pattern domain
-    (processor as any).updateDomainHistory(site, 'kodtimetv15.com', 'kodtimetv14.com');
+    (processor as any).updateDomainHistory(site, 'example15.com', 'example14.com');
     
     // Pattern → Pattern: history should be deleted
     expect(site.heuristic_history).toBeUndefined();
@@ -195,13 +195,13 @@ describe('Domain History Management', () => {
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     
     // Pattern-matching domains
-    expect((processor as any).matchesNumericPattern('kodtimetv15.com')).toBe(true);
-    expect((processor as any).matchesNumericPattern('sahatv13.top')).toBe(true);
-    expect((processor as any).matchesNumericPattern('14dizipal.com')).toBe(true);
-    expect((processor as any).matchesNumericPattern('www.kodtimetv15.com')).toBe(true); // www. prefix normalized
-    expect((processor as any).matchesNumericPattern('betist213tv.live')).toBe(true); // domain[N][text].tld
+    expect((processor as any).matchesNumericPattern('example15.com')).toBe(true);
+    expect((processor as any).matchesNumericPattern('sample13.com')).toBe(true);
+    expect((processor as any).matchesNumericPattern('14example.com')).toBe(true);
+    expect((processor as any).matchesNumericPattern('www.example15.com')).toBe(true); // www. prefix normalized
+    expect((processor as any).matchesNumericPattern('example213tv.com')).toBe(true); // domain[N][text].tld
     // Non-pattern domains
-    expect((processor as any).matchesNumericPattern('kodtimetv16-com.l.ink')).toBe(false);
+    expect((processor as any).matchesNumericPattern('example16-com.l.ink')).toBe(false);
     expect((processor as any).matchesNumericPattern('example.com')).toBe(false);
     expect((processor as any).matchesNumericPattern('short.com')).toBe(false); // Too short
   });
@@ -209,8 +209,8 @@ describe('Domain History Management', () => {
   test('updateDomainHistory saves pattern to history when switching to non-pattern (first time)', () => {
     const watchers: Watchers = {
       sites: {
-        'yavasgir': {
-          last_known_mirror: 'yavasgir55.com',  // Pattern domain
+        'testsite': {
+          last_known_mirror: 'testsite55.com',  // Pattern domain
           // No heuristic_history yet
           last_seen: '2026-02-15 10:00',
           failed_since: '',
@@ -220,23 +220,23 @@ describe('Domain History Management', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['yavasgir'];
+    const site = watchers.sites['testsite'];
     
     // Switch to non-pattern domain
-    (processor as any).updateDomainHistory(site, 'example.com', 'yavasgir55.com');
+    (processor as any).updateDomainHistory(site, 'example.com', 'testsite55.com');
     
     // Should save pattern domain to history before switching
-    expect(site.heuristic_history).toEqual(['yavasgir55.com']);
+    expect(site.heuristic_history).toEqual(['testsite55.com']);
     expect(site.pattern_changed).toBe(true);
   });
 
   test('updateDomainHistory preserves history when switching to another non-pattern', () => {
     const watchers: Watchers = {
       sites: {
-        'yavasgir': {
+        'testsite': {
           last_known_mirror: 'example.com',  // Non-pattern domain
           pattern_changed: true,
-          heuristic_history: ['yavasgir55.com'],  // Pattern saved from previous switch
+          heuristic_history: ['testsite55.com'],  // Pattern saved from previous switch
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -245,13 +245,13 @@ describe('Domain History Management', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['yavasgir'];
+    const site = watchers.sites['testsite'];
     
     // Switch to another non-pattern domain
-    (processor as any).updateDomainHistory(site, 'another-example.com', 'yavasgir55.com');
+    (processor as any).updateDomainHistory(site, 'another-example.com', 'testsite55.com');
     
     // History should remain unchanged (no pattern to save)
-    expect(site.heuristic_history).toEqual(['yavasgir55.com']);
+    expect(site.heuristic_history).toEqual(['testsite55.com']);
     expect(site.pattern_changed).toBe(true);
   });
 
@@ -259,9 +259,9 @@ describe('Domain History Management', () => {
     const watchers: Watchers = {
       sites: {
         'test-site': {
-          last_known_mirror: 'yavasgir-new-domain.com',
+          last_known_mirror: 'testsite-new-domain.com',
           pattern_changed: true,
-          heuristic_history: ['yavasgir88.com'],
+          heuristic_history: ['testsite88.com'],
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -273,7 +273,7 @@ describe('Domain History Management', () => {
     const site = watchers.sites['test-site'];
     
     // Return to pattern domain
-    (processor as any).updateDomainHistory(site, 'yavasgir99.com', 'yavasgir-new-domain.com');
+    (processor as any).updateDomainHistory(site, 'testsite99.com', 'testsite-new-domain.com');
     
     // Flags and history should be cleared when returning to pattern
     expect(site.heuristic_history).toBeUndefined();
@@ -296,9 +296,9 @@ describe('Scheme Change Scenario', () => {
     // Verifies that processAll correctly identifies sites needing history-based heuristic
     const watchers: Watchers = {
       sites: {
-        'kodtimetv': {
-          last_known_mirror: 'kodtimetv16-com.l.ink', // Non-pattern domain
-          heuristic_history: ['kodtimetv16.com'], // Pattern domain in history
+        'example': {
+          last_known_mirror: 'example16-com.l.ink', // Non-pattern domain
+          heuristic_history: ['example16.com'], // Pattern domain in history
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -307,7 +307,7 @@ describe('Scheme Change Scenario', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['kodtimetv'];
+    const site = watchers.sites['example'];
 
     const currentHost = processor['resolver'].extractHostWithoutQuery(site.last_known_mirror || '');
     const lastHistoryDomain = site.heuristic_history![site.heuristic_history!.length - 1];
@@ -318,11 +318,11 @@ describe('Scheme Change Scenario', () => {
   });
 
   test('updateDomainHistory does not create history for pattern→pattern rotation', () => {
-    // sahatv2.top → sahatv5.top: both pattern, no history needed
+    // sample2.top → sample5.top: both pattern, no history needed
     const watchers: Watchers = {
       sites: {
-        'sahatv': {
-          last_known_mirror: 'sahatv2.top',
+        'sample': {
+          last_known_mirror: 'sample2.com',
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -331,9 +331,9 @@ describe('Scheme Change Scenario', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['sahatv'];
+    const site = watchers.sites['sample'];
 
-    (processor as any).updateDomainHistory(site, 'sahatv5.top', 'sahatv2.top');
+    (processor as any).updateDomainHistory(site, 'sample5.com', 'sample2.com');
 
     expect(site.heuristic_history).toBeUndefined();
     expect(site.pattern_changed).toBeUndefined();
@@ -343,9 +343,9 @@ describe('Scheme Change Scenario', () => {
     // If history existed from a previous non-pattern episode, it must be cleared on return to pattern
     const watchers: Watchers = {
       sites: {
-        'sahatv': {
-          last_known_mirror: 'sahatv5.top',
-          heuristic_history: ['sahatv5.top'],
+        'sample': {
+          last_known_mirror: 'sample5.com',
+          heuristic_history: ['sample5.com'],
           pattern_changed: true,
           last_seen: '2026-02-15 10:00',
           failed_since: '',
@@ -355,20 +355,20 @@ describe('Scheme Change Scenario', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['sahatv'];
+    const site = watchers.sites['sample'];
 
-    (processor as any).updateDomainHistory(site, 'sahatv6.top', 'sahatv5.top');
+    (processor as any).updateDomainHistory(site, 'sample6.com', 'sample5.com');
 
     expect(site.heuristic_history).toBeUndefined();
     expect(site.pattern_changed).toBeUndefined();
   });
 
   test('updateDomainHistory creates history and sets flags when pattern switches to non-pattern', () => {
-    // hepbetspor12.cfd → patronspor.is: history must record the last pattern domain
+    // example12.com → nonpattern.com: history must record the last pattern domain
     const watchers: Watchers = {
       sites: {
-        'hepbetspor': {
-          last_known_mirror: 'hepbetspor12.cfd',
+        'example': {
+          last_known_mirror: 'example12.com',
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -377,11 +377,11 @@ describe('Scheme Change Scenario', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['hepbetspor'];
+    const site = watchers.sites['example'];
 
-    (processor as any).updateDomainHistory(site, 'patronspor.is', 'hepbetspor12.cfd');
+    (processor as any).updateDomainHistory(site, 'nonpattern.com', 'example12.com');
 
-    expect(site.heuristic_history).toEqual(['hepbetspor12.cfd']);
+    expect(site.heuristic_history).toEqual(['example12.com']);
     expect(site.pattern_changed).toBe(true);
   });
 
@@ -389,10 +389,10 @@ describe('Scheme Change Scenario', () => {
     // Already on non-pattern, switches to another non-pattern: history stays unchanged
     const watchers: Watchers = {
       sites: {
-        'yavasgir': {
+        'testsite': {
           last_known_mirror: 'example.com',
           pattern_changed: true,
-          heuristic_history: ['yavasgir55.com'],
+          heuristic_history: ['testsite55.com'],
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -401,22 +401,22 @@ describe('Scheme Change Scenario', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['yavasgir'];
+    const site = watchers.sites['testsite'];
 
     // oldLastKnownMirror is non-pattern → no new history entry added
     (processor as any).updateDomainHistory(site, 'another-example.com', 'example.com');
 
-    expect(site.heuristic_history).toEqual(['yavasgir55.com']);
+    expect(site.heuristic_history).toEqual(['testsite55.com']);
     expect(site.pattern_changed).toBe(true);
   });
 
   test('checkSingleSite triggers immediate heuristic when pattern→non-pattern and finds new pattern domain', async () => {
-    // Scenario: hepbetspor12.cfd redirects to patronspor.is (non-pattern),
-    // but heuristic immediately finds hepbetspor13.cfd (pattern)
+    // Scenario: example12.com redirects to nonpattern.com (non-pattern),
+    // but heuristic immediately finds example13.com (pattern)
     const watchers: Watchers = {
       sites: {
-        'hepbetspor': {
-          last_known_mirror: 'hepbetspor12.cfd',
+        'example': {
+          last_known_mirror: 'example12.com',
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -425,50 +425,50 @@ describe('Scheme Change Scenario', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['hepbetspor'];
+    const site = watchers.sites['example'];
 
     // Mock DNS resolution to succeed for all candidates
     mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
 
     // Mock HTTP resolver:
-    // 1. hepbetspor12.cfd → redirects to patronspor.is (non-pattern)
-    // 2. heuristic candidates: hepbetspor13.cfd succeeds (pattern)
+    // 1. example12.com → redirects to nonpattern.com (non-pattern)
+    // 2. heuristic candidates: example13.com succeeds (pattern)
     const mockResolve = jest.spyOn(resolver, 'resolve');
     
-    // First call: hepbetspor12.cfd → patronspor.is
+    // First call: example12.com → nonpattern.com
     mockResolve.mockResolvedValueOnce({
       success: true,
-      finalUrl: 'https://patronspor.is/',
-      finalHost: 'patronspor.is',
+      finalUrl: 'https://nonpattern.com/',
+      finalHost: 'nonpattern.com',
       statusCode: 200,
       redirectChain: [
-        { url: 'https://hepbetspor12.cfd/', statusCode: 301, location: 'https://patronspor.is/' },
-        { url: 'https://patronspor.is/', statusCode: 200 },
+        { url: 'https://example12.com/', statusCode: 301, location: 'https://nonpattern.com/' },
+        { url: 'https://nonpattern.com/', statusCode: 200 },
       ],
       finalBody: '<html><body>Working</body></html>',
       antibotDetected: false,
       shouldTriggerHeuristic: false,
     });
 
-    // Heuristic calls: hepbetspor13.cfd succeeds
+    // Heuristic calls: example13.com succeeds
     mockResolve.mockResolvedValueOnce({
       success: true,
-      finalUrl: 'https://hepbetspor13.cfd/',
-      finalHost: 'hepbetspor13.cfd',
+      finalUrl: 'https://example13.com/',
+      finalHost: 'example13.com',
       statusCode: 200,
       redirectChain: [
-        { url: 'https://hepbetspor13.cfd/', statusCode: 200 },
+        { url: 'https://example13.com/', statusCode: 200 },
       ],
       finalBody: '<html><body>Working</body></html>',
       antibotDetected: false,
       shouldTriggerHeuristic: false,
     });
 
-    const result = await (processor as any).processSite('hepbetspor', site);
+    const result = await (processor as any).processSite('example', site);
 
     // Verify result
-    expect(result.oldHost).toBe('hepbetspor12.cfd');
-    expect(result.newHost).toBe('hepbetspor13.cfd'); // Found by heuristic!
+    expect(result.oldHost).toBe('example12.com');
+    expect(result.newHost).toBe('example13.com'); // Found by heuristic!
     expect(result.hostChanged).toBe(true);
     expect(result.shouldUpdate).toBe(true); // Should update filters with new pattern domain
     expect(result.historyUpdated).toBe(true);
@@ -481,12 +481,12 @@ describe('Scheme Change Scenario', () => {
   });
 
   test('checkSingleSite triggers immediate heuristic when pattern→non-pattern but finds no pattern domain', async () => {
-    // Scenario: restmacizle22.cfd redirects to patronspor.is (non-pattern),
+    // Scenario: example22.com redirects to nonpattern.com (non-pattern),
     // heuristic runs but all candidates fail or are non-pattern
     const watchers: Watchers = {
       sites: {
-        'restmacizle23.cfd': {
-          last_known_mirror: 'restmacizle22.cfd',
+        'example23.com': {
+          last_known_mirror: 'example22.com',
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -495,25 +495,25 @@ describe('Scheme Change Scenario', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['restmacizle23.cfd'];
+    const site = watchers.sites['example23.com'];
 
     // Mock DNS resolution to succeed
     mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
 
     // Mock HTTP resolver:
-    // 1. restmacizle22.cfd → redirects to patronspor.is (non-pattern)
+    // 1. example22.com → redirects to nonpattern.com (non-pattern)
     // 2. heuristic candidates: all fail
     const mockResolve = jest.spyOn(resolver, 'resolve');
     
-    // First call: restmacizle22.cfd → patronspor.is
+    // First call: example22.com → nonpattern.com
     mockResolve.mockResolvedValueOnce({
       success: true,
-      finalUrl: 'https://patronspor.is/',
-      finalHost: 'patronspor.is',
+      finalUrl: 'https://nonpattern.com/',
+      finalHost: 'nonpattern.com',
       statusCode: 200,
       redirectChain: [
-        { url: 'https://restmacizle22.cfd/', statusCode: 301, location: 'https://patronspor.is/' },
-        { url: 'https://patronspor.is/', statusCode: 200 },
+        { url: 'https://example22.com/', statusCode: 301, location: 'https://nonpattern.com/' },
+        { url: 'https://nonpattern.com/', statusCode: 200 },
       ],
       finalBody: '<html><body>Working</body></html>',
       antibotDetected: false,
@@ -535,29 +535,29 @@ describe('Scheme Change Scenario', () => {
       });
     }
 
-    const result = await (processor as any).processSite('restmacizle23.cfd', site);
+    const result = await (processor as any).processSite('example23.com', site);
 
     // Verify result: stays on non-pattern domain
-    expect(result.oldHost).toBe('restmacizle22.cfd');
-    expect(result.newHost).toBe('patronspor.is'); // No pattern found, stays on non-pattern
+    expect(result.oldHost).toBe('example22.com');
+    expect(result.newHost).toBe('nonpattern.com'); // No pattern found, stays on non-pattern
     expect(result.hostChanged).toBe(true);
     expect(result.shouldUpdate).toBe(false); // Should NOT update filters
     expect(result.historyUpdated).toBe(true);
 
     // Verify site state: pattern_changed flag set, history saved
-    expect(site.heuristic_history).toEqual(['restmacizle22.cfd']);
+    expect(site.heuristic_history).toEqual(['example22.com']);
     expect(site.pattern_changed).toBe(true);
 
     mockResolve.mockRestore();
   });
 
   test('checkSingleSite triggers immediate heuristic when pattern→non-pattern and finds another non-pattern domain', async () => {
-    // Scenario: kodtimetv15.com redirects to example.com (non-pattern),
-    // heuristic finds kodtimetv16-com.l.ink (also non-pattern)
+    // Scenario: example15.com redirects to example.com (non-pattern),
+    // heuristic finds example16-com.l.ink (also non-pattern)
     const watchers: Watchers = {
       sites: {
-        'kodtimetv': {
-          last_known_mirror: 'kodtimetv15.com',
+        'example': {
+          last_known_mirror: 'example15.com',
           last_seen: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
@@ -566,24 +566,24 @@ describe('Scheme Change Scenario', () => {
     };
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const site = watchers.sites['kodtimetv'];
+    const site = watchers.sites['example'];
 
     // Mock DNS resolution to succeed
     mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
 
     // Mock HTTP resolver:
-    // 1. kodtimetv15.com → redirects to example.com (non-pattern)
-    // 2. heuristic candidates: kodtimetv16.com → kodtimetv16-com.l.ink (non-pattern)
+    // 1. example15.com → redirects to example.com (non-pattern)
+    // 2. heuristic candidates: example16.com → example16-com.l.ink (non-pattern)
     const mockResolve = jest.spyOn(resolver, 'resolve');
     
-    // First call: kodtimetv15.com → example.com
+    // First call: example15.com → example.com
     mockResolve.mockResolvedValueOnce({
       success: true,
       finalUrl: 'https://example.com/',
       finalHost: 'example.com',
       statusCode: 200,
       redirectChain: [
-        { url: 'https://kodtimetv15.com/', statusCode: 301, location: 'https://example.com/' },
+        { url: 'https://example15.com/', statusCode: 301, location: 'https://example.com/' },
         { url: 'https://example.com/', statusCode: 200 },
       ],
       finalBody: '<html><body>Working</body></html>',
@@ -594,12 +594,12 @@ describe('Scheme Change Scenario', () => {
     // Heuristic calls: first candidate redirects to non-pattern
     mockResolve.mockResolvedValueOnce({
       success: true,
-      finalUrl: 'https://kodtimetv16-com.l.ink/',
-      finalHost: 'kodtimetv16-com.l.ink',
+      finalUrl: 'https://example16-com.l.ink/',
+      finalHost: 'example16-com.l.ink',
       statusCode: 200,
       redirectChain: [
-        { url: 'https://kodtimetv16.com/', statusCode: 301, location: 'https://kodtimetv16-com.l.ink/' },
-        { url: 'https://kodtimetv16-com.l.ink/', statusCode: 200 },
+        { url: 'https://example16.com/', statusCode: 301, location: 'https://example16-com.l.ink/' },
+        { url: 'https://example16-com.l.ink/', statusCode: 200 },
       ],
       finalBody: '<html><body>Working</body></html>',
       antibotDetected: false,
@@ -621,17 +621,17 @@ describe('Scheme Change Scenario', () => {
       });
     }
 
-    const result = await (processor as any).processSite('kodtimetv', site);
+    const result = await (processor as any).processSite('example', site);
 
     // Verify result: stays on original non-pattern domain (not the one found by heuristic)
-    expect(result.oldHost).toBe('kodtimetv15.com');
+    expect(result.oldHost).toBe('example15.com');
     expect(result.newHost).toBe('example.com'); // Original non-pattern, not heuristic result
     expect(result.hostChanged).toBe(true);
     expect(result.shouldUpdate).toBe(false); // Should NOT update filters
     expect(result.historyUpdated).toBe(true);
 
     // Verify site state: pattern_changed flag set, history saved
-    expect(site.heuristic_history).toEqual(['kodtimetv15.com']);
+    expect(site.heuristic_history).toEqual(['example15.com']);
     expect(site.pattern_changed).toBe(true);
 
     mockResolve.mockRestore();

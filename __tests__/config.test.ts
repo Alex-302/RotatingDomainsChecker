@@ -68,9 +68,9 @@ filtersdir:
     const watchersContent = `# Main watchers file
 sites:
   # Turkish sites
-  turkifsaclub001.sbs:
-    initial_domain: turkifsaclub001.sbs
-    last_known_mirror: turkifsaclub020.sbs
+  example001.com:
+    initial_domain: example001.com
+    last_known_mirror: example020.com
     last_seen: "2024-01-15"
     failed_since: ""
     failed_days: 0
@@ -80,17 +80,17 @@ sites:
 
     const watchers = loadWatchers(watchersPath);
     expect(watchers.sites).toBeDefined();
-    expect(watchers.sites['turkifsaclub001.sbs']).toBeDefined();
-    expect(watchers.sites['turkifsaclub001.sbs'].last_known_mirror).toBe('turkifsaclub020.sbs');
+    expect(watchers.sites['example001.com']).toBeDefined();
+    expect(watchers.sites['example001.com'].last_known_mirror).toBe('example020.com');
   });
 
   test('saveWatchers preserves comments', () => {
     const watchersContent = `# Main watchers file
 sites:
   # Turkish sites
-  turkifsaclub001.sbs:
-    initial_domain: turkifsaclub001.sbs
-    last_known_mirror: turkifsaclub020.sbs
+  example001.com:
+    initial_domain: example001.com
+    last_known_mirror: example020.com
     last_seen: "2024-01-15"
     failed_since: ""
     failed_days: 0
@@ -99,11 +99,11 @@ sites:
     writeFileSync(watchersPath, watchersContent, 'utf-8');
 
     const watchers = loadWatchers(watchersPath);
-    watchers.sites['turkifsaclub001.sbs'].last_known_mirror = 'turkifsaclub025.sbs';
+    watchers.sites['example001.com'].last_known_mirror = 'example025.com';
     saveWatchers(watchers, watchersPath);
 
     const savedContent = readFileSync(watchersPath, 'utf-8');
-    expect(savedContent).toContain('turkifsaclub025.sbs');
+    expect(savedContent).toContain('example025.com');
   });
 
   test('updating individual site fields does not overwrite others', () => {
