@@ -293,11 +293,11 @@ describe('6.9b resolve() follows JS redirect chain (mocked)', () => {
 describe('6.10 extractJsRedirect', () => {
   const config = makeConfig();
   const resolver = new HttpResolver(config);
-  const base = 'https://t.co/sRxEaOU2pj';
+  const base = 'https://t.co/abc123';
 
   test('meta refresh with URL= → returns absolute URL', () => {
-    const body = '<html><head><meta http-equiv="refresh" content="0;URL=https://hepbetspor11.cfd/"></head></html>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://hepbetspor11.cfd/');
+    const body = '<html><head><meta http-equiv="refresh" content="0;URL=https://example11.com/"></head></html>';
+    expect(resolver.extractJsRedirect(body, base)).toBe('https://example11.com/');
   });
 
   test('meta refresh with url= (lowercase) → returns absolute URL', () => {
@@ -316,8 +316,8 @@ describe('6.10 extractJsRedirect', () => {
   });
 
   test('window.location.href = "url" → returns absolute URL', () => {
-    const body = '<script>window.location.href = "https://hepbetspor11.cfd/"</script>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://hepbetspor11.cfd/');
+    const body = '<script>window.location.href = "https://example11.com/"</script>';
+    expect(resolver.extractJsRedirect(body, base)).toBe('https://example11.com/');
   });
 
   test('window.location = "url" → returns absolute URL', () => {

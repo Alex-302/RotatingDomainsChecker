@@ -52,10 +52,10 @@ function makeSummary(replacements: Summary['replacements'] = [], errors: Summary
 function makeSummaryWithReplacements(): Summary {
   return makeSummary([
     {
-      siteName: 'turkifsaclub',
-      oldHost: 'turkifsaclub001.sbs',
-      newHost: 'turkifsaclub020.sbs',
-      startedHost: 'turkifsaclub001.sbs',
+      siteName: 'testsite',
+      oldHost: 'example001.com',
+      newHost: 'example020.com',
+      startedHost: 'example001.com',
       checkDurationMs: 1500,
     },
   ]);

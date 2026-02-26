@@ -78,7 +78,7 @@ beforeEach(() => {
 
 function makeSite(overrides: Partial<WatcherSite> = {}): WatcherSite {
   return {
-    last_known_mirror: 'turkifsaclub001.sbs',
+    last_known_mirror: 'example001.com',
     last_seen: '',
     failed_since: '',
     failed_days: 0,
@@ -120,13 +120,13 @@ function makeFailResult(error: string, overrides: Partial<RedirectResult> = {}):
 // ============================================================================
 
 describe('3. Heuristic candidate generation', () => {
-  test('3.1 domain[N].tld: turkifsaclub001.sbs → generates turkifsaclub002..006', async () => {
+  test('3.1 domain[N].tld: example001.com → generates example002..006', async () => {
     const config = makeConfig({
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -135,8 +135,8 @@ describe('3. Heuristic candidate generation', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      // parseInt('001') = 1, startNum = 2, candidates: turkifsaclub2.sbs, turkifsaclub3.sbs...
-      if (url.includes('turkifsaclub2.sbs')) return makeSuccessResult('turkifsaclub2.sbs');
+      // parseInt('001') = 1, startNum = 2, candidates: example2.com, example3.com...
+      if (url.includes('example2.com')) return makeSuccessResult('example2.com');
       return makeFailResult('Not found');
     });
 
@@ -144,17 +144,17 @@ describe('3. Heuristic candidate generation', () => {
     const results = await processor.processAll();
 
     expect(results.length).toBe(1);
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('example2.com');
     expect(results[0].shouldUpdate).toBe(true);
   });
 
-  test('3.2 [N]domain.tld: 14dizipal.com → generates 15dizipal.com, 16dizipal.com...', async () => {
+  test('3.2 [N]domain.tld: 14example.com → generates 15example.com, 16example.com...', async () => {
     const config = makeConfig({
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: '14dizipal.com' });
-    const watchers = makeWatchers({ 'dizipal': site });
+    const site = makeSite({ last_known_mirror: '14example.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -162,8 +162,8 @@ describe('3. Heuristic candidate generation', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      // parseInt('14') = 14, startNum = 15, candidates: 15dizipal.com, 16dizipal.com...
-      if (url.includes('16dizipal')) return makeSuccessResult('16dizipal.com');
+      // parseInt('14') = 14, startNum = 15, candidates: 15example.com, 16example.com...
+      if (url.includes('16example')) return makeSuccessResult('16example.com');
       return makeFailResult('Not found');
     });
 
@@ -171,16 +171,16 @@ describe('3. Heuristic candidate generation', () => {
     const results = await processor.processAll();
 
     expect(results.length).toBe(1);
-    expect(results[0].newHost).toBe('16dizipal.com');
+    expect(results[0].newHost).toBe('16example.com');
   });
 
-  test('3.3 domain[N][text].tld: betist126tv.live → generates betist127tv.live...', async () => {
+  test('3.3 domain[N][text].tld: example126tv.com → generates example127tv.com...', async () => {
     const config = makeConfig({
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'betist126tv.live' });
-    const watchers = makeWatchers({ 'betist': site });
+    const site = makeSite({ last_known_mirror: 'example126tv.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -188,8 +188,8 @@ describe('3. Heuristic candidate generation', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      // parseInt('126') = 126, startNum = 127, candidates: betist127tv.live, betist128tv.live...
-      if (url.includes('betist128tv')) return makeSuccessResult('betist128tv.live');
+      // parseInt('126') = 126, startNum = 127, candidates: example127tv.com, example128tv.com...
+      if (url.includes('example128tv')) return makeSuccessResult('example128tv.com');
       return makeFailResult('Not found');
     });
 
@@ -197,16 +197,16 @@ describe('3. Heuristic candidate generation', () => {
     const results = await processor.processAll();
 
     expect(results.length).toBe(1);
-    expect(results[0].newHost).toBe('betist128tv.live');
+    expect(results[0].newHost).toBe('example128tv.com');
   });
 
-  test('3.4 www. prefix with domain[N].tld: www.inattvizle375.top → generates www.inattvizle376.top...', async () => {
+  test('3.4 www. prefix with domain[N].tld: www.example375.com → generates www.example376.com...', async () => {
     const config = makeConfig({
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'www.inattvizle375.top' });
-    const watchers = makeWatchers({ 'inattvizle': site });
+    const site = makeSite({ last_known_mirror: 'www.example375.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -214,35 +214,8 @@ describe('3. Heuristic candidate generation', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      // parseInt('375') = 375, startNum = 376, candidates: www.inattvizle376.top, www.inattvizle377.top...
-      if (url.includes('www.inattvizle377')) return makeSuccessResult('www.inattvizle377.top');
-      return makeFailResult('Not found');
-    });
-
-    const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const results = await processor.processAll();
-
-    expect(results.length).toBe(1);
-    expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('www.inattvizle377.top');
-  });
-
-  test('3.5 www. prefix with [N]domain.tld: www.91taraftarium.top → generates www.92taraftarium.top...', async () => {
-    const config = makeConfig({
-      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
-      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
-    });
-    const site = makeSite({ last_known_mirror: 'www.91taraftarium.top' });
-    const watchers = makeWatchers({ 'taraftarium': site });
-    const logger = makeLogger();
-    const resolver = new HttpResolver(config);
-
-    let callCount = 0;
-    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
-      callCount++;
-      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      // parseInt('91') = 91, startNum = 92, candidates: www.92taraftarium.top, www.93taraftarium.top...
-      if (url.includes('www.93taraftarium')) return makeSuccessResult('www.93taraftarium.top');
+      // parseInt('375') = 375, startNum = 376, candidates: www.example376.com, www.example377.com...
+      if (url.includes('www.example377')) return makeSuccessResult('www.example377.com');
       return makeFailResult('Not found');
     });
 
@@ -251,7 +224,34 @@ describe('3. Heuristic candidate generation', () => {
 
     expect(results.length).toBe(1);
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('www.93taraftarium.top');
+    expect(results[0].newHost).toBe('www.example377.com');
+  });
+
+  test('3.5 www. prefix with [N]domain.tld: www.91example.com → generates www.92example.com...', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
+    });
+    const site = makeSite({ last_known_mirror: 'www.91example.com' });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      callCount++;
+      if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
+      // parseInt('91') = 91, startNum = 92, candidates: www.92example.com, www.93example.com...
+      if (url.includes('www.93example')) return makeSuccessResult('www.93example.com');
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results.length).toBe(1);
+    expect(results[0].shouldUpdate).toBe(true);
+    expect(results[0].newHost).toBe('www.93example.com');
   });
 
   test('3.6 no numeric pattern → empty candidates, no heuristic', async () => {
@@ -278,8 +278,8 @@ describe('3. Heuristic candidate generation', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: false, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -297,8 +297,8 @@ describe('3. Heuristic candidate generation', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs', disable_heuristic: true });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com', disable_heuristic: true });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -335,13 +335,13 @@ describe('4. shouldUpdate logic', () => {
 
   test('4.2 hostChanged: false + numeric pattern → shouldUpdate: true (predicted mirror cleanup)', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub020.sbs' });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example020.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
     // Returns same host — no change but numeric pattern
-    jest.spyOn(resolver, 'resolve').mockResolvedValue(makeSuccessResult('turkifsaclub020.sbs') as never);
+    jest.spyOn(resolver, 'resolve').mockResolvedValue(makeSuccessResult('example020.com') as never);
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const results = await processor.processAll();
@@ -480,8 +480,8 @@ describe('5. Heuristic triggering conditions', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs', accept_antibot: false });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com', accept_antibot: false });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -490,7 +490,7 @@ describe('5. Heuristic triggering conditions', () => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
       // All heuristic candidates return antibot
-      return makeFailResult('Antibot', { antibotDetected: true, finalHost: 'turkifsaclub2.sbs', statusCode: 403 });
+      return makeFailResult('Antibot', { antibotDetected: true, finalHost: 'testsite2.com', statusCode: 403 });
     });
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
@@ -505,8 +505,8 @@ describe('5. Heuristic triggering conditions', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs', accept_antibot: true });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com', accept_antibot: true });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -515,7 +515,7 @@ describe('5. Heuristic triggering conditions', () => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
       return {
-        ...makeSuccessResult('turkifsaclub2.sbs'),
+        ...makeSuccessResult('testsite2.com'),
         antibotDetected: true,
         success: false,
       };
@@ -525,7 +525,7 @@ describe('5. Heuristic triggering conditions', () => {
     const results = await processor.processAll();
 
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('testsite2.com');
   });
 
   test('5.3 forceHeuristicOnCodes contains response code → heuristic triggered', async () => {
@@ -533,8 +533,8 @@ describe('5. Heuristic triggering conditions', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -542,14 +542,14 @@ describe('5. Heuristic triggering conditions', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('Not found', { statusCode: 404, shouldTriggerHeuristic: true });
-      if (url.includes('turkifsaclub2.sbs')) return makeSuccessResult('turkifsaclub2.sbs');
+      if (url.includes('example2.com')) return makeSuccessResult('example2.com');
       return makeFailResult('Not found');
     });
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const results = await processor.processAll();
 
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('example2.com');
     expect(results[0].shouldUpdate).toBe(true);
   });
 
@@ -558,8 +558,8 @@ describe('5. Heuristic triggering conditions', () => {
       dnsPreCheck: { enabled: true, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -570,16 +570,16 @@ describe('5. Heuristic triggering conditions', () => {
 
     // resolver.resolve is only called for heuristic candidates (initial check fails at DNS)
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
-      if (url.includes('turkifsaclub2.sbs')) return makeSuccessResult('turkifsaclub2.sbs');
+      if (url.includes('example2.com')) return makeSuccessResult('example2.com');
       return makeFailResult('Not found');
     });
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const results = await processor.processAll();
 
-    // DNS failure triggers heuristic, which finds turkifsaclub2
+    // DNS failure triggers heuristic, which finds example2.com
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('example2.com');
   });
 });
 
@@ -593,8 +593,8 @@ describe('5.5 Content probe in heuristic', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs', probe_text: ['keyword'] });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com', probe_text: ['keyword'] });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -602,7 +602,7 @@ describe('5.5 Content probe in heuristic', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async () => {
       callCount++;
       if (callCount === 1) return makeFailResult('Failed', { shouldTriggerHeuristic: true });
-      return makeSuccessResult('turkifsaclub2.sbs', { finalBody: 'page has keyword in it' });
+      return makeSuccessResult('testsite2.com', { finalBody: 'page has keyword in it' });
     });
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
@@ -616,8 +616,8 @@ describe('5.5 Content probe in heuristic', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs', probe_text: ['keyword'] });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com', probe_text: ['keyword'] });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -626,7 +626,7 @@ describe('5.5 Content probe in heuristic', () => {
       callCount++;
       if (callCount === 1) return makeFailResult('Failed', { shouldTriggerHeuristic: true });
       // All candidates succeed HTTP but fail probe
-      return makeSuccessResult('turkifsaclub2.sbs', { finalBody: 'no matching content here' });
+      return makeSuccessResult('testsite2.com', { finalBody: 'no matching content here' });
     });
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
@@ -729,8 +729,8 @@ describe('7. skip_text scenarios', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
       skip_text: ['This domain is parked'],
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -742,20 +742,20 @@ describe('7. skip_text scenarios', () => {
         return {
           ...makeFailResult('Skipped by skip_text: "This domain is parked"'),
           statusCode: 200,
-          finalHost: 'turkifsaclub001.sbs',
+          finalHost: 'example001.com',
           skippedByText: 'This domain is parked',
           shouldTriggerHeuristic: true,
         };
       }
       // Heuristic candidate 2 succeeds
-      if (url.includes('turkifsaclub2.sbs')) return makeSuccessResult('turkifsaclub2.sbs');
+      if (url.includes('example2.com')) return makeSuccessResult('example2.com');
       return makeFailResult('Not found');
     });
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const results = await processor.processAll();
 
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('example2.com');
     expect(results[0].shouldUpdate).toBe(true);
   });
 
@@ -792,8 +792,8 @@ describe('7. skip_text scenarios', () => {
       heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
       skip_text: ['This domain is parked'],
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -808,7 +808,7 @@ describe('7. skip_text scenarios', () => {
       return {
         ...makeFailResult('Skipped by skip_text: "This domain is parked"'),
         statusCode: 200,
-        finalHost: `turkifsaclub${callCount}.sbs`,
+        finalHost: `testsite${callCount}.com`,
         skippedByText: 'This domain is parked',
         shouldTriggerHeuristic: true,
       };
@@ -827,8 +827,8 @@ describe('7. skip_text scenarios', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404] },
       skip_text: ['This domain is parked'],
     });
-    const site = makeSite({ last_known_mirror: 'turkifsaclub001.sbs' });
-    const watchers = makeWatchers({ 'turkifsaclub': site });
+    const site = makeSite({ last_known_mirror: 'example001.com' });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -839,17 +839,17 @@ describe('7. skip_text scenarios', () => {
         return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
       }
       // First candidate is parked
-      if (url.includes('turkifsaclub2.sbs')) {
+      if (url.includes('example2.com')) {
         return {
           ...makeFailResult('Skipped by skip_text: "This domain is parked"'),
           statusCode: 200,
-          finalHost: 'turkifsaclub2.sbs',
+          finalHost: 'example2.com',
           skippedByText: 'This domain is parked',
           shouldTriggerHeuristic: true,
         };
       }
       // Second candidate is OK
-      if (url.includes('turkifsaclub3.sbs')) return makeSuccessResult('turkifsaclub3.sbs');
+      if (url.includes('example3.com')) return makeSuccessResult('example3.com');
       return makeFailResult('Not found');
     });
 
@@ -857,7 +857,7 @@ describe('7. skip_text scenarios', () => {
     const results = await processor.processAll();
 
     // Should skip parked candidate and use the next one
-    expect(results[0].newHost).toBe('turkifsaclub3.sbs');
+    expect(results[0].newHost).toBe('example3.com');
     expect(results[0].shouldUpdate).toBe(true);
   });
 
@@ -892,7 +892,7 @@ describe('8. force_search_ahead scenarios', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
     const site = makeSite({ 
-      last_known_mirror: 'turkifsaclub1.sbs',
+      last_known_mirror: 'testsite1.com',
       force_search_ahead: false,
     });
     const watchers = makeWatchers({ 'testsite': site });
@@ -906,9 +906,9 @@ describe('8. force_search_ahead scenarios', () => {
         return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
       }
       // First candidate succeeds
-      if (url.includes('turkifsaclub2.sbs')) return Promise.resolve(makeSuccessResult('turkifsaclub2.sbs'));
+      if (url.includes('testsite2.com')) return Promise.resolve(makeSuccessResult('testsite2.com'));
       // Second candidate (should not be checked due to early stop)
-      if (url.includes('turkifsaclub3.sbs')) return Promise.resolve(makeSuccessResult('turkifsaclub3.sbs'));
+      if (url.includes('testsite3.com')) return Promise.resolve(makeSuccessResult('testsite3.com'));
       return Promise.resolve(makeFailResult('Not found'));
     });
 
@@ -916,7 +916,7 @@ describe('8. force_search_ahead scenarios', () => {
     const results = await processor.processAll();
 
     // Should stop after finding first candidate
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('testsite2.com');
     expect(results[0].shouldUpdate).toBe(true);
     // Should only call resolve twice: initial + first candidate
     expect(callCount).toBeLessThanOrEqual(3);
@@ -928,7 +928,7 @@ describe('8. force_search_ahead scenarios', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
     const site = makeSite({ 
-      last_known_mirror: 'turkifsaclub1.sbs',
+      last_known_mirror: 'testsite1.com',
       force_search_ahead: true,
     });
     const watchers = makeWatchers({ 'testsite': site });
@@ -944,17 +944,17 @@ describe('8. force_search_ahead scenarios', () => {
         return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
       }
       // Multiple candidates succeed
-      if (url.includes('turkifsaclub2.sbs')) {
-        successfulCandidates.push('turkifsaclub2.sbs');
-        return Promise.resolve(makeSuccessResult('turkifsaclub2.sbs'));
+      if (url.includes('testsite2.com')) {
+        successfulCandidates.push('testsite2.com');
+        return Promise.resolve(makeSuccessResult('testsite2.com'));
       }
-      if (url.includes('turkifsaclub3.sbs')) {
-        successfulCandidates.push('turkifsaclub3.sbs');
-        return Promise.resolve(makeSuccessResult('turkifsaclub3.sbs'));
+      if (url.includes('testsite3.com')) {
+        successfulCandidates.push('testsite3.com');
+        return Promise.resolve(makeSuccessResult('testsite3.com'));
       }
-      if (url.includes('turkifsaclub4.sbs')) {
-        successfulCandidates.push('turkifsaclub4.sbs');
-        return Promise.resolve(makeSuccessResult('turkifsaclub4.sbs'));
+      if (url.includes('testsite4.com')) {
+        successfulCandidates.push('testsite4.com');
+        return Promise.resolve(makeSuccessResult('testsite4.com'));
       }
       return Promise.resolve(makeFailResult('Not found'));
     });
@@ -963,7 +963,7 @@ describe('8. force_search_ahead scenarios', () => {
     const results = await processor.processAll();
 
     // Should return first successful candidate
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('testsite2.com');
     expect(results[0].shouldUpdate).toBe(true);
     // Should check multiple candidates (more than just stopping at first)
     expect(callCount).toBeGreaterThan(3);
@@ -976,7 +976,7 @@ describe('8. force_search_ahead scenarios', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
     const site = makeSite({ 
-      last_known_mirror: 'turkifsaclub1.sbs',
+      last_known_mirror: 'testsite1.com',
       force_search_ahead: true,
       probe_text: ['Expected Content'],
     });
@@ -992,16 +992,16 @@ describe('8. force_search_ahead scenarios', () => {
         return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
       }
       // Candidate 2: success with correct content
-      if (url.includes('turkifsaclub2.sbs')) {
-        return Promise.resolve(makeSuccessResult('turkifsaclub2.sbs', { finalBody: 'Expected Content here' }));
+      if (url.includes('testsite2.com')) {
+        return Promise.resolve(makeSuccessResult('testsite2.com', { finalBody: 'Expected Content here' }));
       }
       // Candidate 3: success but wrong content (probe fails)
-      if (url.includes('turkifsaclub3.sbs')) {
-        return Promise.resolve(makeSuccessResult('turkifsaclub3.sbs', { finalBody: 'Wrong Content' }));
+      if (url.includes('testsite3.com')) {
+        return Promise.resolve(makeSuccessResult('testsite3.com', { finalBody: 'Wrong Content' }));
       }
       // Candidate 4: success with correct content
-      if (url.includes('turkifsaclub4.sbs')) {
-        return Promise.resolve(makeSuccessResult('turkifsaclub4.sbs', { finalBody: 'Expected Content again' }));
+      if (url.includes('testsite4.com')) {
+        return Promise.resolve(makeSuccessResult('testsite4.com', { finalBody: 'Expected Content again' }));
       }
       return Promise.resolve(makeFailResult('Not found'));
     });
@@ -1010,7 +1010,7 @@ describe('8. force_search_ahead scenarios', () => {
     const results = await processor.processAll();
 
     // Should use first candidate that passes probe
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('testsite2.com');
     expect(results[0].shouldUpdate).toBe(true);
     // Should check multiple candidates
     expect(callCount).toBeGreaterThan(2);
@@ -1028,11 +1028,11 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
     });
     const site = makeSite({
-      last_known_mirror: 'dizi39.life',
+      last_known_mirror: 'example39.com',
       accept_antibot: true,
       force_search_ahead: true,
     });
-    const watchers = makeWatchers({ 'dizi16.life': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1041,25 +1041,25 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
 
     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
       callCount++;
-      // Initial check: dizi39.life → antibot accepted (success: true, shouldTriggerHeuristic: true)
+      // Initial check: example39.com → antibot accepted (success: true, shouldTriggerHeuristic: true)
       if (callCount === 1) {
-        return Promise.resolve(makeSuccessResult('dizi39.life', {
+        return Promise.resolve(makeSuccessResult('example39.com', {
           antibotDetected: true,
           statusCode: 403,
           shouldTriggerHeuristic: true,
         }));
       }
-      // Heuristic candidates: dizi40, dizi41 also behind antibot
-      if (url.includes('dizi40.life')) {
-        collectedDomains.push('dizi40.life');
-        return Promise.resolve(makeSuccessResult('dizi40.life', {
+      // Heuristic candidates: example40, example41 also behind antibot
+      if (url.includes('example40.com')) {
+        collectedDomains.push('example40.com');
+        return Promise.resolve(makeSuccessResult('example40.com', {
           antibotDetected: true,
           statusCode: 403,
         }));
       }
-      if (url.includes('dizi41.life')) {
-        collectedDomains.push('dizi41.life');
-        return Promise.resolve(makeSuccessResult('dizi41.life', {
+      if (url.includes('example41.com')) {
+        collectedDomains.push('example41.com');
+        return Promise.resolve(makeSuccessResult('example41.com', {
           antibotDetected: true,
           statusCode: 403,
         }));
@@ -1083,11 +1083,11 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
     });
     const site = makeSite({
-      last_known_mirror: 'dizi39.life',
+      last_known_mirror: 'example39.com',
       accept_antibot: true,
       // force_search_ahead NOT set — heuristic will stop after first found
     });
-    const watchers = makeWatchers({ 'dizi16.life': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1097,22 +1097,22 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       callCount++;
       // Initial check: antibot accepted, shouldTriggerHeuristic: true (403 in forceHeuristicOnCodes)
       if (callCount === 1) {
-        return Promise.resolve(makeSuccessResult('dizi39.life', {
+        return Promise.resolve(makeSuccessResult('example39.com', {
           antibotDetected: true,
           statusCode: 403,
           shouldTriggerHeuristic: true, // Real httpResolver sets this because 403 is in forceHeuristicOnCodes
         }));
       }
-      // Heuristic candidate: dizi40 also behind antibot
-      if (url.includes('dizi40.life')) {
-        return Promise.resolve(makeSuccessResult('dizi40.life', {
+      // Heuristic candidate: example40 also behind antibot
+      if (url.includes('example40.com')) {
+        return Promise.resolve(makeSuccessResult('example40.com', {
           antibotDetected: true,
           statusCode: 403,
         }));
       }
-      // dizi41 should NOT be checked (no force_search_ahead → stops after first)
-      if (url.includes('dizi41.life')) {
-        return Promise.resolve(makeSuccessResult('dizi41.life', {
+      // example41 should NOT be checked (no force_search_ahead → stops after first)
+      if (url.includes('example41.com')) {
+        return Promise.resolve(makeSuccessResult('example41.com', {
           antibotDetected: true,
           statusCode: 403,
         }));
@@ -1135,11 +1135,11 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404, 500] }, // 403 NOT included
     });
     const site = makeSite({
-      last_known_mirror: 'dizi39.life',
+      last_known_mirror: 'example39.com',
       accept_antibot: true,
       // force_search_ahead NOT set
     });
-    const watchers = makeWatchers({ 'dizi16.life': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1148,7 +1148,7 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(() => {
       callCount++;
       // Initial check: antibot accepted, shouldTriggerHeuristic: false (403 NOT in forceHeuristicOnCodes)
-      return Promise.resolve(makeSuccessResult('dizi39.life', {
+      return Promise.resolve(makeSuccessResult('example39.com', {
         antibotDetected: true,
         statusCode: 403,
         shouldTriggerHeuristic: false, // Real httpResolver: force_search_ahead=false, 403 not in forceHeuristicOnCodes
@@ -1160,7 +1160,7 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
 
     // Only initial check, no heuristic (neither force_search_ahead nor forceHeuristicOnCodes triggered)
     expect(callCount).toBe(1);
-    expect(results[0].newHost).toBe('dizi39.life');
+    expect(results[0].newHost).toBe('example39.com');
   });
 
   test('9.3 forceHeuristicOnCodes overrides skipOnAntibot when shouldTriggerHeuristic is true', async () => {
@@ -1169,7 +1169,7 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
     });
     const site = makeSite({
-      last_known_mirror: 'turkifsaclub1.sbs',
+      last_known_mirror: 'testsite1.com',
       // accept_antibot NOT set — antibot means failure
     });
     const watchers = makeWatchers({ 'testsite': site });
@@ -1187,12 +1187,12 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
           antibotDetected: true,
           statusCode: 403,
           shouldTriggerHeuristic: true,
-          finalHost: 'turkifsaclub1.sbs',
+          finalHost: 'testsite1.com',
         }));
       }
       // Heuristic candidate succeeds
-      if (url.includes('turkifsaclub2.sbs')) {
-        return Promise.resolve(makeSuccessResult('turkifsaclub2.sbs'));
+      if (url.includes('testsite2.com')) {
+        return Promise.resolve(makeSuccessResult('testsite2.com'));
       }
       return Promise.resolve(makeFailResult('Not found'));
     });
@@ -1202,7 +1202,7 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
 
     // Heuristic should have run despite antibot + skipOnAntibot, because forceHeuristicOnCodes overrides
     expect(callCount).toBeGreaterThan(1);
-    expect(results[0].newHost).toBe('turkifsaclub2.sbs');
+    expect(results[0].newHost).toBe('testsite2.com');
     expect(results[0].shouldUpdate).toBe(true);
   });
 
@@ -1212,7 +1212,7 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [404, 500] }, // 403 NOT included
     });
     const site = makeSite({
-      last_known_mirror: 'turkifsaclub1.sbs',
+      last_known_mirror: 'testsite1.com',
       // accept_antibot NOT set
     });
     const watchers = makeWatchers({ 'testsite': site });
@@ -1228,7 +1228,7 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
         antibotDetected: true,
         statusCode: 403,
         shouldTriggerHeuristic: false,
-        finalHost: 'turkifsaclub1.sbs',
+        finalHost: 'testsite1.com',
       }));
     });
 
@@ -1246,17 +1246,17 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
     });
     const site = makeSite({
-      last_known_mirror: 'dizi39.life',
+      last_known_mirror: 'example39.com',
       accept_antibot: true,
       probe_text: ['some unique text on the real site'],
     });
-    const watchers = makeWatchers({ 'dizi16.life': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
     jest.spyOn(resolver, 'resolve').mockImplementation(() => {
       // Cloudflare 403 — body does NOT contain probe_text
-      return Promise.resolve(makeSuccessResult('dizi39.life', {
+      return Promise.resolve(makeSuccessResult('example39.com', {
         antibotDetected: true,
         statusCode: 403,
         shouldTriggerHeuristic: true,
@@ -1279,17 +1279,17 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       heuristic: { enabled: false },
     });
     const site = makeSite({
-      last_known_mirror: 'dizi39.life',
+      last_known_mirror: 'example39.com',
       accept_antibot: true,
       probe_text: ['some unique text on the real site'],
     });
-    const watchers = makeWatchers({ 'dizi16.life': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
     jest.spyOn(resolver, 'resolve').mockImplementation(() => {
       // Normal 200 response — body does NOT contain probe_text
-      return Promise.resolve(makeSuccessResult('dizi39.life', {
+      return Promise.resolve(makeSuccessResult('example39.com', {
         antibotDetected: false,
         statusCode: 200,
         finalBody: '<html><title>Wrong site</title></html>',
@@ -1311,12 +1311,12 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [403] },
     });
     const site = makeSite({
-      last_known_mirror: 'dizi39.life',
+      last_known_mirror: 'example39.com',
       accept_antibot: true,
       force_search_ahead: true,
       probe_text: ['real site content'],
     });
-    const watchers = makeWatchers({ 'dizi16.life': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1326,34 +1326,34 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
       callCount++;
       checkedUrls.push(url);
-      // Initial: dizi39 behind antibot
+      // Initial: example39 behind antibot
       if (callCount === 1) {
-        return Promise.resolve(makeSuccessResult('dizi39.life', {
+        return Promise.resolve(makeSuccessResult('example39.com', {
           antibotDetected: true,
           statusCode: 403,
           shouldTriggerHeuristic: true,
           finalBody: '<html><title>Just a moment...</title></html>',
         }));
       }
-      // Heuristic: dizi40 behind antibot (probe should be skipped)
-      if (url.includes('dizi40.life')) {
-        return Promise.resolve(makeSuccessResult('dizi40.life', {
+      // Heuristic: example40 behind antibot (probe should be skipped)
+      if (url.includes('example40.com')) {
+        return Promise.resolve(makeSuccessResult('example40.com', {
           antibotDetected: true,
           statusCode: 403,
           finalBody: '<html><title>Just a moment...</title></html>',
         }));
       }
-      // Heuristic: dizi41 responds 200 with correct content (probe should pass)
-      if (url.includes('dizi41.life')) {
-        return Promise.resolve(makeSuccessResult('dizi41.life', {
+      // Heuristic: example41 responds 200 with correct content (probe should pass)
+      if (url.includes('example41.com')) {
+        return Promise.resolve(makeSuccessResult('example41.com', {
           antibotDetected: false,
           statusCode: 200,
           finalBody: '<html>real site content here</html>',
         }));
       }
-      // Heuristic: dizi42 responds 200 with WRONG content (probe should fail → not collected)
-      if (url.includes('dizi42.life')) {
-        return Promise.resolve(makeSuccessResult('dizi42.life', {
+      // Heuristic: example42 responds 200 with WRONG content (probe should fail → not collected)
+      if (url.includes('example42.com')) {
+        return Promise.resolve(makeSuccessResult('example42.com', {
           antibotDetected: false,
           statusCode: 200,
           finalBody: '<html>parked domain page</html>',
@@ -1368,11 +1368,11 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
     // Heuristic should have run
     expect(callCount).toBeGreaterThan(1);
     expect(results[0].shouldUpdate).toBe(true);
-    // dizi40 (antibot, probe skipped) and dizi41 (200, probe passed) should be collected
-    // dizi42 (200, probe failed) should NOT be collected
+    // example40 (antibot, probe skipped) and example41 (200, probe passed) should be collected
+    // example42 (200, probe failed) should NOT be collected
     const additional = results[0].additionalWorkingDomains ?? [];
-    expect(additional).toContain('dizi41.life');
-    expect(additional).not.toContain('dizi42.life');
+    expect(additional).toContain('example41.com');
+    expect(additional).not.toContain('example42.com');
   });
 });
 
@@ -1387,10 +1387,10 @@ describe('10. probe_text filtering in heuristic search', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
     });
     const site = makeSite({
-      last_known_mirror: 'hepbetspor12.cfd',
+      last_known_mirror: 'example12.com',
       probe_text: ['banner-container'],
     });
-    const watchers = makeWatchers({ 'hepbetspor': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1398,8 +1398,8 @@ describe('10. probe_text filtering in heuristic search', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      if (url.includes('hepbetspor13.cfd')) {
-        return makeSuccessResult('hepbetspor13.cfd', {
+      if (url.includes('example13.com')) {
+        return makeSuccessResult('example13.com', {
           finalBody: '<html><div class="banner-container">content</div></html>',
         });
       }
@@ -1410,7 +1410,7 @@ describe('10. probe_text filtering in heuristic search', () => {
     const results = await processor.processAll();
 
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('hepbetspor13.cfd');
+    expect(results[0].newHost).toBe('example13.com');
   });
 
   test('10.2 probe_text does NOT match → heuristic skips candidate, continues search', async () => {
@@ -1419,10 +1419,10 @@ describe('10. probe_text filtering in heuristic search', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
     });
     const site = makeSite({
-      last_known_mirror: 'hepbetspor12.cfd',
+      last_known_mirror: 'example12.com',
       probe_text: ['banner-container'],
     });
-    const watchers = makeWatchers({ 'hepbetspor': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1430,15 +1430,15 @@ describe('10. probe_text filtering in heuristic search', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      // hepbetspor13 responds 200 but does NOT contain probe_text → should be skipped
-      if (url.includes('hepbetspor13.cfd')) {
-        return makeSuccessResult('hepbetspor13.cfd', {
+      // example13 responds 200 but does NOT contain probe_text → should be skipped
+      if (url.includes('example13.com')) {
+        return makeSuccessResult('example13.com', {
           finalBody: '<html><div class="other-content">parked page</div></html>',
         });
       }
-      // hepbetspor14 responds 200 and DOES contain probe_text → should be accepted
-      if (url.includes('hepbetspor14.cfd')) {
-        return makeSuccessResult('hepbetspor14.cfd', {
+      // example14 responds 200 and DOES contain probe_text → should be accepted
+      if (url.includes('example14.com')) {
+        return makeSuccessResult('example14.com', {
           finalBody: '<html><div class="banner-container">real site</div></html>',
         });
       }
@@ -1449,7 +1449,7 @@ describe('10. probe_text filtering in heuristic search', () => {
     const results = await processor.processAll();
 
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('hepbetspor14.cfd');
+    expect(results[0].newHost).toBe('example14.com');
   });
 
   test('10.3 probe_text does NOT match on any candidate → heuristic fails (no update)', async () => {
@@ -1458,10 +1458,10 @@ describe('10. probe_text filtering in heuristic search', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
     });
     const site = makeSite({
-      last_known_mirror: 'hepbetspor12.cfd',
+      last_known_mirror: 'example12.com',
       probe_text: ['aaaaaa-container'],
     });
-    const watchers = makeWatchers({ 'hepbetspor': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1470,7 +1470,7 @@ describe('10. probe_text filtering in heuristic search', () => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
       // All candidates respond 200 but none contain the probe_text
-      if (url.includes('hepbetspor') && url.includes('.cfd')) {
+      if (url.includes('example') && url.includes('.com')) {
         return makeSuccessResult(new URL(url).hostname, {
           finalBody: '<html><div class="other-content">page without probe text</div></html>',
         });
@@ -1491,11 +1491,11 @@ describe('10. probe_text filtering in heuristic search', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
     });
     const site = makeSite({
-      last_known_mirror: 'www.taraftarium109.top',
+      last_known_mirror: 'www.example109.com',
       accept_antibot: true,
       probe_text: ['aaaaaa-container'],
     });
-    const watchers = makeWatchers({ 'www.taraftarium91.top': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1504,7 +1504,7 @@ describe('10. probe_text filtering in heuristic search', () => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
       // Antibot response (403) — body not available, but accept_antibot=true → probe skipped, domain accepted
-      if (url.includes('taraftarium110')) {
+      if (url.includes('example110')) {
         return makeSuccessResult(new URL(url).hostname, {
           statusCode: 403,
           antibotDetected: true,
@@ -1519,7 +1519,7 @@ describe('10. probe_text filtering in heuristic search', () => {
 
     // accept_antibot=true + antibot response → probe skipped, domain accepted
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('www.taraftarium110.top');
+    expect(results[0].newHost).toBe('www.example110.com');
   });
 
   test('10.5 no probe_text → all 200 candidates accepted (existing behavior unchanged)', async () => {
@@ -1528,10 +1528,10 @@ describe('10. probe_text filtering in heuristic search', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: false, forceHeuristicOnCodes: [404] },
     });
     const site = makeSite({
-      last_known_mirror: 'hepbetspor12.cfd',
+      last_known_mirror: 'example12.com',
       // no probe_text
     });
-    const watchers = makeWatchers({ 'hepbetspor': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1539,8 +1539,8 @@ describe('10. probe_text filtering in heuristic search', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      if (url.includes('hepbetspor13.cfd')) {
-        return makeSuccessResult('hepbetspor13.cfd', {
+      if (url.includes('example13.com')) {
+        return makeSuccessResult('example13.com', {
           finalBody: '<html>any content without special text</html>',
         });
       }
@@ -1551,7 +1551,7 @@ describe('10. probe_text filtering in heuristic search', () => {
     const results = await processor.processAll();
 
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('hepbetspor13.cfd');
+    expect(results[0].newHost).toBe('example13.com');
   });
 
   test('10.6 probe_text bypasses skip_text: domain has skip_text but also probe_text → accepted', async () => {
@@ -1561,10 +1561,10 @@ describe('10. probe_text filtering in heuristic search', () => {
       skip_text: ['parked-domain-marker'],
     });
     const site = makeSite({
-      last_known_mirror: 'hepbetspor12.cfd',
+      last_known_mirror: 'example12.com',
       probe_text: ['banner-container'],
     });
-    const watchers = makeWatchers({ 'hepbetspor': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1572,9 +1572,9 @@ describe('10. probe_text filtering in heuristic search', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       callCount++;
       if (callCount === 1) return makeFailResult('DNS failed', { shouldTriggerHeuristic: true });
-      if (url.includes('hepbetspor13.cfd')) {
+      if (url.includes('example13.com')) {
         // Contains both skip_text and probe_text → httpResolver should pass it through (probe_text wins)
-        return makeSuccessResult('hepbetspor13.cfd', {
+        return makeSuccessResult('example13.com', {
           finalBody: '<html><div class="banner-container">real site</div><span class="parked-domain-marker"></span></html>',
         });
       }
@@ -1585,7 +1585,7 @@ describe('10. probe_text filtering in heuristic search', () => {
     const results = await processor.processAll();
 
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('hepbetspor13.cfd');
+    expect(results[0].newHost).toBe('example13.com');
   });
 
   test('9.8 probe_text failure sets result.success=false and triggers heuristic', async () => {
@@ -1594,10 +1594,10 @@ describe('10. probe_text filtering in heuristic search', () => {
       heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: false, forceHeuristicOnCodes: [] },
     });
     const site = makeSite({
-      last_known_mirror: 'betist219tv.live',
-      probe_text: ['const BASE_URL  = "https://betist'],
+      last_known_mirror: 'example219tv.com',
+      probe_text: ['const BASE_URL  = "https://example'],
     });
-    const watchers = makeWatchers({ 'betist site': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
@@ -1608,18 +1608,18 @@ describe('10. probe_text filtering in heuristic search', () => {
       callCount++;
       // Phase 1: Main domain returns 200 but probe_text NOT found
       if (callCount === 1) {
-        return makeSuccessResult('betist219tv.live', {
+        return makeSuccessResult('example219tv.com', {
           antibotDetected: false,
           statusCode: 200,
           finalBody: '<html><title>Wrong site - no probe text here</title></html>',
         });
       }
-      // Phase 2: Heuristic candidate betist220tv.live has probe_text
-      if (url.includes('betist220tv.live')) {
-        return makeSuccessResult('betist220tv.live', {
+      // Phase 2: Heuristic candidate example220tv.com has probe_text
+      if (url.includes('example220tv.com')) {
+        return makeSuccessResult('example220tv.com', {
           antibotDetected: false,
           statusCode: 200,
-          finalBody: '<html><script>const BASE_URL  = "https://betist";</script></html>',
+          finalBody: '<html><script>const BASE_URL  = "https://example";</script></html>',
         });
       }
       return makeFailResult('Not found');
@@ -1631,6 +1631,6 @@ describe('10. probe_text filtering in heuristic search', () => {
     // Verify heuristic was triggered and found working domain
     expect(callCount).toBeGreaterThan(1); // Main + heuristic candidates
     expect(results[0].shouldUpdate).toBe(true);
-    expect(results[0].newHost).toBe('betist220tv.live');
+    expect(results[0].newHost).toBe('example220tv.com');
   });
 });
