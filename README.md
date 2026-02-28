@@ -400,15 +400,55 @@ sites:
   example16.com:
     last_known_mirror: example39.com
     accept_antibot: true          # Accept Cloudflare 403 as "working"
-    force_search_ahead: true      # Run heuristic to find additional domains
+    force_search_ahead: true      # Collect ALL working domains with antibot protection
 ```
+
+**When to use `force_search_ahead`:**
+
+This is **recommended** when a site pre-registers many domains and protects them all with antibot (Cloudflare 403), and page content cannot be checked. Without this flag, only the first working domain is collected, potentially missing other active mirrors that users might access directly.
 
 **How it works:**
 
+**Without `force_search_ahead` (default):**
+
+```text
+✅ example949.com → HTTP 403 → STOP (first working domain found)
+❌ example950.com → NOT CHECKED
+❌ example951.com → NOT CHECKED
+Result in filter: example949.com
+```
+
+**With `force_search_ahead: true`:**
+
 - The initial check accepts the antibot response as successful
-- `force_search_ahead` triggers heuristic search to find neighboring domains (example39.com, example40.com, etc.)
+- `force_search_ahead` triggers heuristic search to find neighboring domains (example949.com, example950.com, etc.)
 - All found domains (even behind antibot) are added to filter rules
 - This is preferred over missing actual domains — better to have extra domains in the rule than to miss a working one
+
+```text
+✅ example949.com → HTTP 403 → CONTINUE searching
+✅ example950.com → HTTP 403 → CONTINUE searching  
+✅ example951.com → HTTP 403 → CONTINUE searching
+❌ example952.com → DNS FAILED → CONTINUE searching
+...
+Result in filter: example949.com,example950.com,example951.com
+```
+
+**Redirect patterns as indicators:**
+
+When many domains redirect to a single domain, this **may indicate** that the final domain is a real working mirror, not just an antibot placeholder:
+
+```text
+example930.com (301) → helper.com (302) → example949.com (403)
+example931.com (301) → helper.com (302) → example949.com (403)
+example932.com (301) → helper.com (302) → example949.com (403)
+...
+example948.com (301) → helper.com (302) → example949.com (403)
+example949.com → HTTP 403 (direct response)
+example950.com → HTTP 403 (direct response)
+```
+
+In this case, `example949.com` and `example950.com` are likely real mirrors (direct antibot responses), while `example930-948.com` are convenience redirects for users. Only the final working domains are added to filters.
 
 **Important:** Ensure `forceHeuristicOnCodes` in `config.yml` includes `403`:
 
