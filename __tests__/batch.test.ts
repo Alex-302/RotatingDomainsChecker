@@ -3,9 +3,11 @@ import type { Config, Watchers, WatcherSite, RedirectResult, HeuristicTask } fro
 
 // Mock dns module BEFORE importing BatchProcessor (which imports dns)
 const mockedDnsResolve = jest.fn().mockResolvedValue(['127.0.0.1'] as never);
+const mockedDnsLookup = jest.fn().mockResolvedValue({ address: '127.0.0.1', family: 4 } as never);
 jest.unstable_mockModule('dns', () => ({
   promises: {
     resolve: mockedDnsResolve,
+    lookup: mockedDnsLookup,
   },
 }));
 
@@ -73,7 +75,9 @@ function makeLogger(): InstanceType<typeof Logger> {
 
 beforeEach(() => {
   mockedDnsResolve.mockReset();
+  mockedDnsLookup.mockReset();
   mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
+  mockedDnsLookup.mockResolvedValue({ address: '127.0.0.1', family: 4 } as never);
 });
 
 function makeSite(overrides: Partial<WatcherSite> = {}): WatcherSite {
@@ -564,9 +568,9 @@ describe('5. Heuristic triggering conditions', () => {
     const resolver = new HttpResolver(config);
 
     // DNS fails for initial check, then resolves for all subsequent
-    mockedDnsResolve.mockRejectedValueOnce(new Error('ENOTFOUND') as never);
+    mockedDnsLookup.mockRejectedValueOnce(new Error('ENOTFOUND') as never);
     // All subsequent DNS checks succeed
-    mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
+    mockedDnsLookup.mockResolvedValue({ address: '127.0.0.1', family: 4 } as never);
 
     // resolver.resolve is only called for heuristic candidates (initial check fails at DNS)
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
@@ -664,7 +668,7 @@ describe('6.3 DNS pre-check', () => {
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
-    mockedDnsResolve.mockRejectedValueOnce(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }) as never);
+    mockedDnsLookup.mockRejectedValueOnce(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }) as never);
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const results = await processor.processAll();
@@ -1601,7 +1605,7 @@ describe('10. probe_text filtering in heuristic search', () => {
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
-    mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
+    mockedDnsLookup.mockResolvedValue({ address: '127.0.0.1', family: 4 } as never);
 
     let callCount = 0;
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
