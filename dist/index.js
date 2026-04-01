@@ -15744,9 +15744,8 @@ class BatchProcessor {
         const retryOnce = dnsConfig.retryOnce;
         try {
             const hostname = new URL(url).hostname;
-            // Use dns.lookup with IPv4
             await Promise.race([
-                external_dns_namespaceObject.promises.lookup(hostname, { family: 4 }),
+                external_dns_namespaceObject.promises.resolve(hostname),
                 new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), timeout))
             ]);
             return true;
@@ -15755,9 +15754,8 @@ class BatchProcessor {
             if (retryOnce && (err.code === "EAI_AGAIN" || err.message === "DNS timeout")) {
                 try {
                     const hostname = new URL(url).hostname;
-                    // Use dns.lookup with IPv4
                     await Promise.race([
-                        external_dns_namespaceObject.promises.lookup(hostname, { family: 4 }),
+                        external_dns_namespaceObject.promises.resolve(hostname),
                         new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 2500))
                     ]);
                     return true;
@@ -16433,9 +16431,6 @@ class BatchProcessor {
                 if (!probeOk) {
                     const siteDuration = Date.now() - siteStartTime;
                     this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PROBE FAILED`);
-                    // Mark result as failed to trigger heuristic search
-                    result.success = false;
-                    result.error = "Content probe failed";
                     return {
                         siteName,
                         oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
