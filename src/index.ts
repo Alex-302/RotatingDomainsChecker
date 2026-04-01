@@ -555,6 +555,9 @@ async function main() {
   }
 
   logger.logGlobal(LogLevel.INFO, "✅ Done.");
+  
+  // Force exit to close all open connections (undici keep-alive, etc.)
+  process.exit(0);
 }
 
 main().catch((err) => {
