@@ -568,9 +568,9 @@ describe('5. Heuristic triggering conditions', () => {
     const resolver = new HttpResolver(config);
 
     // DNS fails for initial check, then resolves for all subsequent
-    mockedDnsLookup.mockRejectedValueOnce(new Error('ENOTFOUND') as never);
+    mockedDnsResolve.mockRejectedValueOnce(new Error('ENOTFOUND') as never);
     // All subsequent DNS checks succeed
-    mockedDnsLookup.mockResolvedValue({ address: '127.0.0.1', family: 4 } as never);
+    mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
 
     // resolver.resolve is only called for heuristic candidates (initial check fails at DNS)
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
@@ -668,7 +668,7 @@ describe('6.3 DNS pre-check', () => {
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
-    mockedDnsLookup.mockRejectedValueOnce(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }) as never);
+    mockedDnsResolve.mockRejectedValueOnce(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }) as never);
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const results = await processor.processAll();

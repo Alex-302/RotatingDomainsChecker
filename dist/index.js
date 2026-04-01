@@ -15751,7 +15751,7 @@ class BatchProcessor {
             return true;
         }
         catch (err) {
-            if (retryOnce && (err.code === "EAI_AGAIN" || err.message === "DNS timeout")) {
+            if (retryOnce && err.code === "EAI_AGAIN") {
                 try {
                     const hostname = new URL(url).hostname;
                     await Promise.race([
@@ -16431,6 +16431,9 @@ class BatchProcessor {
                 if (!probeOk) {
                     const siteDuration = Date.now() - siteStartTime;
                     this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PROBE FAILED`);
+                    // Mark result as failed to trigger heuristic search
+                    result.success = false;
+                    result.error = "Content probe failed";
                     return {
                         siteName,
                         oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
