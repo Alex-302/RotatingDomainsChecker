@@ -132,19 +132,17 @@ export class BatchProcessor {
     const retryOnce = dnsConfig.retryOnce;
     try {
       const hostname = new URL(url).hostname;
-      // Use dns.lookup with IPv4
       await Promise.race([
-        dns.lookup(hostname, { family: 4 }),
+        dns.resolve(hostname),
         new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), timeout))
       ]);
       return true;
     } catch (err: any) {
-      if (retryOnce && (err.code === "EAI_AGAIN" || err.message === "DNS timeout")) {
+      if (retryOnce && err.code === "EAI_AGAIN") {
         try {
           const hostname = new URL(url).hostname;
-          // Use dns.lookup with IPv4
           await Promise.race([
-            dns.lookup(hostname, { family: 4 }),
+            dns.resolve(hostname),
             new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 2500))
           ]);
           return true;

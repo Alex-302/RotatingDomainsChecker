@@ -4,3 +4,5 @@ node_modules/
 coverage/
 TODO.md
 AGENTS.md
+dist/*.d.ts
+dist/*.d.ts.map
