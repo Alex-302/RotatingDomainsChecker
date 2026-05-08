@@ -17265,11 +17265,16 @@ class FilterReplacer {
         this._logger.logGlobal(LogLevel.DEBUG, `Files found: ${files.map(f => external_path_default().relative(repoPath, f)).join(", ")}`);
         // Build lookup maps from all replacements (not just actualChanges)
         // This ensures we process filters even when domain didn't change but has initial_domain
+        // IMPORTANT: first write wins — the primary replacement (first occurrence) takes precedence
+        // over additional domain replacements (force_search_ahead extras) that share the same oldHost.
+        // This keeps hostMap in sync with seenPrimary/additionalDomainsMap which also use first-wins.
         const hostMap = new Map();
         for (const r of replacements) {
-            hostMap.set(r.oldHost, r.newHost);
+            if (!hostMap.has(r.oldHost)) {
+                hostMap.set(r.oldHost, r.newHost);
+            }
             // Also map initial_domain (startedHost) to newHost
-            if (r.startedHost && r.startedHost !== r.oldHost) {
+            if (r.startedHost && r.startedHost !== r.oldHost && !hostMap.has(r.startedHost)) {
                 hostMap.set(r.startedHost, r.newHost);
             }
         }
@@ -18012,7 +18017,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.9";
+const VERSION = "1.1.10";
 function formatDateTime(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");

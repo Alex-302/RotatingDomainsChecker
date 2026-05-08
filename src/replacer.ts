@@ -45,31 +45,31 @@ function replaceDomain(
   if (!domain || domain.trim() === '') {
     return domain;
   }
-  
+
   // Wildcard domains should NOT be replaced - keep them as is
   if (domain.includes('*')) {
     return domain;
   }
-  
+
   // Try exact match first, then initial_domain lookup (both O(1))
   const exactMatch = hostMap.get(domain) || initialToLastKnownMap.get(domain);
   if (exactMatch) {
     return exactMatch;
   }
-  
+
   return domain;
 }
 
 function hasSchemeChangeInList(
-  originalDomains: string[], 
+  originalDomains: string[],
   replacedDomains: string[]
 ): boolean {
   for (let i = 0; i < originalDomains.length; i++) {
     const oldDomain = originalDomains[i];
     const newDomain = replacedDomains[i];
-    
-    if (newDomain && newDomain !== oldDomain && 
-        matchesNumericPattern(oldDomain) && 
+
+    if (newDomain && newDomain !== oldDomain &&
+        matchesNumericPattern(oldDomain) &&
         !matchesSamePattern(oldDomain, newDomain)) {
       return true; // Found at least one scheme change
     }
@@ -85,10 +85,10 @@ function handleSchemeChange(
   // Find any numeric pattern domain to extract pattern
   const numericDomain = originalDomains.find(d => matchesNumericPattern(d));
   if (!numericDomain) return replacedDomains;
-  
+
   const oldPattern = extractBasePattern(numericDomain);
   const filtered = replacedDomains.filter(d => !matchesPattern(d, oldPattern));
-  
+
   // CRITICAL: Prevent empty domain list - restore fallback if all domains were removed
   if (filtered.length === 0) {
     // Priority 1: last_known_mirror matching the same pattern
@@ -99,19 +99,19 @@ function handleSchemeChange(
         }
       }
     }
-    
+
     // Priority 2: first valid original domain as fallback
     const validOriginal = originalDomains.find(d => d && d.trim() !== '');
     if (validOriginal) {
       return [validOriginal];
     }
-    
+
     // Priority 3: first replaced domain (safety net if logic failed)
     if (replacedDomains.length > 0) {
       return [replacedDomains[0]];
     }
   }
-  
+
   return filtered;
 }
 
@@ -135,17 +135,17 @@ function processDomainList(
   // 1. Replace domains
   const replaced = domains.map(d => replaceDomain(d, hostMap, initialToLastKnownMap));
   const changed = domains.some((d, i) => replaced[i] !== d);
-  
+
   // 2. Check for scheme change
   const schemeChangeDetected = hasSchemeChangeInList(domains, replaced);
-  
+
   let processed = replaced;
-  
+
   // 3. Handle scheme change (remove ALL domains of old pattern)
   if (schemeChangeDetected) {
     processed = handleSchemeChange(domains, replaced, priorityMap);
   }
-  
+
   // 4. Remove predicted mirrors and deduplicate
   // Clean up predicted mirrors if domains changed OR if numeric patterns exist
   const hasNumericPatterns = domains.some(d => matchesNumericPattern(d));
@@ -155,19 +155,19 @@ function processDomainList(
       // Find matching last_known_mirror for current pattern
       const currentPattern = extractBasePattern(domains[0]);
       let matchingLastKnown = null;
-      
+
       for (const { lastKnown } of priorityMap.values()) {
         if (matchesNumericPattern(lastKnown) && extractBasePattern(lastKnown) === currentPattern) {
           matchingLastKnown = lastKnown;
           break;
         }
       }
-      
+
       // If we have matching last_known_mirror, remove predicted mirrors
       if (matchingLastKnown) {
         processed = removePredictedMirrors(processed, priorityMap);
         processed = deduplicateDomains(processed);
-        
+
         // Ensure last_known_mirror is present
         if (!processed.some(d => normalizeDomain(d) === normalizeDomain(matchingLastKnown))) {
           processed.push(matchingLastKnown);
@@ -176,7 +176,7 @@ function processDomainList(
       }
     }
   }
-  
+
   // 5. Append additional domains from force_search_ahead
   // If an additional domain normalizes to one already in the list, replace it
   // (use the form from redirect chain, e.g. www.webspor124.xyz instead of webspor124.xyz)
@@ -220,7 +220,7 @@ export class FilterReplacer {
     dryRun: boolean = false,
   ): Promise<{filesScanned: number, filesModified: number, totalLineEdits: number, replacerSeconds: string}> {
     const replacerStart = Date.now();
-    
+
     if (replacements.length === 0) {
       this._logger.logGlobal(LogLevel.INFO, "No replacements to process.");
       return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000' };
@@ -233,12 +233,12 @@ export class FilterReplacer {
       const fromHost = r.startedHost || r.oldHost;
       return fromHost !== r.newHost;
     });
-    
+
     // Remove duplicates by siteName (keep the first occurrence)
-    const uniqueChanges = actualChanges.filter((change, index, self) => 
+    const uniqueChanges = actualChanges.filter((change, index, self) =>
       index === self.findIndex(c => c.siteName === change.siteName)
     );
-    
+
     if (uniqueChanges.length > 0) {
       const rows: string[][] = [["Site", "From", "To", "Time"]];
       for (const { siteName, newHost, startedHost, oldHost, checkDurationMs } of uniqueChanges) {
@@ -260,8 +260,8 @@ export class FilterReplacer {
     }
 
     // Choose config based on mode
-    const filtersConfig = this._isTestMode && this._config.filtersdir_test 
-      ? this._config.filtersdir_test 
+    const filtersConfig = this._isTestMode && this._config.filtersdir_test
+      ? this._config.filtersdir_test
       : this._config.filtersdir;
 
     // Safety checks
@@ -287,11 +287,16 @@ export class FilterReplacer {
 
     // Build lookup maps from all replacements (not just actualChanges)
     // This ensures we process filters even when domain didn't change but has initial_domain
+    // IMPORTANT: first write wins — the primary replacement (first occurrence) takes precedence
+    // over additional domain replacements (force_search_ahead extras) that share the same oldHost.
+    // This keeps hostMap in sync with seenPrimary/additionalDomainsMap which also use first-wins.
     const hostMap = new Map<string, string>();
     for (const r of replacements) {
-      hostMap.set(r.oldHost, r.newHost);
+      if (!hostMap.has(r.oldHost)) {
+        hostMap.set(r.oldHost, r.newHost);
+      }
       // Also map initial_domain (startedHost) to newHost
-      if (r.startedHost && r.startedHost !== r.oldHost) {
+      if (r.startedHost && r.startedHost !== r.oldHost && !hostMap.has(r.startedHost)) {
         hostMap.set(r.startedHost, r.newHost);
       }
     }
@@ -304,7 +309,7 @@ export class FilterReplacer {
       if (!seenPrimary.has(r.siteName)) {
         // First replacement for this site is the primary domain
         seenPrimary.set(r.siteName, r.newHost);
-        
+
         // Add patternChangedDomain if present (pattern_changed: true case)
         if (r.patternChangedDomain) {
           const key = normalizeDomain(r.newHost);
@@ -408,7 +413,7 @@ export class FilterReplacer {
     // Log summary at the end
     const replacerDuration = Date.now() - replacerStart;
     const replacerSeconds = (replacerDuration / 1000).toFixed(3);
-    
+
     if (fileChanges.length > 0) {
       const header = `    Changes by file${dryRun ? " (DRY RUN)" : ""}`;
       this._logger.logGlobal(LogLevel.DEBUG, header);
@@ -423,12 +428,12 @@ export class FilterReplacer {
     }
 
     this._logger.logGlobal(LogLevel.DEBUG, `=== Domains replacement finished ===\n`);
-    
-    return { 
-      filesScanned: files.length, 
-      filesModified: modifiedFiles, 
-      totalLineEdits: totalLineEdits, 
-      replacerSeconds: replacerSeconds 
+
+    return {
+      filesScanned: files.length,
+      filesModified: modifiedFiles,
+      totalLineEdits: totalLineEdits,
+      replacerSeconds: replacerSeconds
     };
   }
 }
@@ -504,7 +509,7 @@ function shouldSkipLine(line: string): boolean {
 function isPredictedMirror(domain: string, baseDomain: string): boolean {
   const d = normalizeDomain(domain);
   const base = normalizeDomain(baseDomain);
-  
+
   // Try pattern 1: domain[N].tld or domain[N][text].tld (letters/hyphens before digits)
   let match = base.match(/^([a-z-]+)\d+[a-z-]*\./);
   if (match) {
@@ -512,7 +517,7 @@ function isPredictedMirror(domain: string, baseDomain: string): boolean {
     // Check if domain matches pattern: baseNameN.tld or baseNameN[text].tld
     return new RegExp(`^${baseName}\\d+[a-z-]*\\.[a-z]+$`).test(d) && d !== base;
   }
-  
+
   // Try pattern 2: [N]domain.tld (digits before letters/hyphens)
   match = base.match(/^\d+([a-z-]+)\./);
   if (match) {
@@ -520,7 +525,7 @@ function isPredictedMirror(domain: string, baseDomain: string): boolean {
     // Check if domain matches pattern: N[baseName].tld
     return new RegExp(`^\\d+${baseName}\\.[a-z]+$`).test(d) && d !== base;
   }
-  
+
   return false;
 }
 
@@ -539,11 +544,11 @@ function removePredictedMirrors(
   if (priorityMap.size === 0) {
     return domains;
   }
-  
+
   // Collect domains to keep and base domains for pattern matching
   const keep = new Set<string>();
   const bases: string[] = [];
-  
+
   for (const { initial, lastKnown, workingDomains } of priorityMap.values()) {
     keep.add(normalizeDomain(lastKnown));
     if (initial) keep.add(normalizeDomain(initial));
@@ -555,7 +560,7 @@ function removePredictedMirrors(
     }
     bases.push(lastKnown);
   }
-  
+
   // Filter logic:
   // 1. If domain is in keep set (last_known_mirror, initial_domain, or working domain), always keep it
   // 2. If domain is NOT in keep set but matches predicted mirror pattern, remove it
@@ -595,7 +600,7 @@ function processLine(
 
     // Process domain list with unified logic (includes additional domains appending)
     const { processed, changed } = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
-    
+
     // Return updated line if domains changed OR if predicted mirrors were removed
     if (changed || processed.length !== parts.length) {
       return [`${processed.join(",")}${right}`];
@@ -647,10 +652,10 @@ function processLine(
       // Check if value contains domain list (separated by |)
       if (paramValue.includes("|")) {
         const domains = paramValue.split("|").map(d => d.trim());
-        
+
         // Process domain list with unified logic (includes additional domains appending)
         const { processed, changed } = processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
-        
+
         // Update if domains changed OR if predicted mirrors were removed
         if (changed || processed.length !== domains.length) {
           newPairs.push(`${paramName}=${processed.join("|")}`);

@@ -586,11 +586,11 @@ describe('Edge cases and regressions', () => {
     ]);
     const initialToLastKnownMap = new Map<string, string>();
     const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
-    
+
     // Original cosmetic rule: example15.com##a[href^="https://cutt.ly/"]
     const line = 'example15.com##a[href^="https://cutt.ly/"]';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
-    
+
     // MUST NOT produce empty domain list (##a[href...] would be global rule!)
     expect(result[0]).not.toBe('##a[href^="https://cutt.ly/"]');
     // Should keep original domain as fallback
@@ -605,10 +605,10 @@ describe('Edge cases and regressions', () => {
     ]);
     const initialToLastKnownMap = new Map<string, string>();
     const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
-    
+
     const line = 'example14.com,example15.com##a[href^="https://cutt.ly/"]';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
-    
+
     // MUST NOT produce empty domain list
     expect(result[0]).not.toMatch(/^##/);
     // Should keep at least one original domain
@@ -624,10 +624,10 @@ describe('Edge cases and regressions', () => {
     ]);
     const initialToLastKnownMap = new Map<string, string>();
     const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
-    
+
     const line = '$domain=example14.com|example15.com';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
-    
+
     // MUST NOT produce empty parameter value
     expect(result[0]).not.toBe('$domain=');
     // Should keep at least one original domain as fallback
@@ -645,11 +645,64 @@ describe('Edge cases and regressions', () => {
     const priorityMap = new Map([
       ['example020.com', { initial: null, lastKnown: 'example020.com', oldHost: '' }],
     ]);
-    
+
     const line = '$domain=example14.com|example15.com';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
-    
+
     // Should restore last_known_mirror from priorityMap (same TLD pattern)
     expect(result[0]).toBe('$domain=example020.com');
+  });
+});
+
+// ============================================================================
+// 3.5 hostMap first-wins: primary replacement is not overwritten by additional
+// ============================================================================
+
+describe('3.5 processDomainList — hostMap first-wins with same oldHost for primary+additional', () => {
+  // Simulates force_search_ahead scenario:
+  //   replacements = [
+  //     { oldHost: 'example001.com', newHost: 'example118.com' },  ← primary (numeric, heuristic found)
+  //     { oldHost: 'example001.com', newHost: 'nopattern.com' },   ← additional (redirect target)
+  //   ]
+  // hostMap must keep first-wins: 'example001.com' → 'example118.com'
+  // additionalDomainsMap: 'example118.com' → ['nopattern.com']
+
+  const hostMap = new Map([['example001.com', 'example118.com']]);
+  const emptyInitialMap = new Map<string, string>();
+  const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+  const additionalDomainsMap = new Map([['example118.com', ['nopattern.com']]]);
+
+  test('single-site cosmetic: example001.com##.ads → example118.com,nopattern.com##.ads', () => {
+    const result = processLine('example001.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result).toEqual(['example118.com,nopattern.com##.ads']);
+  });
+
+  test('mixed cosmetic: other.com,example001.com,extra.com##.ads → both domains added', () => {
+    const result = processLine('other.com,example001.com,extra.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result[0]).toContain('example118.com');
+    expect(result[0]).toContain('nopattern.com');
+    expect(result[0]).toContain('other.com');
+    expect(result[0]).toContain('extra.com');
+    // example001.com must not remain
+    expect(result[0]).not.toContain('example001.com');
+  });
+
+  test('mixed cosmetic: nopattern.com should appear only once (not duplicated)', () => {
+    const result = processLine('other.com,example001.com,extra.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    const domains = result[0].split('##')[0].split(',');
+    const count = domains.filter(d => d === 'nopattern.com').length;
+    expect(count).toBe(1);
+  });
+
+  test('processDomainList: additional appended when primary key matches', () => {
+    const { processed } = processDomainList(
+      ['other.com', 'example001.com', 'extra.com'],
+      hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap
+    );
+    expect(processed).toContain('example118.com');
+    expect(processed).toContain('nopattern.com');
+    expect(processed).toContain('other.com');
+    expect(processed).toContain('extra.com');
+    expect(processed).not.toContain('example001.com');
   });
 });
