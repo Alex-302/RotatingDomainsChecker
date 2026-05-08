@@ -122,7 +122,6 @@ function makeFailResult(error: string, overrides: Partial<RedirectResult> = {}):
 // ============================================================================
 // 3. generateCandidates (tested via processAll with heuristic)
 // ============================================================================
-
 describe('3. Heuristic candidate generation', () => {
   test('3.1 domain[N].tld: example001.com → generates example002..006', async () => {
     const config = makeConfig({
@@ -319,7 +318,6 @@ describe('3. Heuristic candidate generation', () => {
 // ============================================================================
 // 4. shouldUpdate logic
 // ============================================================================
-
 describe('4. shouldUpdate logic', () => {
   test('4.1 hostChanged: true → shouldUpdate: true', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
@@ -408,7 +406,6 @@ describe('4. shouldUpdate logic', () => {
 // ============================================================================
 // 4.7 calculateDaysSince (tested indirectly via processSite optimization)
 // ============================================================================
-
 describe('4.7 calculateDaysSince (via recent last_seen optimization)', () => {
   test('last_seen recent (< 2 days) → tries last_known_mirror first', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
@@ -477,7 +474,6 @@ describe('4.7 calculateDaysSince (via recent last_seen optimization)', () => {
 // ============================================================================
 // 5. Heuristic triggering conditions
 // ============================================================================
-
 describe('5. Heuristic triggering conditions', () => {
   test('5.1 antibot + skipOnAntibot: true + accept_antibot: false → foundSites.add, search stops', async () => {
     const config = makeConfig({
@@ -568,9 +564,9 @@ describe('5. Heuristic triggering conditions', () => {
     const resolver = new HttpResolver(config);
 
     // DNS fails for initial check, then resolves for all subsequent
-    mockedDnsResolve.mockRejectedValueOnce(new Error('ENOTFOUND') as never);
+    mockedDnsLookup.mockRejectedValueOnce({ address: '', family: 0 } as never);
     // All subsequent DNS checks succeed
-    mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
+    mockedDnsLookup.mockResolvedValue({ address: '127.0.0.1', family: 4 } as never);
 
     // resolver.resolve is only called for heuristic candidates (initial check fails at DNS)
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
@@ -590,7 +586,6 @@ describe('5. Heuristic triggering conditions', () => {
 // ============================================================================
 // 5.5 Content probe in heuristic
 // ============================================================================
-
 describe('5.5 Content probe in heuristic', () => {
   test('probe_text present + body matches → candidate accepted', async () => {
     const config = makeConfig({
@@ -644,7 +639,6 @@ describe('5.5 Content probe in heuristic', () => {
 // ============================================================================
 // 6.3 DNS pre-check
 // ============================================================================
-
 describe('6.3 DNS pre-check', () => {
   test('dnsPreCheck.enabled: false → DNS check skipped, HTTP proceeds', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
@@ -668,7 +662,7 @@ describe('6.3 DNS pre-check', () => {
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
-    mockedDnsResolve.mockRejectedValueOnce(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }) as never);
+    mockedDnsLookup.mockRejectedValueOnce(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }) as never);
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const results = await processor.processAll();
@@ -681,7 +675,6 @@ describe('6.3 DNS pre-check', () => {
 // ============================================================================
 // Path mismatch
 // ============================================================================
-
 describe('Path mismatch handling', () => {
   test('site.path set + final path differs → shouldUpdate: false, error message', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
@@ -705,7 +698,6 @@ describe('Path mismatch handling', () => {
 // ============================================================================
 // No URL configured
 // ============================================================================
-
 describe('No URL configured', () => {
   test('missing initial_domain and last_known_mirror → error result', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
@@ -725,7 +717,6 @@ describe('No URL configured', () => {
 // ============================================================================
 // 7. skip_text scenarios
 // ============================================================================
-
 describe('7. skip_text scenarios', () => {
   test('7.1 Scenario 1: main domain skipped, heuristic candidate OK → uses candidate', async () => {
     const config = makeConfig({
@@ -895,7 +886,7 @@ describe('8. force_search_ahead scenarios', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
-    const site = makeSite({ 
+    const site = makeSite({
       last_known_mirror: 'testsite1.com',
       force_search_ahead: false,
     });
@@ -931,7 +922,7 @@ describe('8. force_search_ahead scenarios', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
-    const site = makeSite({ 
+    const site = makeSite({
       last_known_mirror: 'testsite1.com',
       force_search_ahead: true,
     });
@@ -941,7 +932,7 @@ describe('8. force_search_ahead scenarios', () => {
 
     let callCount = 0;
     const successfulCandidates: string[] = [];
-    
+
     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
       callCount++;
       if (callCount === 1) {
@@ -979,7 +970,7 @@ describe('8. force_search_ahead scenarios', () => {
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
-    const site = makeSite({ 
+    const site = makeSite({
       last_known_mirror: 'testsite1.com',
       force_search_ahead: true,
       probe_text: ['Expected Content'],
@@ -989,7 +980,7 @@ describe('8. force_search_ahead scenarios', () => {
     const resolver = new HttpResolver(config);
 
     let callCount = 0;
-    
+
     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
       callCount++;
       if (callCount === 1) {
@@ -1024,7 +1015,6 @@ describe('8. force_search_ahead scenarios', () => {
 // ============================================================================
 // 9. Antibot + force_search_ahead: heuristic should run even when accept_antibot succeeds
 // ============================================================================
-
 describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
   test('9.1 accept_antibot + force_search_ahead: heuristic runs despite successful antibot check', async () => {
     const config = makeConfig({
@@ -1383,7 +1373,6 @@ describe('9. Antibot + force_search_ahead + forceHeuristicOnCodes', () => {
 // ============================================================================
 // 10. probe_text filtering in heuristic search
 // ============================================================================
-
 describe('10. probe_text filtering in heuristic search', () => {
   test('10.1 probe_text matches → heuristic succeeds', async () => {
     const config = makeConfig({
