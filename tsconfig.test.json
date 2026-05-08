@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
+    "composite": true,
     "types": ["node", "jest"],
     "noUnusedLocals": false,
     "noUnusedParameters": false
