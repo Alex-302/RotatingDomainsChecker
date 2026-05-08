@@ -20,8 +20,8 @@ export class BatchProcessor {
    * Tokenize domain into structured parts (runtime only, not persisted)
    */
   private tokenizeDomain(domain: string): DomainToken {
-    const normalized = domain.startsWith('http://') || domain.startsWith('https://') 
-      ? domain 
+    const normalized = domain.startsWith('http://') || domain.startsWith('https://')
+      ? domain
       : `https://${domain}`;
     let hostname = this.resolver.extractHostWithoutQuery(normalized);
     hostname = hostname.replace(/^www\./, '');
@@ -61,7 +61,7 @@ export class BatchProcessor {
     return token.isPattern;
   }
 
-  
+
   /**
    * Group history domains by pattern (on the fly)
    */
@@ -88,7 +88,7 @@ export class BatchProcessor {
     if (token.isPattern) {
       // Pattern domain - reset flags (delete from config)
       delete site.pattern_changed;
-      
+
       // Pattern → Pattern: DO NOT create history (just rotation)
       // History is only needed when switching FROM pattern TO non-pattern
       // So we delete any existing history when staying on pattern domains
@@ -100,7 +100,7 @@ export class BatchProcessor {
         // Store only the last pattern domain before switching to non-pattern
         site.heuristic_history = [oldLastKnownMirror];
       }
-      
+
       site.pattern_changed = true;
     }
   }
@@ -133,7 +133,7 @@ export class BatchProcessor {
     try {
       const hostname = new URL(url).hostname;
       await Promise.race([
-        dns.resolve(hostname),
+        dns.lookup(hostname),
         new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), timeout))
       ]);
       return true;
@@ -142,7 +142,7 @@ export class BatchProcessor {
         try {
           const hostname = new URL(url).hostname;
           await Promise.race([
-            dns.resolve(hostname),
+            dns.lookup(hostname),
             new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 2500))
           ]);
           return true;
@@ -165,20 +165,20 @@ export class BatchProcessor {
     failedUrl: string
   ): Promise<{ newHost: string; result: RedirectResult; candidateUrl: string } | null> {
     const heuristicTasks = this.generateCandidates(siteName, siteIndex, site, failedUrl);
-    
+
     if (heuristicTasks.length === 0) {
       this.logger.debug(siteName, `No heuristic candidates generated`);
       return null;
     }
-    
+
     const dnsCheckedTasks = await this.batchDnsCheck(heuristicTasks);
     const dnsOkTasks = dnsCheckedTasks.filter(t => t.dnsOk);
-    
+
     if (dnsOkTasks.length === 0) {
       this.logger.debug(siteName, `No heuristic candidates passed DNS check`);
       return null;
     }
-    
+
     return this.checkHeuristicCandidates(siteName, site, dnsOkTasks);
   }
 
@@ -200,10 +200,10 @@ export class BatchProcessor {
         this.logger.debug(siteName, `Heuristic: content probe is not configured for ${task.candidateUrl}`);
       }
       const httpResult = await this.resolver.resolve(task.candidateUrl, true, site, task.probeText);
-      
+
       if (httpResult.success) {
         this.logger.debug(siteName, `Heuristic candidate ${task.candidateUrl}: HTTP ${httpResult.statusCode}${httpResult.antibotDetected ? ' (antibot)' : ''}`);
-        
+
         // Content probe if needed
         let probeOk = true;
         if (task.probeText && task.probeText.length > 0) {
@@ -219,17 +219,17 @@ export class BatchProcessor {
             }
           }
         }
-        
+
         if (probeOk === true) {
           const heuristicNewHost = httpResult.finalHost.toLowerCase();
           const heuristicIsPattern = this.matchesNumericPattern(heuristicNewHost);
-          
+
           if (heuristicIsPattern) {
             // Found a pattern domain!
             const chainFormatted = this.resolver.formatRedirectChain(httpResult.redirectChain);
             this.logger.info(siteName, `Heuristic SUCCESS: ${task.candidateUrl}`);
             this.logger.info(siteName, `Heuristic redirect chain: ${chainFormatted}`);
-            
+
             return {
               newHost: heuristicNewHost,
               result: httpResult,
@@ -242,7 +242,7 @@ export class BatchProcessor {
         }
       }
     }
-    
+
     return null; // No pattern domain found
   }
 
@@ -260,20 +260,20 @@ export class BatchProcessor {
     let match = failedUrl.match(/^(https?:\/\/)?(www\.)?([a-z-]+)(\d+)([a-z-]*)(\.[a-z.]+)(\/.*)?/i);
     let isNumberFirst = false;
     let wwwPrefix = '';
-    
+
     // Try pattern 2: [N]domain.tld (number at the beginning)
     if (!match) {
       match = failedUrl.match(/^(https?:\/\/)?(www\.)?(\d+)([a-z-]+)(\.[a-z.]+)(\/.*)?/i);
       isNumberFirst = true;
     }
-    
+
     if (!match) {
       this.logger.warn(siteName, "Heuristic: URL doesn't match domain[N].tld, domain[N][text].tld, or [N]domain.tld pattern, skipping");
       return [];
     }
 
     let protocol: string, prefix: string, numStr: string, middleText: string, suffix: string, path: string;
-    
+
     if (isNumberFirst) {
       // Pattern: [N]domain.tld -> (protocol)(www.)(number)(letters)(suffix)(path)
       [, protocol = 'https://', wwwPrefix = '', numStr, prefix, suffix, path = ''] = match;
@@ -282,7 +282,7 @@ export class BatchProcessor {
       // Pattern: domain[N].tld or domain[N][text].tld -> (protocol)(www.)(letters)(number)(middle)(suffix)(path)
       [, protocol = 'https://', wwwPrefix = '', prefix, numStr, middleText = '', suffix, path = ''] = match;
     }
-    
+
     const currentNum = parseInt(numStr, 10);
     const startNum = currentNum + 1;
 
@@ -437,21 +437,21 @@ export class BatchProcessor {
           const candidates = this.generateCandidates(name, i, site, failedUrl);
           allTasks.push(...candidates);
         }
-        
+
         // Fallback: if site is working but on non-pattern domain, try history-based heuristic
         if (!failed && !skipHeuristic && site.heuristic_history && site.heuristic_history.length > 0) {
           const currentToken = this.tokenizeDomain(site.last_known_mirror || '');
-          
+
           if (!currentToken.isPattern) {
             // Group history by pattern for smarter fallback
             const patternGroups = this.groupHistoryByPattern(site.heuristic_history);
-            
+
             if (patternGroups.size > 0) {
               this.logger.info(name, `Current domain ${currentToken.hostname} is non-pattern, trying history-based heuristic`);
-              
+
               for (const [patternKey, domains] of patternGroups) {
                 this.logger.info(name, `Trying pattern ${patternKey} with ${domains.length} domains`);
-                
+
                 // Check ALL domains in this pattern group from first to last
                 for (const historyDomain of domains) {
                   // First, check the history domain itself
@@ -465,7 +465,7 @@ export class BatchProcessor {
                     site,
                   };
                   allTasks.push(historyTask);
-                  
+
                   // Then generate new candidates from the history domain
                   const candidates = this.generateCandidates(name, i, site, historyDomain);
                   allTasks.push(...candidates);
@@ -531,7 +531,7 @@ export class BatchProcessor {
           // Atomic check-and-process: handle force_search_ahead differently
           const alreadyFound = foundSites.has(task.siteIndex);
           const continueSearch = task.site.force_search_ahead;
-          
+
           if (alreadyFound && !continueSearch) {
             // Site already found and not force_search_ahead, skip processing
             this.logger.debug(task.siteName, `Heuristic: skipping ${task.candidateUrl} (site already found)`);
@@ -710,7 +710,7 @@ export class BatchProcessor {
               results[siteIndex].additionalWorkingDomains = domains
                 .map((d: { domain: string }) => d.domain)
                 .filter(domain => domain !== firstDomain);
-              
+
               this.logger.info(siteName, `force_search_ahead: collected ${domains.length} working domains: ${domains.map((d: { domain: string }) => d.domain).join(', ')}`);
             }
           }
@@ -983,18 +983,18 @@ export class BatchProcessor {
       this.updateDomainHistory(site, newHost, site.last_known_mirror);
       historyUpdated = true;
       shouldUpdate = false; // do not touch filter files yet
-      
+
       // Try heuristic search immediately to find a new pattern domain
       this.logger.info(siteName, `Triggering heuristic search to find new pattern domain...`);
       const heuristicResult = await this.runHeuristicSearch(siteName, 0, site, oldHost);
-      
+
       if (heuristicResult) {
         // Found a pattern domain via heuristic!
         this.logger.info(siteName, `Heuristic found new pattern domain: ${heuristicResult.newHost}`);
-        
+
         // Update history: clear flags since we're back on pattern
         this.updateDomainHistory(site, heuristicResult.newHost, oldHost);
-        
+
         // Return heuristic result instead
         return {
           siteName,
