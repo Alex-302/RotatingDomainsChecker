@@ -897,13 +897,14 @@ describe('8. force_search_ahead scenarios', () => {
     let callCount = 0;
     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
       callCount++;
-      if (callCount === 1) {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'testsite1.com') {
         return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
       }
       // First candidate succeeds
-      if (url.includes('testsite2.com')) return Promise.resolve(makeSuccessResult('testsite2.com'));
+      if (host === 'testsite2.com') return Promise.resolve(makeSuccessResult('testsite2.com'));
       // Second candidate (should not be checked due to early stop)
-      if (url.includes('testsite3.com')) return Promise.resolve(makeSuccessResult('testsite3.com'));
+      if (host === 'testsite3.com') return Promise.resolve(makeSuccessResult('testsite3.com'));
       return Promise.resolve(makeFailResult('Not found'));
     });
 
@@ -935,19 +936,20 @@ describe('8. force_search_ahead scenarios', () => {
 
     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
       callCount++;
-      if (callCount === 1) {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'testsite1.com') {
         return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
       }
       // Multiple candidates succeed
-      if (url.includes('testsite2.com')) {
+      if (host === 'testsite2.com') {
         successfulCandidates.push('testsite2.com');
         return Promise.resolve(makeSuccessResult('testsite2.com'));
       }
-      if (url.includes('testsite3.com')) {
+      if (host === 'testsite3.com') {
         successfulCandidates.push('testsite3.com');
         return Promise.resolve(makeSuccessResult('testsite3.com'));
       }
-      if (url.includes('testsite4.com')) {
+      if (host === 'testsite4.com') {
         successfulCandidates.push('testsite4.com');
         return Promise.resolve(makeSuccessResult('testsite4.com'));
       }
@@ -983,19 +985,20 @@ describe('8. force_search_ahead scenarios', () => {
 
     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
       callCount++;
-      if (callCount === 1) {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'testsite1.com') {
         return Promise.resolve(makeFailResult('DNS failed', { shouldTriggerHeuristic: true }));
       }
       // Candidate 2: success with correct content
-      if (url.includes('testsite2.com')) {
+      if (host === 'testsite2.com') {
         return Promise.resolve(makeSuccessResult('testsite2.com', { finalBody: 'Expected Content here' }));
       }
       // Candidate 3: success but wrong content (probe fails)
-      if (url.includes('testsite3.com')) {
+      if (host === 'testsite3.com') {
         return Promise.resolve(makeSuccessResult('testsite3.com', { finalBody: 'Wrong Content' }));
       }
       // Candidate 4: success with correct content
-      if (url.includes('testsite4.com')) {
+      if (host === 'testsite4.com') {
         return Promise.resolve(makeSuccessResult('testsite4.com', { finalBody: 'Expected Content again' }));
       }
       return Promise.resolve(makeFailResult('Not found'));
@@ -1009,6 +1012,137 @@ describe('8. force_search_ahead scenarios', () => {
     expect(results[0].shouldUpdate).toBe(true);
     // Should check multiple candidates
     expect(callCount).toBeGreaterThan(2);
+  });
+
+  test('8.4 force_search_ahead: Phase 1 success → still generates candidates and collects additional domains', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'testsite1.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      // Phase 1: testsite1.com redirects to testsite2.com
+      if (host === 'testsite1.com') {
+        return Promise.resolve(makeSuccessResult('testsite2.com'));
+      }
+      // Phase 2: Heuristic candidates — multiple succeed
+      if (host === 'testsite2.com') return Promise.resolve(makeSuccessResult('testsite2.com'));
+      if (host === 'testsite3.com') return Promise.resolve(makeSuccessResult('testsite3.com'));
+      if (host === 'testsite4.com') return Promise.resolve(makeSuccessResult('testsite4.com'));
+      if (host === 'testsite5.com') return Promise.resolve(makeSuccessResult('testsite5.com'));
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Phase 1 found testsite2.com (redirect from testsite1.com)
+    expect(results[0].newHost).toBe('testsite2.com');
+    expect(results[0].hostChanged).toBe(true);
+    // Heuristic should have run and collected additional working domains
+    expect(results[0].additionalWorkingDomains).toEqual(
+      expect.arrayContaining(['testsite3.com', 'testsite4.com', 'testsite5.com'])
+    );
+    // Should have made initial call + heuristic candidates
+    expect(callCount).toBeGreaterThan(3);
+  });
+
+  test('8.5 force_search_ahead: Phase 1 success but host unchanged → still generates candidates', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'testsite1.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      // Phase 1: succeeds but host unchanged
+      if (host === 'testsite1.com') {
+        return Promise.resolve(makeSuccessResult('testsite1.com'));
+      }
+      // Phase 2: Heuristic finds new working domains
+      if (host === 'testsite2.com') return Promise.resolve(makeSuccessResult('testsite2.com'));
+      if (host === 'testsite3.com') return Promise.resolve(makeSuccessResult('testsite3.com'));
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Phase 1 returned testsite1.com (no host change)
+    // Heuristic should still run due to force_search_ahead and collect additional domains
+    expect(results[0].newHost).toBe('testsite1.com');
+    expect(results[0].additionalWorkingDomains).toEqual(
+      expect.arrayContaining(['testsite2.com', 'testsite3.com'])
+    );
+  });
+
+  test('8.6 force_search_ahead: collects final working domains from all redirects', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'testsite1.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      // Phase 1: testsite1.com is alive (no redirect)
+      if (callCount === 1) {
+        return Promise.resolve(makeSuccessResult('testsite1.com'));
+      }
+      // Phase 2 candidates:
+      // testsite2.com → alive (responds as itself)
+      if (url.includes('testsite2.com')) {
+        return Promise.resolve(makeSuccessResult('testsite2.com'));
+      }
+      // testsite3.com → REDIRECTS to different.com (200)
+      if (url.includes('testsite3.com')) {
+        return Promise.resolve(makeSuccessResult('different.com'));
+      }
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Primary domain is testsite1.com (alive, Phase 1)
+    expect(results[0].newHost).toBe('testsite1.com');
+
+    // Collect ALL final working domains, including through redirects
+    const additional = results[0].additionalWorkingDomains || [];
+
+    // testsite2.com → alive → collected
+    expect(additional).toContain('testsite2.com');
+    // testsite3.com → redirects to different.com (200) → different.com is collected
+    expect(additional).toContain('different.com');
   });
 });
 

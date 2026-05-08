@@ -15745,7 +15745,7 @@ class BatchProcessor {
         try {
             const hostname = new URL(url).hostname;
             await Promise.race([
-                external_dns_namespaceObject.promises.resolve(hostname),
+                external_dns_namespaceObject.promises.lookup(hostname),
                 new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), timeout))
             ]);
             return true;
@@ -15755,7 +15755,7 @@ class BatchProcessor {
                 try {
                     const hostname = new URL(url).hostname;
                     await Promise.race([
-                        external_dns_namespaceObject.promises.resolve(hostname),
+                        external_dns_namespaceObject.promises.lookup(hostname),
                         new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 2500))
                     ]);
                     return true;
@@ -16006,7 +16006,7 @@ class BatchProcessor {
                 const antibot = r.result.antibotDetected;
                 const forceHeuristic = r.result.shouldTriggerHeuristic;
                 const skipHeuristic = Boolean(site.disable_heuristic) || (antibot && this.config.heuristic.skipOnAntibot && !forceHeuristic);
-                if ((failed || forceHeuristic) && !skipHeuristic) {
+                if ((failed || forceHeuristic || site.force_search_ahead) && !skipHeuristic) {
                     const failedUrl = site.initial_domain || site.last_known_mirror;
                     const candidates = this.generateCandidates(name, i, site, failedUrl);
                     allTasks.push(...candidates);
@@ -16051,6 +16051,21 @@ class BatchProcessor {
                 const heuristicParallel = this.config.processing.heuristicParallel ?? this.config.processing.parallel;
                 const foundSites = new Set();
                 const foundDomainsPerSite = new Map();
+                // Pre-populate foundSites and foundDomainsPerSite with successful Phase 1 results for force_search_ahead sites
+                // This ensures Phase 2 doesn't overwrite Phase 1 results, only collects additional domains
+                for (let i = 0; i < siteEntries.length; i++) {
+                    const [name, site] = siteEntries[i];
+                    const r = results[i];
+                    if (r && r.result.success && site.force_search_ahead) {
+                        foundSites.add(i);
+                        foundDomainsPerSite.set(i, [{
+                                domain: r.newHost, // final working domain after redirects
+                                result: r.result,
+                                candidateUrl: r.startedHost,
+                            }]);
+                        this.logger.info(name, `force_search_ahead: Phase 1 working domain ${r.newHost} collected`);
+                    }
+                }
                 const activePromises = new Map();
                 let nextTaskIndex = 0;
                 const checkCandidate = async (task) => {
@@ -16124,7 +16139,8 @@ class BatchProcessor {
                             const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
                             this.logger.info(task.siteName, `Heuristic SUCCESS: ${task.candidateUrl}`);
                             this.logger.info(task.siteName, `Heuristic redirect chain: ${chainFormatted}`);
-                            // If force_search_ahead, collect multiple domains
+                            // If force_search_ahead, collect the final working domain
+                            // The finalHost is the domain that returned 200 OK, which is what we want
                             if (task.site.force_search_ahead) {
                                 if (!foundDomainsPerSite.has(task.siteIndex)) {
                                     foundDomainsPerSite.set(task.siteIndex, []);
@@ -16134,7 +16150,7 @@ class BatchProcessor {
                                     result,
                                     candidateUrl: task.candidateUrl,
                                 });
-                                this.logger.info(task.siteName, `force_search_ahead: collected domain ${newHost}, continuing search...`);
+                                this.logger.info(task.siteName, `force_search_ahead: collected working final domain ${newHost} from ${task.candidateUrl}`);
                             }
                             // Mark site as found (first success or non-force_search_ahead)
                             if (!foundSites.has(task.siteIndex)) {
