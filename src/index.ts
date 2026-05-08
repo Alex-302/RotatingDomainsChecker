@@ -11,7 +11,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.1.7";
+const VERSION = "1.1.9";
 
 function formatDateTime(date: Date): string {
   const year = date.getFullYear();
@@ -247,7 +247,7 @@ async function main() {
       // Update watcher on successful change
       // Save old last_known_mirror before updating (for history comparison)
       const oldLastKnownMirror = site.last_known_mirror;
-      
+
       // Extract only domain if initial_domain doesn't contain URL
       const shouldExtractDomain = !site.initial_domain || !site.initial_domain.includes("/");
       site.last_known_mirror = shouldExtractDomain
@@ -257,7 +257,7 @@ async function main() {
       delete site.failed_days; // Reset on success
       delete site.failed_since;
       delete site.potentially_dead; // Remove flag on success
-      
+
       // Update domain history after last_known_mirror is updated
       // Skip if already updated in batch.ts (heuristic path sets historyUpdated=true)
       if (result.hostChanged && !result.historyUpdated) {
@@ -314,17 +314,17 @@ async function main() {
       } else {
         // Pattern change detected but check failed - requires manual review
         summary.failed++;
-        
+
         // Log structured warning
         logger.warn(result.siteName, `⚠️ PATTERN CHANGE ALERT`);
         logger.warn(result.siteName, `   From: ${result.oldHost}`);
         logger.warn(result.siteName, `   To: ${result.newHost}`);
         logger.warn(result.siteName, `   Status: FAILED`);
         logger.warn(result.siteName, `   Action: Manual review required`);
-        
+
         // Add to manual review list
         summary.warnings.push(`${result.siteName}: ${result.oldHost} → ${result.newHost}`);
-        
+
         // Update watcher with failed status
         site.failed_since = nowFormatted;
         site.failed_days = calculateDaysSince(site.failed_since);
@@ -433,14 +433,14 @@ async function main() {
   // Separate pattern changes from other warnings
   const patternChanges = summary.warnings.filter(w => w.includes('→'));
   const otherWarnings = summary.warnings.filter(w => !w.includes('→'));
-  
+
   if (patternChanges.length > 0) {
     logger.logGlobal(LogLevel.WARN, " ⚠️  Pattern changes requiring manual review:");
     for (const warning of patternChanges) {
       logger.logGlobal(LogLevel.WARN, `     ${warning}`);
     }
   }
-  
+
   if (otherWarnings.length > 0) {
     logger.logGlobal(LogLevel.RAW, " ⚠️  Warnings:");
     for (const warning of otherWarnings) {

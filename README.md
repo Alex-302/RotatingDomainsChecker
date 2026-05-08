@@ -203,28 +203,28 @@ sites:
     # Required: at least one of these must be specified
     initial_domain: "example.com"       # Initial site domain (recommended for new sites)
     last_known_mirror: "example.com"    # Last working mirror (auto-updated by script)
-    
+
     # Optional verification fields
     path: "/"                           # Path to check on domain (default: "/")
     probe_text: "Example Domain"        # Key phrases for content verification (array or string)
     skip_text: "This domain is parked"  # Skip domains containing this text (array or string)
-    
+
     # Optional heuristic control
     disable_heuristic: false            # Disable heuristic search (default: false)
     force_search_ahead: false           # Continue searching all candidates after finding first working domain (default: false)
-    
+
     # Optional antibot handling
     accept_antibot: false               # Accept Cloudflare/antibot responses as working (default: false)
-    
+
     # Optional geo-blocking
     geoblock: ""                        # Country code for geo-blocking (e.g. "TR", "US"). Not used, just for information.
-    
+
     # Auto-generated fields (updated by the script)
     last_seen: "2026-01-21"             # Last successful check (date only)
     failed_since: ""                    # Date when site first failed
     failed_days: 0                      # Days since last failure
     potentially_dead: false             # Marked as potentially dead after many failures
-    
+
     # Advanced auto-generated fields (rarely needed)
     pattern_changed: false              # Flag: site changed from pattern to non-pattern
     heuristic_history: []               # History of working pattern domains (auto-updated when switching between pattern/non-pattern)
@@ -371,9 +371,11 @@ sites:
 
 **When to use `force_search_ahead`:**
 
-This is **recommended** when a site pre-registers many domains and protects them all with antibot (Cloudflare 403), and page content cannot be checked. Without this flag, only the first working domain is collected, potentially missing other active mirrors that users might access directly.
+This is **recommended** when a site rotates domains frequently and multiple mirrors may be active simultaneously. Without this flag, only the first working domain is collected, potentially missing other active mirrors that users might access directly.
 
 **How it works:**
+
+Heuristic candidate search is always triggered regardless of whether the current `last_known_mirror` is alive or dead. All final working domains (after following redirects) are collected into filter rules.
 
 **Without `force_search_ahead` (default):**
 
@@ -384,16 +386,27 @@ This is **recommended** when a site pre-registers many domains and protects them
 Result in filter: example949.com
 ```
 
-**With `force_search_ahead: true`:**
+**With `force_search_ahead: true` (current domain alive):**
 
-- The initial check accepts the antibot response as successful
-- `force_search_ahead` triggers heuristic search to find neighboring domains (example949.com, example950.com, etc.)
-- All found domains (even behind antibot) are added to filter rules
+```text
+✅ example949.com → HTTP 200 (Phase 1 success, collected)
+✅ example950.com → HTTP 200 → collected
+✅ example951.com → HTTP 301 → example952.com (200) → example952.com collected
+❌ example953.com → DNS FAILED → skipped
+...
+Result in filter: example949.com,example950.com,example952.com
+```
+
+**With `force_search_ahead: true` (current domain dead / antibot):**
+
+- `force_search_ahead` triggers heuristic search to find neighboring domains
+- All found final domains (even behind antibot) are added to filter rules
 - This is preferred over missing actual domains — better to have extra domains in the rule than to miss a working one
 
 ```text
+❌ example948.com → DNS FAILED (Phase 1 failed)
 ✅ example949.com → HTTP 403 → CONTINUE searching
-✅ example950.com → HTTP 403 → CONTINUE searching  
+✅ example950.com → HTTP 403 → CONTINUE searching
 ✅ example951.com → HTTP 403 → CONTINUE searching
 ❌ example952.com → DNS FAILED → CONTINUE searching
 ...
@@ -525,7 +538,7 @@ sites:
     last_known_mirror: "yoursite.com"
     probe_text: "Your Site Title"     # Optional: key phrases to verify
     path: "/"                         # Optional: specific path to check
-    
+
     # These fields will be auto-updated by the script:
     # last_seen: "2026-01-21"
     # failed_since: ""
