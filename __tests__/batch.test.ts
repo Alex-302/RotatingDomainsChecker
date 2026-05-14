@@ -1144,6 +1144,45 @@ describe('8. force_search_ahead scenarios', () => {
     // testsite3.com → redirects to different.com (200) → different.com is collected
     expect(additional).toContain('different.com');
   });
+
+  test('8.7 force_search_ahead + non-pattern initial_domain → falls back to last_known_mirror for candidates', async () => {
+    // Reproduces bug: initial_domain is a redirect shortener (no numeric pattern),
+    // so generateCandidates returns [] for it. Must fall back to last_known_mirror.
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      initial_domain: 'https://ksln.link/redirect',  // no numeric pattern
+      last_known_mirror: 'example18.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      // Phase 1: initial_domain shortener redirects to example18.com
+      if (host === 'ksln.link') return Promise.resolve(makeSuccessResult('example18.com'));
+      // Phase 2: heuristic candidates generated from last_known_mirror (example18.com)
+      if (host === 'example18.com') return Promise.resolve(makeSuccessResult('example18.com'));
+      if (host === 'example19.com') return Promise.resolve(makeSuccessResult('example19.com'));
+      if (host === 'example20.com') return Promise.resolve(makeSuccessResult('example20.com'));
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Primary domain found in Phase 1
+    expect(results[0].newHost).toBe('example18.com');
+
+    // Heuristic should have run from last_known_mirror fallback and collected additional domains
+    const additional = results[0].additionalWorkingDomains || [];
+    expect(additional).toContain('example19.com');
+    expect(additional).toContain('example20.com');
+  });
 });
 
 // ============================================================================
