@@ -18253,11 +18253,8 @@ async function main() {
             // Update watcher on successful change
             // Save old last_known_mirror before updating (for history comparison)
             const oldLastKnownMirror = site.last_known_mirror;
-            // Extract only domain if initial_domain doesn't contain URL
-            const shouldExtractDomain = !site.initial_domain || !site.initial_domain.includes("/");
-            site.last_known_mirror = shouldExtractDomain
-                ? result.newHost
-                : result.result.finalUrl;
+            // Always save only the hostname (domain), regardless of initial_domain format
+            site.last_known_mirror = result.newHost;
             site.last_seen = nowDateOnly;
             delete site.failed_days; // Reset on success
             delete site.failed_since;
@@ -18304,11 +18301,8 @@ async function main() {
                     }
                 }
                 // Update watcher on successful change
-                // Extract only domain if initial_domain doesn't contain URL
-                const shouldExtractDomain = !site.initial_domain || !site.initial_domain.includes("/");
-                site.last_known_mirror = shouldExtractDomain
-                    ? result.newHost
-                    : result.result.finalUrl;
+                // Always save only the hostname (domain), regardless of initial_domain format
+                site.last_known_mirror = result.newHost;
                 site.last_seen = nowDateOnly;
                 delete site.failed_days; // Reset on success
                 delete site.failed_since;
