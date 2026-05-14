@@ -11,7 +11,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.1.11";
+const VERSION = "1.1.12";
 
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after sorting alphabetically.

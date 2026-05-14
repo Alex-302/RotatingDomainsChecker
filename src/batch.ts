@@ -435,7 +435,13 @@ export class BatchProcessor {
 
         if ((failed || forceHeuristic || site.force_search_ahead) && !skipHeuristic) {
           const failedUrl = site.initial_domain || site.last_known_mirror;
-          const candidates = this.generateCandidates(name, i, site, failedUrl);
+          let candidates = this.generateCandidates(name, i, site, failedUrl);
+          // If initial_domain exists but doesn't match a numeric pattern (e.g. redirect shortener),
+          // fall back to last_known_mirror for candidate generation
+          if (candidates.length === 0 && site.initial_domain && site.last_known_mirror) {
+            this.logger.debug(name, `Heuristic: initial_domain "${site.initial_domain}" has no numeric pattern, falling back to last_known_mirror`);
+            candidates = this.generateCandidates(name, i, site, site.last_known_mirror);
+          }
           allTasks.push(...candidates);
         }
 
