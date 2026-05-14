@@ -18044,7 +18044,17 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.10";
+const VERSION = "1.1.11";
+/**
+ * From newHost + additionalWorkingDomains, pick the first domain after sorting alphabetically.
+ * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
+ */
+function selectFirstByOrder(newHost, additionalDomains) {
+    if (!additionalDomains || additionalDomains.length === 0)
+        return newHost;
+    const all = [newHost, ...additionalDomains].sort();
+    return all[0];
+}
 function formatDateTime(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -18193,7 +18203,7 @@ async function main() {
             // History and flags already set in batch.ts. Update last_known_mirror and counters,
             // but do NOT touch filter files — the old pattern domain stays until a new pattern is found.
             summary.updated++;
-            site.last_known_mirror = result.newHost;
+            site.last_known_mirror = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
             site.last_seen = nowDateOnly;
             delete site.failed_days;
             delete site.failed_since;
@@ -18254,7 +18264,7 @@ async function main() {
             // Save old last_known_mirror before updating (for history comparison)
             const oldLastKnownMirror = site.last_known_mirror;
             // Always save only the hostname (domain), regardless of initial_domain format
-            site.last_known_mirror = result.newHost;
+            site.last_known_mirror = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
             site.last_seen = nowDateOnly;
             delete site.failed_days; // Reset on success
             delete site.failed_since;
@@ -18302,7 +18312,7 @@ async function main() {
                 }
                 // Update watcher on successful change
                 // Always save only the hostname (domain), regardless of initial_domain format
-                site.last_known_mirror = result.newHost;
+                site.last_known_mirror = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
                 site.last_seen = nowDateOnly;
                 delete site.failed_days; // Reset on success
                 delete site.failed_since;
