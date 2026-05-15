@@ -206,7 +206,7 @@ sites:
                                         # Recommended for new sites. If this URL has no numeric pattern,
                                         # heuristic candidate generation automatically falls back to last_known_mirror.
     last_known_mirror: "example.com"    # Last working mirror (auto-updated by script).
-                                        # With force_search_ahead, always set to the lexicographically
+                                        # With force_search_ahead, always set to the naturally
                                         # smallest domain among all found working mirrors.
 
     # Optional verification fields
@@ -382,7 +382,7 @@ This is **recommended** when a site rotates domains frequently and multiple mirr
 
 Heuristic candidate search is always triggered regardless of whether the current `last_known_mirror` is alive or dead. All final working domains (after following redirects) are collected into filter rules.
 
-`last_known_mirror` is always set to the **lexicographically smallest** domain among all collected working mirrors (e.g. `example18.live` wins over `example20.live`), ensuring deterministic selection even when parallel HTTP checks complete in arbitrary order.
+`last_known_mirror` is always set to the **naturally smallest** domain among all collected working mirrors (e.g. `example9.live` wins over `example18.live`, `example18.live` wins over `example20.live`), ensuring deterministic selection even when parallel HTTP checks complete in arbitrary order.
 
 If `initial_domain` is a redirect shortener or URL without a numeric pattern (e.g. `https://ksln.link/abc`), heuristic candidate generation automatically falls back to `last_known_mirror` to extract the pattern.
 

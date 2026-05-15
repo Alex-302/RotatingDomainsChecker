@@ -15393,6 +15393,12 @@ exports.visitAsync = visitAsync;
 /************************************************************************/
 var __webpack_exports__ = {};
 
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  p: () => (/* binding */ naturalCompare),
+  a: () => (/* binding */ selectFirstByOrder)
+});
+
 ;// CONCATENATED MODULE: external "fs"
 const external_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs");
 // EXTERNAL MODULE: ./node_modules/yaml/dist/index.js
@@ -17250,14 +17256,19 @@ class FilterReplacer {
             return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000' };
         }
         // Build ASCII table: Site | From (startedHost) | To | Time
-        // Show only actual domain changes in the table
-        const actualChanges = replacements.filter(r => {
-            // Check if there's a real change between from and to
+        // Show only actual domain changes in the table.
+        // Deduplicate by siteName FIRST (keeping primary/effectiveNewHost entry),
+        // then filter to only show entries where the domain actually changed.
+        const primaryBySite = new Map();
+        for (const r of replacements) {
+            if (!primaryBySite.has(r.siteName)) {
+                primaryBySite.set(r.siteName, r);
+            }
+        }
+        const uniqueChanges = [...primaryBySite.values()].filter(r => {
             const fromHost = r.startedHost || r.oldHost;
             return fromHost !== r.newHost;
         });
-        // Remove duplicates by siteName (keep the first occurrence)
-        const uniqueChanges = actualChanges.filter((change, index, self) => index === self.findIndex(c => c.siteName === change.siteName));
         if (uniqueChanges.length > 0) {
             const rows = [["Site", "From", "To", "Time"]];
             for (const { siteName, newHost, startedHost, oldHost, checkDurationMs } of uniqueChanges) {
@@ -17708,13 +17719,17 @@ class GitManager {
             network: summary.errors.filter(e => e.type === 'network'),
         };
         // Add replacements section - show all actual changes like in the log table
-        // Use same logic as replacer to show actual changes
-        const actualChanges = summary.replacements.filter(r => {
+        // Deduplicate by siteName FIRST (primary/effectiveNewHost entry), then filter actual changes
+        const primaryBySite = new Map();
+        for (const r of summary.replacements) {
+            if (!primaryBySite.has(r.siteName)) {
+                primaryBySite.set(r.siteName, r);
+            }
+        }
+        const uniqueChanges = [...primaryBySite.values()].filter(r => {
             const fromHost = r.startedHost || r.oldHost;
             return fromHost !== r.newHost;
         });
-        // Remove duplicates by siteName (keep the first occurrence)
-        const uniqueChanges = actualChanges.filter((change, index, self) => index === self.findIndex(c => c.siteName === change.siteName));
         if (uniqueChanges.length > 0) {
             lines.push("\n🔄  Updated domains:\n");
             const maxSiteNameLength = Math.max(...uniqueChanges.map(r => r.siteName.length));
@@ -17732,8 +17747,15 @@ class GitManager {
             }
             lines.push("");
         }
-        else {
-            lines.push("\n🔄  Updated domains: 0\n");
+        // If no domain changes but replacements exist, summarize what happened
+        else if (summary.replacements.length > 0) {
+            lines.push("\n🔄  Domain updates: 0 (mirror cleanup only)");
+            // List sites that had replacements (even if no domain change)
+            const allSiteNames = [...new Set(summary.replacements.map(r => r.siteName))];
+            if (allSiteNames.length > 0) {
+                lines.push("");
+                lines.push(`Sites processed: ${allSiteNames.join(", ")}`);
+            }
         }
         // Show errors that are actual failures (not accepted antibot)
         const realErrors = summary.errors.filter(e => e.type !== 'antibot_accepted');
@@ -18050,15 +18072,42 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.13";
+const VERSION = "1.1.14";
 /**
- * From newHost + additionalWorkingDomains, pick the first domain after sorting alphabetically.
+ * Natural comparison for domain names - compares numeric chunks as numbers.
+ * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
+ */
+function naturalCompare(a, b) {
+    const re = /(\d+)|(\D+)/g;
+    const chunksA = a.match(re) ?? [a];
+    const chunksB = b.match(re) ?? [b];
+    for (let i = 0; i < Math.max(chunksA.length, chunksB.length); i++) {
+        const ca = chunksA[i] ?? '';
+        const cb = chunksB[i] ?? '';
+        const na = parseInt(ca, 10);
+        const nb = parseInt(cb, 10);
+        if (!isNaN(na) && !isNaN(nb)) {
+            if (na !== nb)
+                return na - nb;
+        }
+        else {
+            if (ca < cb)
+                return -1;
+            if (ca > cb)
+                return 1;
+        }
+    }
+    return 0;
+}
+/**
+ * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
  */
 function selectFirstByOrder(newHost, additionalDomains) {
     if (!additionalDomains || additionalDomains.length === 0)
         return newHost;
-    const all = [newHost, ...additionalDomains].sort();
+    const all = [newHost, ...additionalDomains];
+    all.sort(naturalCompare);
     return all[0];
 }
 function formatDateTime(date) {
@@ -18217,45 +18266,43 @@ async function main() {
             summary.warnings.push(`${result.siteName}: Pattern domain redirected to non-pattern (${result.oldHost} → ${result.newHost}) - filter not updated, waiting for new pattern domain`);
         }
         else if (isAntibotAccepted && result.shouldUpdate) {
-            // Antibot accepted and domain changed - treat as successful update
-            summary.antibotAccepted++;
-            // Add to errors list for reporting (but not counted as failed)
-            const errorMsg = result.error || result.result.error || "Antibot detected, but accepted by config";
-            const checkedDomain = result.actualCheckedDomain || result.startedHost || result.oldHost;
-            summary.errors.push({
-                siteName: result.siteName,
-                error: errorMsg,
-                domain: checkedDomain,
-                type: 'antibot_accepted',
-                checkDurationMs: result.checkDurationMs,
-            });
-            // Add warning for filter maintainers about antibot protection
-            const fromHost = result.startedHost || result.oldHost;
-            if (result.hostChanged && fromHost !== result.newHost) {
-                summary.warnings.push(`${result.siteName}: Domain redirected (${fromHost} → ${result.newHost}) but protected by antibot - old domain may remain in filter rules`);
-            }
-            // Count as updated only if domain actually changed
-            if (result.hostChanged) {
+            // Antibot accepted: compute effective new host first to check if anything actually changed
+            const effectiveNewHostAntibot = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+            const antibotActuallyChanged = effectiveNewHostAntibot !== site.last_known_mirror;
+            if (antibotActuallyChanged) {
+                summary.antibotAccepted++;
+                // Add to errors list for reporting (but not counted as failed)
+                const errorMsg = result.error || result.result.error || "Antibot detected, but accepted by config";
+                const checkedDomain = result.actualCheckedDomain || result.startedHost || result.oldHost;
+                summary.errors.push({
+                    siteName: result.siteName,
+                    error: errorMsg,
+                    domain: checkedDomain,
+                    type: 'antibot_accepted',
+                    checkDurationMs: result.checkDurationMs,
+                });
+                // Add warning for filter maintainers about antibot protection
+                const fromHost = result.startedHost || result.oldHost;
+                summary.warnings.push(`${result.siteName}: Domain redirected (${fromHost} → ${effectiveNewHostAntibot}) but protected by antibot - old domain may remain in filter rules`);
                 summary.updated++;
-            }
-            else {
-                summary.unchanged++;
-            }
-            // Get last pattern domain from history if pattern_changed is true
-            const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
-                ? site.heuristic_history[site.heuristic_history.length - 1]
-                : undefined;
-            summary.replacements.push({
-                oldHost: result.oldHost,
-                newHost: result.newHost,
-                siteName: result.siteName,
-                startedHost: result.startedHost || "",
-                checkDurationMs: result.checkDurationMs,
-                patternChangedDomain,
-            });
-            // Add replacements for additional working domains (force_search_ahead)
-            if (result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0) {
-                for (const additionalDomain of result.additionalWorkingDomains) {
+                // Get last pattern domain from history if pattern_changed is true
+                const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
+                    ? site.heuristic_history[site.heuristic_history.length - 1]
+                    : undefined;
+                // Primary replacement entry uses effectiveNewHostAntibot
+                summary.replacements.push({
+                    oldHost: result.oldHost,
+                    newHost: effectiveNewHostAntibot,
+                    siteName: result.siteName,
+                    startedHost: result.startedHost || "",
+                    checkDurationMs: result.checkDurationMs,
+                    patternChangedDomain,
+                });
+                // Additional working domains OTHER than effectiveNewHostAntibot
+                const allWorkingDomainsAntibot = [result.newHost, ...(result.additionalWorkingDomains || [])];
+                for (const additionalDomain of allWorkingDomainsAntibot) {
+                    if (additionalDomain === effectiveNewHostAntibot)
+                        continue;
                     summary.replacements.push({
                         oldHost: result.oldHost,
                         newHost: additionalDomain,
@@ -18265,21 +18312,21 @@ async function main() {
                         patternChangedDomain,
                     });
                 }
+                // Update watcher
+                const oldLastKnownMirrorAntibot = site.last_known_mirror;
+                site.last_known_mirror = effectiveNewHostAntibot;
+                if (result.hostChanged && !result.historyUpdated) {
+                    processor.updateDomainHistory(site, effectiveNewHostAntibot, oldLastKnownMirrorAntibot);
+                }
             }
-            // Update watcher on successful change
-            // Save old last_known_mirror before updating (for history comparison)
-            const oldLastKnownMirror = site.last_known_mirror;
-            // Always save only the hostname (domain), regardless of initial_domain format
-            site.last_known_mirror = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+            else {
+                summary.unchanged++;
+            }
+            // Always update last_seen and reset failure flags on any antibot-accepted success
             site.last_seen = nowDateOnly;
-            delete site.failed_days; // Reset on success
+            delete site.failed_days;
             delete site.failed_since;
-            delete site.potentially_dead; // Remove flag on success
-            // Update domain history after last_known_mirror is updated
-            // Skip if already updated in batch.ts (heuristic path sets historyUpdated=true)
-            if (result.hostChanged && !result.historyUpdated) {
-                processor.updateDomainHistory(site, result.newHost, oldLastKnownMirror);
-            }
+            delete site.potentially_dead;
         }
         else if (result.shouldUpdate) {
             // Only update filters if check was successful
@@ -18295,30 +18342,35 @@ async function main() {
                 const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
                     ? site.heuristic_history[site.heuristic_history.length - 1]
                     : undefined;
+                // Compute effective newHost with selectFirstByOrder BEFORE building replacements
+                const effectiveNewHost = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+                // Primary replacement entry uses effectiveNewHost
                 summary.replacements.push({
                     oldHost: result.oldHost,
-                    newHost: result.newHost,
+                    newHost: effectiveNewHost,
                     siteName: result.siteName,
                     startedHost: result.startedHost || "",
                     checkDurationMs: result.checkDurationMs,
                     patternChangedDomain,
                 });
                 // Add replacements for additional working domains (force_search_ahead)
-                if (result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0) {
-                    for (const additionalDomain of result.additionalWorkingDomains) {
-                        summary.replacements.push({
-                            oldHost: result.oldHost,
-                            newHost: additionalDomain,
-                            siteName: result.siteName,
-                            startedHost: result.startedHost || "",
-                            checkDurationMs: result.checkDurationMs,
-                            patternChangedDomain,
-                        });
-                    }
+                // These are domains OTHER than effectiveNewHost
+                const allWorkingDomains = [result.newHost, ...(result.additionalWorkingDomains || [])];
+                for (const additionalDomain of allWorkingDomains) {
+                    if (additionalDomain === effectiveNewHost)
+                        continue; // Skip, already added above
+                    summary.replacements.push({
+                        oldHost: result.oldHost,
+                        newHost: additionalDomain,
+                        siteName: result.siteName,
+                        startedHost: result.startedHost || "",
+                        checkDurationMs: result.checkDurationMs,
+                        patternChangedDomain,
+                    });
                 }
                 // Update watcher on successful change
                 // Always save only the hostname (domain), regardless of initial_domain format
-                site.last_known_mirror = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+                site.last_known_mirror = effectiveNewHost;
                 site.last_seen = nowDateOnly;
                 delete site.failed_days; // Reset on success
                 delete site.failed_since;
@@ -18405,6 +18457,24 @@ async function main() {
     // Apply replacements first (to show table before summary)
     const replacer = new FilterReplacer(config, logger, isTestMode);
     const replacerStats = await replacer.applyReplacements(summary.replacements, dryRun);
+    // Determine whether there are any real changes to create a PR/commit for.
+    // A real change means actual line edits in filter files (not just force_search_ahead confirmations).
+    // Also check that there are unique summary replacements with actual domain changes (fromHost !== newHost).
+    // This prevents triggering PR/commit when replacer modified lines but all effective replacements
+    // ended up being no-ops after deduplication.
+    const hasUniqueDomainChanges = (() => {
+        const primaryBySite = new Map();
+        for (const r of summary.replacements) {
+            if (!primaryBySite.has(r.siteName)) {
+                primaryBySite.set(r.siteName, r);
+            }
+        }
+        return [...primaryBySite.values()].some(r => {
+            const fromHost = r.startedHost || r.oldHost;
+            return fromHost !== r.newHost;
+        });
+    })();
+    const hasRealChanges = hasUniqueDomainChanges || replacerStats.totalLineEdits > 0;
     // Print summary with detailed breakdown
     logger.logGlobal(LogLevel.RAW, "⬇️ ⬇️ ⬇️  ---=== Domains rotating summary ===---  ⬇️ ⬇️ ⬇️");
     logger.logGlobal(LogLevel.RAW, `  Total sites: ${summary.totalSites}`);
@@ -18509,25 +18579,32 @@ async function main() {
     logger.logGlobal(LogLevel.RAW, `⌛ Total execution time: ${totalSeconds}s`);
     // Create git manager
     const gitManager = new GitManager(config, logger);
-    // Display PR/Commit mode information at the end
-    const prModeInfo = gitManager.getPRModeInfo(summary, dryRun);
-    if (prModeInfo.length > 0) {
-        logger.logRaw("");
-        prModeInfo.forEach(line => {
-            logger.logRaw(line);
-        });
+    // Determine skip reason BEFORE displaying PR info
+    const skipReason = (() => {
+        if (isTestMode && !dryRun)
+            return "test mode (files were modified locally)";
+        if (!hasRealChanges)
+            return "no filter changes (all domains already up to date)";
+        return null;
+    })();
+    // Display PR/Commit mode information only when there are real changes
+    if (!skipReason) {
+        const prModeInfo = gitManager.getPRModeInfo(summary, dryRun);
+        if (prModeInfo.length > 0) {
+            logger.logRaw("");
+            prModeInfo.forEach(line => {
+                logger.logRaw(line);
+            });
+        }
     }
-    // Save logs to file BEFORE git operations to include in commit
-    logger.saveToFile();
-    // Git operations (will include the log file in commit)
-    // Skip git operations only in test_live mode (test_dry shows simulation)
+    // Execute git operations (will include the log file in commit)
     let gitResult = {};
-    if (isTestMode && !dryRun) {
-        // test_live: skip git operations entirely
-        logger.logGlobal(LogLevel.INFO, "⚠️  Test mode: Skipping git operations (files were modified)");
+    if (skipReason) {
+        logger.logGlobal(LogLevel.INFO, `Skipping PR/commit — ${skipReason}`);
     }
     else {
-        // prod_live, prod_dry, test_dry: all go through git manager
+        // prod_live, prod_dry, test_dry: save logs and execute git
+        logger.saveToFile();
         gitResult = await gitManager.commitOrCreatePR(summary, dryRun);
     }
     // Set GitHub Actions outputs
@@ -18543,8 +18620,14 @@ async function main() {
     }
     logger.logGlobal(LogLevel.INFO, "✅ Done.");
 }
-main().catch((err) => {
-    console.error("Fatal error:", err);
-    process.exit(1);
-});
+// Only run main() when executed directly, not when imported for testing
+if (!process.env.JEST_WORKER_ID) {
+    main().catch((err) => {
+        console.error("Fatal error:", err);
+        process.exit(1);
+    });
+}
 
+var __webpack_exports__naturalCompare = __webpack_exports__.p;
+var __webpack_exports__selectFirstByOrder = __webpack_exports__.a;
+export { __webpack_exports__naturalCompare as naturalCompare, __webpack_exports__selectFirstByOrder as selectFirstByOrder };

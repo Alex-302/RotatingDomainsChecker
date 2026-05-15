@@ -227,17 +227,19 @@ export class FilterReplacer {
     }
 
     // Build ASCII table: Site | From (startedHost) | To | Time
-    // Show only actual domain changes in the table
-    const actualChanges = replacements.filter(r => {
-      // Check if there's a real change between from and to
+    // Show only actual domain changes in the table.
+    // Deduplicate by siteName FIRST (keeping primary/effectiveNewHost entry),
+    // then filter to only show entries where the domain actually changed.
+    const primaryBySite = new Map<string, typeof replacements[number]>();
+    for (const r of replacements) {
+      if (!primaryBySite.has(r.siteName)) {
+        primaryBySite.set(r.siteName, r);
+      }
+    }
+    const uniqueChanges = [...primaryBySite.values()].filter(r => {
       const fromHost = r.startedHost || r.oldHost;
       return fromHost !== r.newHost;
     });
-
-    // Remove duplicates by siteName (keep the first occurrence)
-    const uniqueChanges = actualChanges.filter((change, index, self) =>
-      index === self.findIndex(c => c.siteName === change.siteName)
-    );
 
     if (uniqueChanges.length > 0) {
       const rows: string[][] = [["Site", "From", "To", "Time"]];
