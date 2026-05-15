@@ -319,3 +319,94 @@ describe('10.5 Shell injection prevention (static analysis)', () => {
     expect(gitSource).toContain("execFileSync('gh'");
   });
 });
+
+// ============================================================================
+// 10.6 Deduplication and commit message edge cases
+// ============================================================================
+
+describe('10.6 Deduplication in commit message', () => {
+  test('dedup-first: first entry for a site wins, not last', () => {
+    // When force_search_ahead finds multiple domains, primary (effectiveNewHost) comes first
+    // Second entry (additional domain) should NOT appear in commit message table
+    const summary = makeSummary([
+      // Primary entry: a.com → b.com (this should win)
+      { siteName: 'site1', oldHost: 'a.com', newHost: 'b.com', startedHost: 'a.com', checkDurationMs: 100 },
+      // Additional domain entry: a.com → c.com (this should be ignored in table)
+      { siteName: 'site1', oldHost: 'a.com', newHost: 'c.com', startedHost: 'a.com', checkDurationMs: 100 },
+    ]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false);
+    const message = info.join('\n');
+
+    // Table should show a.com → b.com (first entry)
+    expect(message).toContain('b.com');
+    // Table should NOT show a.com → c.com (second entry is deduped)
+    // The c.com may appear in other contexts, but not in the "Updated domains" table line
+    const updatedSection = message.split('Updated domains')[1]?.split('🚨')[0] || '';
+    expect(updatedSection).not.toMatch(/a\.com.*→.*c\.com/);
+  });
+
+  test('dedup-first with three entries: only first is shown', () => {
+    const summary = makeSummary([
+      { siteName: 'mysite', oldHost: 'old.com', newHost: 'first.com', startedHost: 'old.com', checkDurationMs: 100 },
+      { siteName: 'mysite', oldHost: 'old.com', newHost: 'second.com', startedHost: 'old.com', checkDurationMs: 100 },
+      { siteName: 'mysite', oldHost: 'old.com', newHost: 'third.com', startedHost: 'old.com', checkDurationMs: 100 },
+    ]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false);
+    const message = info.join('\n');
+
+    expect(message).toContain('first.com');
+    // second.com and third.com should not be in the changes table
+    const lines = message.split('\n');
+    const tableLines = lines.filter(l => l.includes('mysite') && l.includes('→'));
+    expect(tableLines.length).toBe(1);
+    expect(tableLines[0]).toContain('first.com');
+  });
+
+  test('no-change entries (fromHost === newHost) are filtered out', () => {
+    const summary = makeSummary([
+      // This is a "no change" - domain stayed the same
+      { siteName: 'unchanged_site', oldHost: 'same.com', newHost: 'same.com', startedHost: 'same.com', checkDurationMs: 100 },
+    ]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false);
+    const message = info.join('\n');
+
+    // Should show "mirror cleanup only" instead of "Updated domains" table
+    expect(message).toContain('mirror cleanup only');
+    expect(message).not.toMatch(/same\.com.*→.*same\.com/);
+  });
+
+  test('mirror cleanup only: shows processed sites list', () => {
+    const summary = makeSummary([
+      { siteName: 'Site Alpha', oldHost: 'a.com', newHost: 'a.com', startedHost: 'a.com', checkDurationMs: 100 },
+      { siteName: 'Site Beta', oldHost: 'b.com', newHost: 'b.com', startedHost: 'b.com', checkDurationMs: 100 },
+    ]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false);
+    const message = info.join('\n');
+
+    expect(message).toContain('Domain updates: 0 (mirror cleanup only)');
+    expect(message).toContain('Sites processed:');
+    expect(message).toContain('Site Alpha');
+    expect(message).toContain('Site Beta');
+  });
+
+  test('mixed: real changes and no-changes together', () => {
+    const summary = makeSummary([
+      // Real change
+      { siteName: 'changed_site', oldHost: 'old.com', newHost: 'new.com', startedHost: 'old.com', checkDurationMs: 100 },
+      // No change (same site, additional domain that equals startedHost)
+      { siteName: 'unchanged_site', oldHost: 'same.com', newHost: 'same.com', startedHost: 'same.com', checkDurationMs: 100 },
+    ]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false);
+    const message = info.join('\n');
+
+    // Should show "Updated domains" with real change only
+    expect(message).toContain('Updated domains');
+    expect(message).toContain('new.com');
+    expect(message).not.toContain('mirror cleanup only');
+  });
+});

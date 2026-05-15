@@ -15393,6 +15393,12 @@ exports.visitAsync = visitAsync;
 /************************************************************************/
 var __webpack_exports__ = {};
 
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  p: () => (/* binding */ naturalCompare),
+  a: () => (/* binding */ selectFirstByOrder)
+});
+
 ;// CONCATENATED MODULE: external "fs"
 const external_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs");
 // EXTERNAL MODULE: ./node_modules/yaml/dist/index.js
@@ -18066,10 +18072,10 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.13";
+const VERSION = "1.1.14";
 /**
- * From newHost + additionalWorkingDomains, pick the first domain after sorting alphabetically.
- * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
+ * Natural comparison for domain names - compares numeric chunks as numbers.
+ * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
  */
 function naturalCompare(a, b) {
     const re = /(\d+)|(\D+)/g;
@@ -18093,6 +18099,10 @@ function naturalCompare(a, b) {
     }
     return 0;
 }
+/**
+ * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
+ * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
+ */
 function selectFirstByOrder(newHost, additionalDomains) {
     if (!additionalDomains || additionalDomains.length === 0)
         return newHost;
@@ -18610,8 +18620,14 @@ async function main() {
     }
     logger.logGlobal(LogLevel.INFO, "✅ Done.");
 }
-main().catch((err) => {
-    console.error("Fatal error:", err);
-    process.exit(1);
-});
+// Only run main() when executed directly, not when imported for testing
+if (!process.env.JEST_WORKER_ID) {
+    main().catch((err) => {
+        console.error("Fatal error:", err);
+        process.exit(1);
+    });
+}
 
+var __webpack_exports__naturalCompare = __webpack_exports__.p;
+var __webpack_exports__selectFirstByOrder = __webpack_exports__.a;
+export { __webpack_exports__naturalCompare as naturalCompare, __webpack_exports__selectFirstByOrder as selectFirstByOrder };

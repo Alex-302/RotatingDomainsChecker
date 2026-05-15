@@ -11,13 +11,13 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.1.13";
+const VERSION = "1.1.14";
 
 /**
- * From newHost + additionalWorkingDomains, pick the first domain after sorting alphabetically.
- * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
+ * Natural comparison for domain names - compares numeric chunks as numbers.
+ * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
  */
-function naturalCompare(a: string, b: string): number {
+export function naturalCompare(a: string, b: string): number {
   const re = /(\d+)|(\D+)/g;
   const chunksA = a.match(re) ?? [a];
   const chunksB = b.match(re) ?? [b];
@@ -36,7 +36,11 @@ function naturalCompare(a: string, b: string): number {
   return 0;
 }
 
-function selectFirstByOrder(newHost: string, additionalDomains?: string[]): string {
+/**
+ * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
+ * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
+ */
+export function selectFirstByOrder(newHost: string, additionalDomains?: string[]): string {
   if (!additionalDomains || additionalDomains.length === 0) return newHost;
   const all = [newHost, ...additionalDomains];
   all.sort(naturalCompare);
@@ -610,7 +614,10 @@ async function main() {
   logger.logGlobal(LogLevel.INFO, "✅ Done.");
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+// Only run main() when executed directly, not when imported for testing
+if (!process.env.JEST_WORKER_ID) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
+}
