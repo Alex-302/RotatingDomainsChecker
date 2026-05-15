@@ -11,7 +11,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.1.12";
+const VERSION = "1.1.13";
 
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after sorting alphabetically.
@@ -351,6 +351,9 @@ async function main() {
 
     // Skip if failed or no last_known_mirror
     if (!site.last_known_mirror || site.potentially_dead) continue;
+
+    // If the final resolved host matches last_known_mirror, nothing changed — skip
+    if (result.newHost && result.newHost === site.last_known_mirror) continue;
 
     // Extract domain from initial_domain for comparison
     let initialDomain = site.initial_domain;
