@@ -540,3 +540,92 @@ describe('6.11 probe_text priority over skip_text (isolated mocks)', () => {
     expect(result.finalHost).toBe('mock-full-probe.test');
   });
 });
+
+describe('6.10 Cloudflare 5xx origin-error detection', () => {
+  function makeFakeResponse(status: number, body: string, headers: Record<string, string> = {}): Response {
+    return {
+      status,
+      headers: {
+        get: (name: string) => headers[name.toLowerCase()] ?? null,
+      },
+      text: async () => body,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response;
+  }
+
+  test('status 522 → cloudflareErrorPage = 522, antibotDetected', async () => {
+    const config = makeConfig({
+      antibot: { detectCodes: [403, 522, 523, 524, 525, 526, 527, 530], detectUrlPattern: '__cf_chl_tk' },
+    });
+    const resolver = new HttpResolver(config);
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(522, '<html><body>522 origin error</body></html>',
+        { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve('https://dead-origin.test/');
+
+    expect(result.success).toBe(false);
+    expect(result.antibotDetected).toBe(true);
+    expect(result.cloudflareErrorPage).toBe(522);
+    expect(result.error).toMatch(/Cloudflare origin error 522/);
+  });
+
+  test('status 403 with body marker "Error code 523" → cloudflareErrorPage = 523', async () => {
+    const config = makeConfig({
+      antibot: { detectCodes: [403], detectUrlPattern: '__cf_chl_tk' },
+    });
+    const resolver = new HttpResolver(config);
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(403,
+        '<html><body><h1>Origin Unreachable</h1><p>Error code 523</p></body></html>',
+        { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve('https://wrapped-error.test/');
+
+    expect(result.success).toBe(false);
+    expect(result.antibotDetected).toBe(true);
+    expect(result.cloudflareErrorPage).toBe(523);
+  });
+
+  test('plain antibot (status 403, no error marker) → cloudflareErrorPage undefined', async () => {
+    const config = makeConfig({
+      antibot: { detectCodes: [403], detectUrlPattern: '__cf_chl_tk' },
+    });
+    const resolver = new HttpResolver(config);
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(403, '<html><body>Forbidden</body></html>',
+        { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve('https://blocked.test/');
+
+    expect(result.success).toBe(false);
+    expect(result.antibotDetected).toBe(true);
+    expect(result.cloudflareErrorPage).toBeUndefined();
+    expect(result.error).toMatch(/Antibot detected: 403/);
+  });
+
+  test('detectCloudflareOriginError direct: invalid 5xx code in body is rejected', () => {
+    const config = makeConfig({});
+    const resolver = new HttpResolver(config);
+    // Body marker matches /Error code 5\d\d/ but 599 is not in our set; should return undefined.
+    expect((resolver as any).detectCloudflareOriginError(200, 'Error code 599')).toBeUndefined();
+    // 522 in body, status 200 → returns 522 from body match.
+    expect((resolver as any).detectCloudflareOriginError(200, 'Error code 522')).toBe(522);
+    // Status 530 directly → returns 530 even with no body.
+    expect((resolver as any).detectCloudflareOriginError(530)).toBe(530);
+  });
+
+  test('cf-ray header captured on success (non-antibot) response', async () => {
+    const config = makeConfig({});
+    const resolver = new HttpResolver(config);
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, '<html><body>OK</body></html>',
+        { 'content-type': 'text/html', 'cf-ray': '8a2b1c-LAX' }));
+
+    const result = await resolver.resolve('https://cf-served.test/');
+
+    expect(result.success).toBe(true);
+    expect(result.cfRay).toBe('8a2b1c-LAX');
+    expect(result.cloudflareErrorPage).toBeUndefined();
+  });
+});

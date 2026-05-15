@@ -152,6 +152,7 @@ export class HttpResolver {
               statusCode: response.status,
               redirectChain: chain,
               antibotDetected: false,
+              cfRay,
               finalBody,
               skippedByText: skipPhrase,
               error: `Skipped by skip_text: "${skipPhrase}"`,
@@ -174,6 +175,7 @@ export class HttpResolver {
                 finalHost: new URL(currentUrl).hostname,
                 statusCode: response.status,
                 redirectChain: chain,
+                cfRay,
                 error: `Exceeded max redirect depth (${this.config.processing.redirectDepth})`,
               };
             }
@@ -187,6 +189,7 @@ export class HttpResolver {
             statusCode: response.status,
             redirectChain: chain,
             antibotDetected: false,
+            cfRay,
             finalBody,
           };
         }
@@ -203,6 +206,7 @@ export class HttpResolver {
               finalHost: new URL(currentUrl).hostname,
               statusCode: response.status,
               redirectChain: chain,
+              cfRay,
               error: `Redirect ${response.status} without Location header`,
             };
           }
@@ -218,6 +222,7 @@ export class HttpResolver {
               finalHost: new URL(currentUrl).hostname,
               statusCode: response.status,
               redirectChain: chain,
+              cfRay,
               error: `Exceeded max redirect depth (${this.config.processing.redirectDepth})`,
             };
           }
@@ -237,6 +242,7 @@ export class HttpResolver {
           finalHost: new URL(currentUrl).hostname,
           statusCode: response.status,
           redirectChain: chain,
+          cfRay,
           error: `Non-success status: ${response.status}`,
           shouldTriggerHeuristic,
         };

@@ -410,9 +410,22 @@ export class FilterReplacer {
           // a process kill mid-write (Ctrl-C, OOM, power loss) corrupts the
           // user's filter file, potentially losing rules unrelated to the
           // changes being applied.
+          //
+          // On Windows fs.rename uses MoveFileExW with REPLACE_EXISTING since
+          // Node 10, so it overwrites — but a sharing-violation (antivirus,
+          // open file handle) can still throw. The try/finally cleans up the
+          // tmp file on any failure so .{pid}.tmp files don't accumulate.
           const tmpPath = `${file}.${process.pid}.tmp`;
-          await fs.writeFile(tmpPath, lines.join("\n"), "utf-8");
-          await fs.rename(tmpPath, file);
+          let renamed = false;
+          try {
+            await fs.writeFile(tmpPath, lines.join("\n"), "utf-8");
+            await fs.rename(tmpPath, file);
+            renamed = true;
+          } finally {
+            if (!renamed) {
+              try { await fs.unlink(tmpPath); } catch {}
+            }
+          }
         }
         fileChanges.push({ file, changes: lineChanges });
       }
