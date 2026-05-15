@@ -404,7 +404,15 @@ export class FilterReplacer {
       if (changed) {
         modifiedFiles++;
         if (!dryRun) {
-          await fs.writeFile(file, lines.join("\n"), "utf-8");
+          // Atomic write: write to a per-pid tmp file then rename. rename(2)
+          // on POSIX same-filesystem is atomic, so the final path is either
+          // the old file or the new file — never half-written. Without this,
+          // a process kill mid-write (Ctrl-C, OOM, power loss) corrupts the
+          // user's filter file, potentially losing rules unrelated to the
+          // changes being applied.
+          const tmpPath = `${file}.${process.pid}.tmp`;
+          await fs.writeFile(tmpPath, lines.join("\n"), "utf-8");
+          await fs.rename(tmpPath, file);
         }
         fileChanges.push({ file, changes: lineChanges });
       }

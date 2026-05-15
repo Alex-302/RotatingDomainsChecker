@@ -56,6 +56,10 @@ export class HttpResolver {
           throw err;
         }
 
+        // Capture cf-ray once per response — present on any request that
+        // transited a Cloudflare edge, regardless of status/antibot state.
+        const cfRay = response.headers.get("cf-ray") ?? undefined;
+
         // Check for antibot
         if (this.isAntibotResponse(response, currentUrl)) {
           // If site accepts antibot responses, treat as success
@@ -79,13 +83,26 @@ export class HttpResolver {
               statusCode: response.status,
               redirectChain: chain,
               antibotDetected: true, // Keep flag for logging
+              cfRay,
+              cloudflareErrorPage: this.detectCloudflareOriginError(response.status, finalBody),
               finalBody,
               shouldTriggerHeuristic,
             };
           }
-          
-          // Consume body to release connection - must not throw
-          try { await response.arrayBuffer(); } catch {}
+
+          // Read body when content-type is html so we can detect Cloudflare
+          // origin-error pages via their body marker; otherwise just drain
+          // to release the connection.
+          let antibotBody: string | undefined;
+          try {
+            const contentType = response.headers.get("content-type") || "";
+            if (contentType.includes("text/html")) {
+              antibotBody = await response.text();
+            } else {
+              await response.arrayBuffer();
+            }
+          } catch {}
+          const errorPage = this.detectCloudflareOriginError(response.status, antibotBody);
           return {
             success: false,
             finalUrl: currentUrl,
@@ -93,7 +110,11 @@ export class HttpResolver {
             statusCode: response.status,
             redirectChain: chain,
             antibotDetected: true,
-            error: `Antibot detected: ${response.status} or __cf_chl_tk in URL`,
+            cfRay,
+            cloudflareErrorPage: errorPage,
+            error: errorPage
+              ? `Cloudflare origin error ${errorPage} (origin unreachable)`
+              : `Antibot detected: ${response.status} or __cf_chl_tk in URL`,
           };
         }
 
@@ -442,6 +463,25 @@ export class HttpResolver {
     }
 
     return false;
+  }
+
+  /**
+   * Detect Cloudflare-served 5xx origin-error pages (522/523/524/525/526/527/530).
+   * Two signals: HTTP status itself, and the body marker "Error code 5xx"
+   * (covers cases where Cloudflare wraps the error page with a normal HTTP
+   * status). Returns the specific 5xx code if detected, otherwise undefined.
+   */
+  private detectCloudflareOriginError(status: number, body?: string): number | undefined {
+    const CF_ORIGIN_ERROR_CODES = new Set([522, 523, 524, 525, 526, 527, 530]);
+    if (CF_ORIGIN_ERROR_CODES.has(status)) return status;
+    if (body) {
+      const m = body.match(/Error code (5\d\d)/);
+      if (m) {
+        const code = parseInt(m[1], 10);
+        if (CF_ORIGIN_ERROR_CODES.has(code)) return code;
+      }
+    }
+    return undefined;
   }
 
   extractHostWithoutQuery(url: string): string {

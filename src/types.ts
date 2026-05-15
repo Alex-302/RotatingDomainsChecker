@@ -100,6 +100,12 @@ export interface RedirectResult {
   redirectChain: RedirectChainEntry[];
   error?: string;
   antibotDetected?: boolean;
+  /** Set when the antibot response was specifically a Cloudflare-served 5xx
+   * origin-error page (522/523/524/525/526/527/530). Distinguishes
+   * "Cloudflare can't reach origin" from "Cloudflare blocked the request". */
+  cloudflareErrorPage?: number;
+  /** Cloudflare cf-ray header from the final response, when present. */
+  cfRay?: string;
   contentProbeOk?: boolean;
   finalBody?: string; // Response body from final successful request (for content probing)
   shouldTriggerHeuristic?: boolean; // Force heuristic search even for certain error statuses
