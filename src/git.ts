@@ -53,17 +53,18 @@ export class GitManager {
     };
 
     // Add replacements section - show all actual changes like in the log table
-    // Use same logic as replacer to show actual changes
-    const actualChanges = summary.replacements.filter(r => {
+    // Deduplicate by siteName FIRST (primary/effectiveNewHost entry), then filter actual changes
+    const primaryBySite = new Map<string, typeof summary.replacements[number]>();
+    for (const r of summary.replacements) {
+      if (!primaryBySite.has(r.siteName)) {
+        primaryBySite.set(r.siteName, r);
+      }
+    }
+    const uniqueChanges = [...primaryBySite.values()].filter(r => {
       const fromHost = r.startedHost || r.oldHost;
       return fromHost !== r.newHost;
     });
-    
-    // Remove duplicates by siteName (keep the first occurrence)
-    const uniqueChanges = actualChanges.filter((change, index, self) => 
-      index === self.findIndex(c => c.siteName === change.siteName)
-    );
-    
+
     if (uniqueChanges.length > 0) {
       lines.push("\n🔄  Updated domains:\n");
       const maxSiteNameLength = Math.max(...uniqueChanges.map(r => r.siteName.length));
@@ -72,7 +73,7 @@ export class GitManager {
       const siteNamePadding = Math.max(maxSiteNameLength, 30);
       const domainPadding = Math.max(maxDomainLength, 20);
       const filterPadding = Math.max(maxFilterLength, 20);
-      
+
       for (const replacement of uniqueChanges) {
         const siteNamePadded = replacement.siteName.padEnd(siteNamePadding);
         const fromHost = replacement.startedHost || replacement.oldHost;
@@ -81,8 +82,16 @@ export class GitManager {
         lines.push(`${siteNamePadded}   ${domainPadded} → ${filterPadded}`);
       }
       lines.push("");
-    } else {
-      lines.push("\n🔄  Updated domains: 0\n");
+    }
+    // If no domain changes but replacements exist, summarize what happened
+    else if (summary.replacements.length > 0) {
+      lines.push("\n🔄  Domain updates: 0 (mirror cleanup only)");
+      // List sites that had replacements (even if no domain change)
+      const allSiteNames = [...new Set(summary.replacements.map(r => r.siteName))];
+      if (allSiteNames.length > 0) {
+        lines.push("");
+        lines.push(`Sites processed: ${allSiteNames.join(", ")}`);
+      }
     }
 
     // Show errors that are actual failures (not accepted antibot)
@@ -123,7 +132,7 @@ export class GitManager {
         lines.push(`📋  View detailed log: https://github.com/${repo}/actions/runs/${runId}#artifacts`);
       }
     }
-    
+
     return lines.join("\n");
   }
 
@@ -148,23 +157,23 @@ export class GitManager {
 
       // Add and commit changes directly to master
       execSync('git add -A', { encoding: 'utf8' });
-      
+
       // Use stdin to avoid command injection from commit message
       execSync('git commit -F -', { input: message, encoding: 'utf8' });
-      
+
       // Get commit SHA
       const commitSha = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-      
+
       // Push to master
       execSync(`git push origin ${this.config.git.branch}`, { encoding: 'utf8' });
-      
+
       if (this.logger) {
         this.logger.logGlobal(LogLevel.INFO, "✅ Changes committed directly to master");
         this.logger.logGlobal(LogLevel.INFO, `🔗 Branch: ${this.config.git.branch}`);
         this.logger.logGlobal(LogLevel.INFO, `🔗 Commit: ${commitSha}`);
         this.logger.logRaw("");
       }
-      
+
       return { commitSha };
 
     } catch (error) {
@@ -196,21 +205,21 @@ export class GitManager {
       const dateStr = now.toISOString().split('T')[0];
       const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
       const branchName = `${this.config.git.prBranchPrefix}/${dateStr}-${timeStr}`;
-      
+
       if (this.logger) {
         this.logger.logGlobal(LogLevel.INFO, `Creating branch: ${branchName}`);
       }
 
       execSync(`git checkout -b "${branchName}"`, { encoding: 'utf8' });
-      
+
       // Add and commit changes
       execSync('git add -A', { encoding: 'utf8' });
       // Use stdin to avoid command injection from commit message
       execSync('git commit -F -', { input: message, encoding: 'utf8' });
-      
+
       // Push branch
       execSync(`git push origin "${branchName}"`, { encoding: 'utf8' });
-      
+
       // Create PR using GitHub CLI with script-generated commit message
       const prTitle = message.split('\n')[0]; // Use first line of commit message as PR title
       const prBody = `${message}
@@ -230,7 +239,7 @@ Please review the changes before merging.
       // Create temporary directory and file for PR body to avoid command injection
       const tempDir = mkdtempSync(join(process.cwd(), 'pr-temp-'));
       const prBodyFile = join(tempDir, 'pr-body.txt');
-      
+
       try {
         writeFileSync(prBodyFile, prBody, 'utf8');
         // Use execFileSync to bypass shell entirely — prevents injection via prTitle
@@ -249,11 +258,11 @@ Please review the changes before merging.
           // Ignore cleanup errors
         }
       }
-      
+
       // Get commit SHA and PR number
       const commitSha = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
       const prNumber = parseInt(execSync(`gh pr view --json number --jq '.number'`, { encoding: 'utf8' }).trim());
-      
+
       if (this.logger) {
         this.logger.logGlobal(LogLevel.INFO, `✅ Pull request created: ${prTitle}`);
         this.logger.logGlobal(LogLevel.INFO, `🔗 Branch: ${branchName}`);
@@ -261,7 +270,7 @@ Please review the changes before merging.
         this.logger.logGlobal(LogLevel.INFO, `🔗 Commit SHA: ${commitSha}`);
         this.logger.logRaw("");
       }
-      
+
       return { commitSha, prNumber };
 
     } catch (error) {
