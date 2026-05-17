@@ -15395,8 +15395,10 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
-  p: () => (/* binding */ naturalCompare),
-  a: () => (/* binding */ selectFirstByOrder)
+  B_: () => (/* binding */ dnsPreflightCheck),
+  iW: () => (/* binding */ main),
+  p0: () => (/* binding */ naturalCompare),
+  aq: () => (/* binding */ selectFirstByOrder)
 });
 
 ;// CONCATENATED MODULE: external "fs"
@@ -18106,8 +18108,9 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 
+
 // Version
-const VERSION = "1.1.17";
+const VERSION = "1.1.19";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
@@ -18173,9 +18176,26 @@ function calculateDaysSince(dateStr) {
         return 0;
     }
 }
+/**
+ * Pre-flight DNS availability check.
+ * Resolves google.com, cloudflare.com and adguard.com in parallel.
+ * Falls if 2+ fail (i.e. 0 or 1 resolve) — DNS is almost certainly broken.
+ * Succeeds if 2+ resolve (at least two independent DNS servers are reachable).
+ */
+async function dnsPreflightCheck(logger) {
+    const preflightHosts = ["google.com", "cloudflare.com", "adguard.com"];
+    const preflightResults = await Promise.all(preflightHosts.map(host => external_dns_namespaceObject.promises.lookup(host).then(() => true, () => false)));
+    const resolvedCount = preflightResults.filter(ok => ok).length;
+    if (resolvedCount < 2) {
+        logger?.logGlobal(0, `FATAL: DNS pre-flight check failed — only ${resolvedCount}/${preflightHosts.length} hosts resolved: ${preflightHosts.join(", ")}. Check network/DNS availability.`);
+        process.exit(1);
+    }
+}
 async function main() {
     // Capture start time as early as possible
     const startTime = new Date();
+    // Pre-flight DNS check — fail fast before any expensive operations
+    await dnsPreflightCheck({ logGlobal: (_level, msg) => console.log(msg) });
     // GitHub Actions inputs
     const configPath = process.env.INPUT_CONFIG_PATH || './config.yml';
     const inputMode = process.env.INPUT_MODE || '';
@@ -18206,7 +18226,6 @@ async function main() {
     logger.logGlobal(LogLevel.RAW, `Test filters dir: ${isTestMode ? "YES" : "NO"}`);
     logger.logGlobal(LogLevel.RAW, `Target repo path: ${targetPath}`);
     logger.logGlobal(LogLevel.RAW, `Sites to check: ${Object.keys(watchers.sites).length}\n`);
-    logger.logGlobal(LogLevel.INFO, "=== Domain checks started ===");
     // Start connection diagnostics
     connectionDiagnostics.setLogger(logger);
     connectionDiagnostics.start();
@@ -18674,6 +18693,8 @@ if (!process.env.JEST_WORKER_ID) {
     });
 }
 
-var __webpack_exports__naturalCompare = __webpack_exports__.p;
-var __webpack_exports__selectFirstByOrder = __webpack_exports__.a;
-export { __webpack_exports__naturalCompare as naturalCompare, __webpack_exports__selectFirstByOrder as selectFirstByOrder };
+var __webpack_exports__dnsPreflightCheck = __webpack_exports__.B_;
+var __webpack_exports__main = __webpack_exports__.iW;
+var __webpack_exports__naturalCompare = __webpack_exports__.p0;
+var __webpack_exports__selectFirstByOrder = __webpack_exports__.aq;
+export { __webpack_exports__dnsPreflightCheck as dnsPreflightCheck, __webpack_exports__main as main, __webpack_exports__naturalCompare as naturalCompare, __webpack_exports__selectFirstByOrder as selectFirstByOrder };
