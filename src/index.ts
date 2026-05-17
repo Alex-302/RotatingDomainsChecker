@@ -646,6 +646,11 @@ export async function main() {
   }
 
   logger.logGlobal(LogLevel.INFO, "✅ Done.");
+
+  // Force exit to prevent hanging from undici keepalive connections,
+  // diagnostic channels, or other ref'd handles in GitHub Actions
+  process.exit(0);
+
 }
 
 // Only run main() when executed directly, not when imported for testing
