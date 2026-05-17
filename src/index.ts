@@ -9,9 +9,10 @@ import { Logger, LogLevel } from "./logger.js";
 import { connectionDiagnostics } from "./diagnostics.js";
 import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
+import { promises as dns } from "dns";
 
 // Version
-const VERSION = "1.1.17";
+const VERSION = "1.1.19";
 
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
@@ -76,10 +77,32 @@ function calculateDaysSince(dateStr: string): number {
   }
 }
 
+/**
+ * Pre-flight DNS availability check.
+ * Resolves google.com, cloudflare.com and adguard.com in parallel.
+ * Falls if 2+ fail (i.e. 0 or 1 resolve) — DNS is almost certainly broken.
+ * Succeeds if 2+ resolve (at least two independent DNS servers are reachable).
+ */
+export async function dnsPreflightCheck(logger?: { logGlobal: (level: number, msg: string) => void }): Promise<void> {
+  const preflightHosts = ["google.com", "cloudflare.com", "adguard.com"];
+  const preflightResults = await Promise.all(
+    preflightHosts.map(host =>
+      dns.lookup(host).then(() => true, () => false)
+    )
+  );
+  const resolvedCount = preflightResults.filter(ok => ok).length;
+  if (resolvedCount < 2) {
+    logger?.logGlobal(0, `FATAL: DNS pre-flight check failed — only ${resolvedCount}/${preflightHosts.length} hosts resolved: ${preflightHosts.join(", ")}. Check network/DNS availability.`);
+    process.exit(1);
+  }
+}
 
-async function main() {
+export async function main() {
   // Capture start time as early as possible
   const startTime = new Date();
+
+  // Pre-flight DNS check — fail fast before any expensive operations
+  await dnsPreflightCheck({ logGlobal: (_level, msg) => console.log(msg) });
 
   // GitHub Actions inputs
   const configPath = process.env.INPUT_CONFIG_PATH || './config.yml';
@@ -117,7 +140,6 @@ async function main() {
   logger.logGlobal(LogLevel.RAW, `Test filters dir: ${isTestMode ? "YES" : "NO"}`);
   logger.logGlobal(LogLevel.RAW, `Target repo path: ${targetPath}`);
   logger.logGlobal(LogLevel.RAW, `Sites to check: ${Object.keys(watchers.sites).length}\n`);
-  logger.logGlobal(LogLevel.INFO, "=== Domain checks started ===");
 
   // Start connection diagnostics
   connectionDiagnostics.setLogger(logger);
