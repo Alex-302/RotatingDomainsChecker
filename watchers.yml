@@ -1,21 +1,34 @@
-# Rotating Domains Checker - monitored websites
-
 sites:
-  Dead site test - deadexample24.com:
-    initial_domain: deadexample24.com
-    last_known_mirror: ''
-  Test Probe Fail - example.org:
-    last_known_mirror: example.org
-    probe_text:
-      - not existing text
-  Test Probe Success - example.de:
-    last_known_mirror: example.de
-    probe_text:
-      - Malerei der Gruppe 3erlei
-  Frequently changed domains — Saha TV:
-    initial_domain: sahatv2.top
-    last_known_mirror: sahatv2.top
-  Frequently changed domains — YavasGir:
-    last_known_mirror: yavasgir31.com
-  Frequently changed domains — Kralsports HD:
-    last_known_mirror: kralsportshd7.com
+  Belestepe (belestepe*.sbs):
+    last_known_mirror: belestepe816.sbs
+    last_seen: 2026-05-17
+  Turkifsaclub (turkifsaclub*.sbs):
+    force_search_ahead: true
+    last_known_mirror: turkifsaclub123.sbs
+    last_seen: 2026-05-17
+  Jmanga (jmanga.*):
+    last_known_mirror: jmanga.work
+    last_seen: 2026-05-17
+  iNat TV (inattv*.xyz):
+    last_known_mirror: inattv1307.xyz
+    last_seen: 2026-05-17
+  HDFilmCehennemi (hdfilmcehennemi*.org):
+    initial_domain: t.co/3D4ep5ZtK4
+    last_known_mirror: hdfilmcehennemi27.org
+    last_seen: 2026-05-17
+  Patronmac (patronmac*.cfd):
+    last_known_mirror: patronmac85.cfd
+    last_seen: 2026-05-17
+  Piabet TV (piabettv*.live):
+    force_search_ahead: true
+    last_known_mirror: piabettv18.live
+    last_seen: 2026-05-17
+  Hdselcuksports (hdselcuksports*.top):
+    accept_antibot: true
+    force_search_ahead: true
+    last_known_mirror: hdselcuksports605.top
+    last_seen: 2026-05-17
+  woe.sx:
+    initial_domain: https://voe.sx/e/nemg6vqtnrkf
+    skip_text_allow:
+      - "Redirecting..."
