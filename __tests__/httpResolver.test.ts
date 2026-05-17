@@ -200,6 +200,58 @@ describe('6.9 containsSkipText with real config.yml', () => {
 });
 
 // ============================================================================
+// 6.10 containsSkipText with skip_text_allow
+// ============================================================================
+
+describe('6.10 containsSkipText with skip_text_allow', () => {
+  test('skip_text_allow excludes exact match from check', () => {
+    const config = makeConfig({ skip_text: ['Redirecting...', 'This domain is parked', 'Domain expired'] });
+    const resolver = new HttpResolver(config);
+
+    // Without skip_text_allow, "Redirecting..." is detected
+    expect(resolver.containsSkipText('Redirecting... please wait')).toBe('Redirecting...');
+
+    // With skip_text_allow, "Redirecting..." is excluded
+    expect(resolver.containsSkipText('Redirecting... please wait', ['Redirecting...'])).toBeUndefined();
+  });
+
+  test('skip_text_allow allows one phrase but others still work', () => {
+    const config = makeConfig({ skip_text: ['Redirecting...', 'This domain is parked', 'Domain expired'] });
+    const resolver = new HttpResolver(config);
+
+    // "Redirecting..." is allowed, but "This domain is parked" is not
+    expect(resolver.containsSkipText('This domain is parked', ['Redirecting...'])).toBe('This domain is parked');
+  });
+
+  test('skip_text_allow with multiple allowed phrases', () => {
+    const config = makeConfig({ skip_text: ['Redirecting...', 'This domain is parked', 'Domain expired'] });
+    const resolver = new HttpResolver(config);
+
+    // Both "Redirecting..." and "This domain is parked" are allowed
+    const allowed = ['Redirecting...', 'This domain is parked'];
+    expect(resolver.containsSkipText('Redirecting... please wait', allowed)).toBeUndefined();
+    expect(resolver.containsSkipText('This domain is parked', allowed)).toBeUndefined();
+    // But "Domain expired" is still detected
+    expect(resolver.containsSkipText('Domain expired notice', allowed)).toBe('Domain expired');
+  });
+
+  test('skip_text_allow with empty array behaves like no allow', () => {
+    const config = makeConfig({ skip_text: ['Redirecting...'] });
+    const resolver = new HttpResolver(config);
+
+    expect(resolver.containsSkipText('Redirecting...', [])).toBe('Redirecting...');
+  });
+
+  test('skip_text_allow requires exact phrase match', () => {
+    const config = makeConfig({ skip_text: ['Redirecting...'] });
+    const resolver = new HttpResolver(config);
+
+    // Allow "Redirect..." (not exact match) — should NOT exclude "Redirecting..."
+    expect(resolver.containsSkipText('Redirecting...', ['Redirect...'])).toBe('Redirecting...');
+  });
+});
+
+// ============================================================================
 // 6.9b Integration: JS redirect chain (t.co → githack → final domain)
 // ============================================================================
 
@@ -367,7 +419,7 @@ describe('6.11 probe_text priority over skip_text (isolated mocks)', () => {
   const TEST_SKIP_PHRASE = 'TEST_SKIP_PHRASE_12345';
   const TEST_PROBE_PHRASE = 'TEST_PROBE_PHRASE_67890';
   const TEST_PROBE_PHRASE_2 = 'TEST_PROBE_PHRASE_ABCDE';
-  
+
   function makeFakeResponse(status: number, body: string, headers: Record<string, string> = {}): Response {
     return {
       status,

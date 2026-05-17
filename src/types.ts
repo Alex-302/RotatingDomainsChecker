@@ -77,6 +77,8 @@ export interface WatcherSite {
   force_search_ahead?: boolean;
   /** Informational field for geo-blocking (e.g., TR for Turkey) */
   geoblock?: string;
+  /** Allow specific phrases from global skip_text for this site (exact match exclusion) */
+  skip_text_allow?: string[];
   /** Historical fallback: last 5 working domains (chronological order, oldest first) */
   heuristic_history?: string[];
   /** Pattern change detection: true when current domain is non-pattern (deleted when pattern found) */

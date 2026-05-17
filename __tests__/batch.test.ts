@@ -878,6 +878,68 @@ describe('7. skip_text scenarios', () => {
     // Without skip_text, parked content is treated as success
     expect(results[0].result.success).toBe(true);
   });
+
+  test('7.6 skip_text_allow: allowed phrase bypasses global skip_text', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: false, maxAttempts: 0, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      skip_text: ['Redirecting...', 'This domain is parked'],
+    });
+    const site = makeSite({
+      last_known_mirror: 'example.com',
+      skip_text_allow: ['Redirecting...'], // Allow "Redirecting..." for this site
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    // Returns content with "Redirecting..." — but it's allowed for this site
+    jest.spyOn(resolver, 'resolve').mockResolvedValue(
+      makeSuccessResult('example.com', { finalBody: 'Redirecting... Please wait' }) as never,
+    );
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Should pass because "Redirecting..." is in skip_text_allow
+    expect(results[0].result.success).toBe(true);
+  });
+
+  test('7.7 skip_text_allow: non-allowed phrase still triggers skip_text', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      skip_text: ['Redirecting...', 'This domain is parked'],
+    });
+    const site = makeSite({
+      last_known_mirror: 'example1.com',
+      skip_text_allow: ['Redirecting...'], // Only "Redirecting..." is allowed
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    // Returns content with "This domain is parked" — NOT allowed, should be skipped
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'example1.com') {
+        return {
+          ...makeFailResult('Skipped by skip_text: "This domain is parked"'),
+          skippedByText: 'This domain is parked',
+          shouldTriggerHeuristic: true,
+        } as never;
+      }
+      // Heuristic finds example2.com
+      return makeSuccessResult(host) as never;
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Should trigger heuristic and find example2.com
+    expect(results[0].newHost).toBe('example2.com');
+    expect(results[0].shouldUpdate).toBe(true);
+  });
 });
 
 describe('8. force_search_ahead scenarios', () => {
