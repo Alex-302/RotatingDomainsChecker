@@ -16722,7 +16722,7 @@ class HttpResolver {
                     }
                     // Then check global skip_text — detect parked/expired domains
                     // Skip only if probe_text is NOT present (to avoid false positives)
-                    const skipPhrase = this.containsSkipText(finalBody);
+                    const skipPhrase = this.containsSkipText(finalBody, site?.skip_text_allow);
                     if (skipPhrase && !hasProbeText) {
                         return {
                             success: false,
@@ -17005,13 +17005,19 @@ class HttpResolver {
     }
     /**
      * Check if response body contains any global skip_text phrase (parked/expired domains)
+     * @param body - Response body to check
+     * @param skipTextAllow - Per-site allowed phrases (excluded from skip_text check)
      * @returns The matched phrase, or undefined if no match
      */
-    containsSkipText(body) {
+    containsSkipText(body, skipTextAllow) {
         if (!body || !this.config.skip_text || this.config.skip_text.length === 0) {
             return undefined;
         }
-        for (const phrase of this.config.skip_text) {
+        // Filter out phrases that are explicitly allowed for this site
+        const effectivePhrases = skipTextAllow && skipTextAllow.length > 0
+            ? this.config.skip_text.filter(p => !skipTextAllow.includes(p))
+            : this.config.skip_text;
+        for (const phrase of effectivePhrases) {
             if (body.includes(phrase)) {
                 return phrase;
             }
@@ -18079,7 +18085,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.15";
+const VERSION = "1.1.16";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
