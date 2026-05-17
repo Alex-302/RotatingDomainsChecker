@@ -210,11 +210,15 @@ sites:
                                         # smallest domain among all found working mirrors.
 
     # Optional verification fields
-    path: "/"                           # Path to check on domain (default: "/")
+    path: "e/ne2g6vqtnrkf"              # Path that must be present in the final redirect target.
+                                        # Prevents false updates when a mirror redirects to the root
+                                        # or a different site. Automatically appended to last_known_mirror
+                                        # and heuristic candidates if they lack a path (only "/").
+                                        # If `path` is not set, no new behavior is introduced.
     probe_text: "Example Domain"        # Key phrases for content verification (array or string)
     skip_text: "This domain is parked"  # Skip domains containing this text (array or string)
     skip_text_allow:                    # Allow specific phrases from global skip_text for this site
-      - Redirecting...                # Exact match exclusion — this phrase won't trigger skip
+      - Redirecting...                  # Exact match exclusion — this phrase won't trigger skip
 
     # Optional heuristic control
     disable_heuristic: false            # Disable heuristic search (default: false)

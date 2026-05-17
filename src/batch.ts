@@ -105,6 +105,23 @@ export class BatchProcessor {
     }
   }
 
+  /**
+   * Append site.path to a URL if the URL has no meaningful path (only "/").
+   * Ensures candidates and check URLs include the expected path when site.path is configured.
+   */
+  private appendSitePath(url: string, sitePath?: string): string {
+    if (!sitePath) return url;
+    try {
+      const normalized = url.startsWith('http') ? url : `https://${url}`;
+      const parsed = new URL(normalized);
+      if (parsed.pathname === '/') {
+        const cleanPath = sitePath.startsWith('/') ? sitePath : `/${sitePath}`;
+        return `${normalized.replace(/\/$/, '')}${cleanPath}`;
+      }
+    } catch { /* ignore */ }
+    return url;
+  }
+
   private calculateDaysSince(dateStr: string): number {
     if (!dateStr || dateStr.trim() === '') return 0;
     try {
@@ -465,7 +482,10 @@ export class BatchProcessor {
                   const historyTask: HeuristicTask = {
                     siteName: name,
                     siteIndex: i,
-                    candidateUrl: historyDomain.startsWith('http') ? historyDomain : `https://${historyDomain}`,
+                    candidateUrl: this.appendSitePath(
+                      historyDomain.startsWith('http') ? historyDomain : `https://${historyDomain}`,
+                      site.path
+                    ),
                     attemptIndex: -1, // Special marker for history domain
                     oldMirror: site.last_known_mirror,
                     probeText: site.probe_text,
@@ -770,14 +790,16 @@ export class BatchProcessor {
       const daysSinceLastSeen = this.calculateDaysSince(site.last_seen);
       if (daysSinceLastSeen < 2 && site.last_known_mirror) {
         // Recent success - try last_known_mirror first
-        urlToCheck = site.last_known_mirror;
+        urlToCheck = this.appendSitePath(site.last_known_mirror, site.path);
         this.logger.debug(siteName, `Recent success (${daysSinceLastSeen} days ago), trying last_known_mirror first`);
       }
     }
 
     if (!urlToCheck) {
       // Standard path: initial_domain -> last_known_mirror
-      urlToCheck = site.initial_domain || site.last_known_mirror;
+      // If falling back to last_known_mirror, append site.path if configured
+      const baseUrl = site.initial_domain || site.last_known_mirror;
+      urlToCheck = baseUrl ? this.appendSitePath(baseUrl, site.path) : baseUrl;
     }
     if (!urlToCheck) {
       this.logger.error(siteName, "No URL to check (missing initial_domain and last_known_mirror)");
@@ -956,10 +978,12 @@ export class BatchProcessor {
     // Check path if specified
     if (site.path) {
       const finalPath = this.resolver.extractPathWithoutQuery(result.finalUrl);
-      if (finalPath !== site.path) {
+      // Normalize: site.path may lack leading slash while URL.pathname always has it
+      const sitePathNormalized = site.path.startsWith('/') ? site.path : `/${site.path}`;
+      if (finalPath !== sitePathNormalized) {
         this.logger.warn(
           siteName,
-          `Path mismatch: expected ${site.path}, got ${finalPath} - manual review needed`
+          `Path mismatch: expected ${sitePathNormalized}, got ${finalPath} - manual review needed`
         );
         const siteDuration = Date.now() - siteStartTime;
         this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PATH MISMATCH`);
