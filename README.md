@@ -213,6 +213,8 @@ sites:
     path: "/"                           # Path to check on domain (default: "/")
     probe_text: "Example Domain"        # Key phrases for content verification (array or string)
     skip_text: "This domain is parked"  # Skip domains containing this text (array or string)
+    skip_text_allow:                    # Allow specific phrases from global skip_text for this site
+      - "Redirecting..."                # Exact match exclusion — this phrase won't trigger skip
 
     # Optional heuristic control
     disable_heuristic: false            # Disable heuristic search (default: false)
@@ -558,7 +560,7 @@ sites:
 
 1. **Redirect Resolution**: Follow HTTP 3xx redirects
 2. **JS/Meta Redirect Resolution**: Parse HTML body for JavaScript (`location.replace()`, `window.location.href`, `location.href`) and `<meta http-equiv="refresh">` redirects and follow them as part of the same redirect chain
-3. **Parked Domain Detection**: Check response body against `skip_text` phrases before following client-side redirects — if matched, the domain is considered parked/expired and heuristic search is triggered
+3. **Parked Domain Detection**: Check response body against `skip_text` phrases before following client-side redirects — if matched, the domain is considered parked/expired and heuristic search is triggered. Individual phrases can be excluded per-site using `skip_text_allow` in `watchers.yml` (exact match)
 4. **Heuristic Search**: Try numbered domain patterns
 5. **Content Verification**: Check `probe_text` and `path`
 6. **Filter Updates**: Replace old domains with new ones

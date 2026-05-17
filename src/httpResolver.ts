@@ -39,7 +39,7 @@ export class HttpResolver {
         let response;
         try {
           response = await this.fetchWithRetry(currentUrl, useHeuristicTimeout);
-          
+
           // Add successful request to chain
           chain.push({
             url: currentUrl,
@@ -83,7 +83,7 @@ export class HttpResolver {
               shouldTriggerHeuristic,
             };
           }
-          
+
           // Consume body to release connection - must not throw
           try { await response.arrayBuffer(); } catch {}
           return {
@@ -122,7 +122,7 @@ export class HttpResolver {
 
           // Then check global skip_text — detect parked/expired domains
           // Skip only if probe_text is NOT present (to avoid false positives)
-          const skipPhrase = this.containsSkipText(finalBody);
+          const skipPhrase = this.containsSkipText(finalBody, site?.skip_text_allow);
           if (skipPhrase && !hasProbeText) {
             return {
               success: false,
@@ -206,10 +206,10 @@ export class HttpResolver {
         // Other error status
         // Consume body to release connection - must not throw
         try { await response.arrayBuffer(); } catch {}
-        
+
         // Check if this status code should trigger heuristic
         const shouldTriggerHeuristic = this.config.heuristic.forceHeuristicOnCodes.includes(response.status);
-        
+
         return {
           success: false,
           finalUrl: currentUrl,
@@ -232,11 +232,11 @@ export class HttpResolver {
     } catch (err) {
       // Check if this error should trigger heuristic (timeouts, connection issues)
       const errorMessage = err instanceof Error ? err.message.toLowerCase() : "";
-      const shouldTriggerHeuristic = errorMessage.includes("timeout") || 
+      const shouldTriggerHeuristic = errorMessage.includes("timeout") ||
                                      errorMessage.includes("aborted") ||
                                      errorMessage.includes("connection") ||
                                      errorMessage.includes("network");
-      
+
       return {
         success: false,
         finalUrl: currentUrl,
@@ -258,7 +258,7 @@ export class HttpResolver {
     for (let attempt = 0; attempt < this.config.http.retries; attempt++) {
       const abortController = new AbortController();
       const timeoutSignal = AbortSignal.timeout(timeout);
-      
+
       // Combine manual abort and timeout signals
       const combinedSignal = AbortSignal.any([abortController.signal, timeoutSignal]);
       this.activeAbortControllers.add(abortController);
@@ -416,13 +416,19 @@ export class HttpResolver {
 
   /**
    * Check if response body contains any global skip_text phrase (parked/expired domains)
+   * @param body - Response body to check
+   * @param skipTextAllow - Per-site allowed phrases (excluded from skip_text check)
    * @returns The matched phrase, or undefined if no match
    */
-  containsSkipText(body?: string): string | undefined {
+  containsSkipText(body?: string, skipTextAllow?: string[]): string | undefined {
     if (!body || !this.config.skip_text || this.config.skip_text.length === 0) {
       return undefined;
     }
-    for (const phrase of this.config.skip_text) {
+    // Filter out phrases that are explicitly allowed for this site
+    const effectivePhrases = skipTextAllow && skipTextAllow.length > 0
+      ? this.config.skip_text.filter(p => !skipTextAllow.includes(p))
+      : this.config.skip_text;
+    for (const phrase of effectivePhrases) {
       if (body.includes(phrase)) {
         return phrase;
       }
