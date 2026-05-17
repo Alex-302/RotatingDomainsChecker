@@ -147,32 +147,32 @@ function processDomainList(
   }
 
   // 4. Remove predicted mirrors and deduplicate
-  // Clean up predicted mirrors if domains changed OR if numeric patterns exist
+  // Only clean up predicted mirrors when a domain rotation actually occurred (changed=true).
+  // When the primary domain is unchanged, leave the existing domain list intact so that
+  // previously-collected force_search_ahead domains are not silently removed on runs where
+  // they happen to be temporarily unreachable or not re-discovered.
   const hasNumericPatterns = domains.some(d => matchesNumericPattern(d));
-  if ((changed || hasNumericPatterns) && priorityMap.size > 0) {
-    // Always remove predicted mirrors if we have numeric patterns and active domains
-    if (hasNumericPatterns && priorityMap.size > 0) {
-      // Find matching last_known_mirror for current pattern
-      const currentPattern = extractBasePattern(domains[0]);
-      let matchingLastKnown = null;
+  if (changed && hasNumericPatterns && priorityMap.size > 0) {
+    // Find matching last_known_mirror for current pattern
+    const currentPattern = extractBasePattern(domains[0]);
+    let matchingLastKnown = null;
 
-      for (const { lastKnown } of priorityMap.values()) {
-        if (matchesNumericPattern(lastKnown) && extractBasePattern(lastKnown) === currentPattern) {
-          matchingLastKnown = lastKnown;
-          break;
-        }
+    for (const { lastKnown } of priorityMap.values()) {
+      if (matchesNumericPattern(lastKnown) && extractBasePattern(lastKnown) === currentPattern) {
+        matchingLastKnown = lastKnown;
+        break;
       }
+    }
 
-      // If we have matching last_known_mirror, remove predicted mirrors
-      if (matchingLastKnown) {
-        processed = removePredictedMirrors(processed, priorityMap);
+    // If we have matching last_known_mirror, remove predicted mirrors
+    if (matchingLastKnown) {
+      processed = removePredictedMirrors(processed, priorityMap);
+      processed = deduplicateDomains(processed);
+
+      // Ensure last_known_mirror is present
+      if (!processed.some(d => normalizeDomain(d) === normalizeDomain(matchingLastKnown))) {
+        processed.push(matchingLastKnown);
         processed = deduplicateDomains(processed);
-
-        // Ensure last_known_mirror is present
-        if (!processed.some(d => normalizeDomain(d) === normalizeDomain(matchingLastKnown))) {
-          processed.push(matchingLastKnown);
-          processed = deduplicateDomains(processed);
-        }
       }
     }
   }

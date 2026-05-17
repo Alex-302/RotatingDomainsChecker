@@ -382,8 +382,9 @@ describe('2.9 Empty priorityMap', () => {
 });
 
 describe('2.10 Preventing empty domain lists in parameters', () => {
-  test('$domain= list does not become empty after predicted mirror removal', () => {
-    // All domains are predicted mirrors of example020.com
+  test('$domain= list is unchanged when no rotation occurred', () => {
+    // All domains are predicted mirrors of example020.com, but no rotation happened (empty hostMap).
+    // removePredictedMirrors should NOT run — leave the existing domain list intact.
     const hostMap = new Map<string, string>();
     const initialToLastKnownMap = new Map<string, string>();
     const priorityMap = new Map([
@@ -391,8 +392,8 @@ describe('2.10 Preventing empty domain lists in parameters', () => {
     ]);
     const line = '||example.com^$domain=example001.com|example002.com|example003.com';
     const result = processLine(line, hostMap, initialToLastKnownMap, priorityMap);
-    // Should not have empty domain list — fallback to last_known_mirror
-    expect(result[0]).toContain('example020.com');
+    // No change → line must be returned as-is (existing domains preserved)
+    expect(result[0]).toBe('||example.com^$domain=example001.com|example002.com|example003.com');
   });
 });
 
@@ -568,7 +569,9 @@ describe('Edge cases and regressions', () => {
     expect(escapeRegExp('test+site.com')).toBe('test\\+site\\.com');
   });
 
-  test('empty domain list after predicted removal: fallback to last_known_mirror', () => {
+  test('domain list unchanged when no rotation occurred (no fallback needed)', () => {
+    // Domains are predicted mirrors of example020.com, but no rotation happened (empty hostMap).
+    // removePredictedMirrors must NOT run — existing domains must be preserved as-is.
     const priorityMap = new Map([
       ['example020.com', { initial: null, lastKnown: 'example020.com', oldHost: '' }],
     ]);
@@ -577,9 +580,9 @@ describe('Edge cases and regressions', () => {
     const initialToLastKnownMap = new Map<string, string>();
 
     const { processed } = processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap);
-    // Should contain last_known_mirror as fallback
-    expect(processed).toContain('example020.com');
-    expect(processed.length).toBeGreaterThan(0);
+    // No domain change → list must remain untouched
+    expect(processed).toEqual(['example001.com', 'example002.com']);
+    expect(processed).not.toContain('example020.com');
   });
 
   test('CRITICAL: prevent empty domain list in cosmetic rules (scheme change)', () => {
