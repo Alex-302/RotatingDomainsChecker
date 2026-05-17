@@ -214,7 +214,7 @@ sites:
     probe_text: "Example Domain"        # Key phrases for content verification (array or string)
     skip_text: "This domain is parked"  # Skip domains containing this text (array or string)
     skip_text_allow:                    # Allow specific phrases from global skip_text for this site
-      - "Redirecting..."                # Exact match exclusion — this phrase won't trigger skip
+      - Redirecting...                # Exact match exclusion — this phrase won't trigger skip
 
     # Optional heuristic control
     disable_heuristic: false            # Disable heuristic search (default: false)
