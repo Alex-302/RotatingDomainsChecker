@@ -693,6 +693,64 @@ describe('Path mismatch handling', () => {
     expect(results[0].shouldUpdate).toBe(false);
     expect(results[0].error).toContain('Path changed');
   });
+
+  test('site.path without leading slash matches URL.pathname → no path error', async () => {
+    const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
+    // path configured WITHOUT leading slash (as stored in watchers.yml)
+    const site = makeSite({ last_known_mirror: 'example.com', path: 'e/nemg6vqtnrkf' });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockResolvedValue(
+      makeSuccessResult('example.com', { finalUrl: 'https://example.com/e/nemg6vqtnrkf' }) as never,
+    );
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // error should be absent or not mention path
+    expect(results[0].error ?? '').not.toContain('Path changed');
+  });
+
+  test('site.path set + last_known_mirror has no path → resolve called with path appended', async () => {
+    const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
+    const site = makeSite({ last_known_mirror: 'example.com', path: 'e/nemg6vqtnrkf' });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    // Capture the URL passed to resolve to verify path is appended
+    let capturedUrl: unknown;
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url) => {
+      capturedUrl = url;
+      return makeSuccessResult('example.com', { finalUrl: 'https://example.com/e/nemg6vqtnrkf' }) as never;
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    await processor.processAll();
+
+    expect(String(capturedUrl)).toContain('e/nemg6vqtnrkf');
+  });
+
+  test('site.path set + redirect drops path (root redirect) → shouldUpdate: false', async () => {
+    const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
+    const site = makeSite({ last_known_mirror: 'example.com', path: 'e/nemg6vqtnrkf' });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    // Mirror redirects to root (no path) — simulates ericeastweight.com → voe.sx/
+    jest.spyOn(resolver, 'resolve').mockResolvedValue(
+      makeSuccessResult('nopattern.com', { finalUrl: 'https://nopattern.com/' }) as never,
+    );
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].shouldUpdate).toBe(false);
+    expect(results[0].error).toContain('Path changed');
+  });
 });
 
 // ============================================================================
