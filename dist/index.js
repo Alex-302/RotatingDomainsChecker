@@ -15748,6 +15748,24 @@ class BatchProcessor {
             site.pattern_changed = true;
         }
     }
+    /**
+     * Append site.path to a URL if the URL has no meaningful path (only "/").
+     * Ensures candidates and check URLs include the expected path when site.path is configured.
+     */
+    appendSitePath(url, sitePath) {
+        if (!sitePath)
+            return url;
+        try {
+            const normalized = url.startsWith('http') ? url : `https://${url}`;
+            const parsed = new URL(normalized);
+            if (parsed.pathname === '/') {
+                const cleanPath = sitePath.startsWith('/') ? sitePath : `/${sitePath}`;
+                return `${normalized.replace(/\/$/, '')}${cleanPath}`;
+            }
+        }
+        catch { /* ignore */ }
+        return url;
+    }
     calculateDaysSince(dateStr) {
         if (!dateStr || dateStr.trim() === '')
             return 0;
@@ -16066,7 +16084,7 @@ class BatchProcessor {
                                     const historyTask = {
                                         siteName: name,
                                         siteIndex: i,
-                                        candidateUrl: historyDomain.startsWith('http') ? historyDomain : `https://${historyDomain}`,
+                                        candidateUrl: this.appendSitePath(historyDomain.startsWith('http') ? historyDomain : `https://${historyDomain}`, site.path),
                                         attemptIndex: -1, // Special marker for history domain
                                         oldMirror: site.last_known_mirror,
                                         probeText: site.probe_text,
@@ -16343,13 +16361,15 @@ class BatchProcessor {
             const daysSinceLastSeen = this.calculateDaysSince(site.last_seen);
             if (daysSinceLastSeen < 2 && site.last_known_mirror) {
                 // Recent success - try last_known_mirror first
-                urlToCheck = site.last_known_mirror;
+                urlToCheck = this.appendSitePath(site.last_known_mirror, site.path);
                 this.logger.debug(siteName, `Recent success (${daysSinceLastSeen} days ago), trying last_known_mirror first`);
             }
         }
         if (!urlToCheck) {
             // Standard path: initial_domain -> last_known_mirror
-            urlToCheck = site.initial_domain || site.last_known_mirror;
+            // If falling back to last_known_mirror, append site.path if configured
+            const baseUrl = site.initial_domain || site.last_known_mirror;
+            urlToCheck = baseUrl ? this.appendSitePath(baseUrl, site.path) : baseUrl;
         }
         if (!urlToCheck) {
             this.logger.error(siteName, "No URL to check (missing initial_domain and last_known_mirror)");
@@ -16513,8 +16533,10 @@ class BatchProcessor {
         // Check path if specified
         if (site.path) {
             const finalPath = this.resolver.extractPathWithoutQuery(result.finalUrl);
-            if (finalPath !== site.path) {
-                this.logger.warn(siteName, `Path mismatch: expected ${site.path}, got ${finalPath} - manual review needed`);
+            // Normalize: site.path may lack leading slash while URL.pathname always has it
+            const sitePathNormalized = site.path.startsWith('/') ? site.path : `/${site.path}`;
+            if (finalPath !== sitePathNormalized) {
+                this.logger.warn(siteName, `Path mismatch: expected ${sitePathNormalized}, got ${finalPath} - manual review needed`);
                 const siteDuration = Date.now() - siteStartTime;
                 this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PATH MISMATCH`);
                 return {
@@ -18085,7 +18107,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.16";
+const VERSION = "1.1.17";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
