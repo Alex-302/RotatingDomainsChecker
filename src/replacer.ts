@@ -218,6 +218,7 @@ export class FilterReplacer {
   async applyReplacements(
     replacements: ReplacementPair[],
     dryRun: boolean = false,
+    originalMirrors?: Map<string, string>,
   ): Promise<{filesScanned: number, filesModified: number, totalLineEdits: number, replacerSeconds: string}> {
     const replacerStart = Date.now();
 
@@ -229,7 +230,8 @@ export class FilterReplacer {
     // Build ASCII table: Site | From (startedHost) | To | Time
     // Show only actual domain changes in the table.
     // Deduplicate by siteName FIRST (keeping primary/effectiveNewHost entry),
-    // then filter to only show entries where the domain actually changed.
+    // then filter to only show entries where the domain actually changed
+    // AND where newHost differs from the original last_known_mirror.
     const primaryBySite = new Map<string, typeof replacements[number]>();
     for (const r of replacements) {
       if (!primaryBySite.has(r.siteName)) {
@@ -237,6 +239,11 @@ export class FilterReplacer {
       }
     }
     const uniqueChanges = [...primaryBySite.values()].filter(r => {
+      // Skip if newHost matches the original mirror (not a real change)
+      if (originalMirrors) {
+        const originalMirror = originalMirrors.get(r.siteName);
+        if (originalMirror && r.newHost === originalMirror) return false;
+      }
       const fromHost = r.startedHost || r.oldHost;
       return fromHost !== r.newHost;
     });

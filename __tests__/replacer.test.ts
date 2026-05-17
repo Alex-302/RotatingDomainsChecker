@@ -1,3 +1,4 @@
+import { jest, describe, test, expect } from '@jest/globals';
 import {
   normalizeDomain,
   matchesNumericPattern,
@@ -14,7 +15,10 @@ import {
   shouldSkipLine,
   findTargetFiles,
   escapeRegExp,
+  FilterReplacer,
 } from '../src/replacer.js';
+import { Logger, LogLevel } from '../src/logger.js';
+import type { Config, ReplacementPair } from '../src/types.js';
 
 // ============================================================================
 // 1. Helper functions — Pattern matching
@@ -704,5 +708,229 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
     expect(processed).toContain('other.com');
     expect(processed).toContain('extra.com');
     expect(processed).not.toContain('example001.com');
+  });
+});
+
+// ============================================================================
+// 4. FilterReplacer.applyReplacements — originalMirrors filtering
+// ============================================================================
+
+describe('4.1 originalMirrors: entry point resolution detection', () => {
+  // Mock config pointing to TestFilters (empty or minimal filter files for testing)
+  const mockConfig: Config = {
+    http: {
+      timeout: 5000,
+      retries: 1,
+      heuristicTimeout: 3000,
+      userAgent: 'test-agent',
+    },
+    processing: {
+      parallel: 1,
+      redirectDepth: 5,
+    },
+    dnsPreCheck: {
+      enabled: false,
+      timeout: 1000,
+      retryOnce: false,
+    },
+    contentProbe: {
+      enabled: false,
+    },
+    antibot: {
+      detectCodes: [403],
+      detectUrlPattern: '',
+    },
+    thresholds: {
+      failedDaysWarning: 3,
+    },
+    heuristic: {
+      enabled: false,
+      maxAttempts: 5,
+      skipOnAntibot: true,
+      forceHeuristicOnCodes: [],
+    },
+    logging: {
+      saveToFile: false,
+      incremental: false,
+      filePath: '',
+    },
+    git: {
+      mode: 'debug',
+      branch: 'master',
+      prBranchPrefix: 'test-',
+    },
+    filtersdir: {
+      repoPath: 'TestFilters',
+      filterDirPattern: '*',
+      filePattern: '*.txt',
+    },
+    filtersdir_test: {
+      repoPath: 'TestFilters',
+      filterDirPattern: '*',
+      filePattern: '*.txt',
+    },
+  };
+
+  // Silent logger for tests
+  const silentLogger = new Logger(mockConfig);
+
+  test('initial_domain redirects to SAME domain as last_known_mirror → NO change detected', async () => {
+    // Scenario: watcher has last_known_mirror = 'example027.com'
+    // initial_domain (t.co) redirects to example027.com
+    // This should NOT be counted as a change
+    const replacements: ReplacementPair[] = [{
+      siteName: 'TestSite',
+      oldHost: 't.co',           // initial_domain
+      newHost: 'example027.com', // resolved domain
+      startedHost: 't.co',
+      checkDurationMs: 1000,
+    }];
+
+    // originalMirrors contains the domain that was in watcher BEFORE processing
+    const originalMirrors = new Map([['TestSite', 'example027.com']]);
+
+    const replacer = new FilterReplacer(mockConfig, silentLogger, true);
+
+    // Capture console output to verify table is NOT shown
+    const logCalls: string[] = [];
+    const originalLog = silentLogger.logGlobal.bind(silentLogger);
+    jest.spyOn(silentLogger, 'logGlobal').mockImplementation((level, msg) => {
+      logCalls.push(msg);
+    });
+
+    await replacer.applyReplacements(replacements, true, originalMirrors);
+
+    // Table should NOT be shown because newHost === originalMirror
+    const hasRedirectedTable = logCalls.some(msg => msg.includes('Redirected domains'));
+    expect(hasRedirectedTable).toBe(false);
+
+    // Should show "No domain changes detected" message
+    const hasNoChanges = logCalls.some(msg => msg.includes('No domain changes detected'));
+    expect(hasNoChanges).toBe(true);
+
+    jest.restoreAllMocks();
+  });
+
+  test('initial_domain redirects to NEW domain (different from last_known_mirror) → change detected', async () => {
+    // Scenario: watcher has last_known_mirror = 'example027.com'
+    // initial_domain (t.co) redirects to example028.com (NEW domain)
+    // This SHOULD be counted as a change
+    const replacements: ReplacementPair[] = [{
+      siteName: 'TestSite',
+      oldHost: 't.co',           // initial_domain
+      newHost: 'example028.com', // NEW resolved domain
+      startedHost: 't.co',
+      checkDurationMs: 1000,
+    }];
+
+    // originalMirrors contains the OLD domain
+    const originalMirrors = new Map([['TestSite', 'example027.com']]);
+
+    const replacer = new FilterReplacer(mockConfig, silentLogger, true);
+
+    const logCalls: string[] = [];
+    jest.spyOn(silentLogger, 'logGlobal').mockImplementation((level, msg) => {
+      logCalls.push(msg);
+    });
+
+    await replacer.applyReplacements(replacements, true, originalMirrors);
+
+    // Table SHOULD be shown because newHost !== originalMirror
+    const hasRedirectedTable = logCalls.some(msg => msg.includes('Redirected domains'));
+    expect(hasRedirectedTable).toBe(true);
+
+    // Table should contain the site and new domain
+    const tableOutput = logCalls.find(msg => msg.includes('TestSite'));
+    expect(tableOutput).toBeDefined();
+    expect(tableOutput).toContain('example028.com');
+
+    jest.restoreAllMocks();
+  });
+
+  test('no originalMirrors provided → all domain changes shown (backward compat)', async () => {
+    // When originalMirrors is not provided, all fromHost !== newHost are shown
+    const replacements: ReplacementPair[] = [{
+      siteName: 'TestSite',
+      oldHost: 't.co',
+      newHost: 'example027.com',
+      startedHost: 't.co',
+      checkDurationMs: 1000,
+    }];
+
+    const replacer = new FilterReplacer(mockConfig, silentLogger, true);
+
+    const logCalls: string[] = [];
+    jest.spyOn(silentLogger, 'logGlobal').mockImplementation((level, msg) => {
+      logCalls.push(msg);
+    });
+
+    // No originalMirrors passed
+    await replacer.applyReplacements(replacements, true);
+
+    // Table SHOULD be shown (backward compatible behavior)
+    const hasRedirectedTable = logCalls.some(msg => msg.includes('Redirected domains'));
+    expect(hasRedirectedTable).toBe(true);
+
+    jest.restoreAllMocks();
+  });
+
+  test('multiple sites: mix of real changes and entry point resolutions', async () => {
+    // Site1: entry point → same domain (NO change)
+    // Site2: entry point → new domain (change)
+    // Site3: domain rotation (change)
+    const replacements: ReplacementPair[] = [
+      {
+        siteName: 'Site1',
+        oldHost: 'redirect.me',
+        newHost: 'example100.com', // same as original
+        startedHost: 'redirect.me',
+        checkDurationMs: 500,
+      },
+      {
+        siteName: 'Site2',
+        oldHost: 'short.link',
+        newHost: 'example201.com', // NEW domain
+        startedHost: 'short.link',
+        checkDurationMs: 600,
+      },
+      {
+        siteName: 'Site3',
+        oldHost: 'example300.com',
+        newHost: 'example301.com', // rotation
+        startedHost: 'example300.com',
+        checkDurationMs: 700,
+      },
+    ];
+
+    const originalMirrors = new Map([
+      ['Site1', 'example100.com'],  // same → no change
+      ['Site2', 'example200.com'],  // different → change
+      ['Site3', 'example300.com'],  // different → change
+    ]);
+
+    const replacer = new FilterReplacer(mockConfig, silentLogger, true);
+
+    const logCalls: string[] = [];
+    jest.spyOn(silentLogger, 'logGlobal').mockImplementation((level, msg) => {
+      logCalls.push(msg);
+    });
+
+    await replacer.applyReplacements(replacements, true, originalMirrors);
+
+    // Table should be shown (Site2 and Site3 have changes)
+    const hasRedirectedTable = logCalls.some(msg => msg.includes('Redirected domains'));
+    expect(hasRedirectedTable).toBe(true);
+
+    // Find table output
+    const tableOutput = logCalls.join('\n');
+
+    // Site1 should NOT be in table (no real change)
+    expect(tableOutput).not.toContain('Site1');
+
+    // Site2 and Site3 SHOULD be in table
+    expect(tableOutput).toContain('Site2');
+    expect(tableOutput).toContain('Site3');
+
+    jest.restoreAllMocks();
   });
 });

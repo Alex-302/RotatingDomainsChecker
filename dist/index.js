@@ -17249,7 +17249,7 @@ class FilterReplacer {
         this._logger = _logger;
         this._isTestMode = _isTestMode;
     }
-    async applyReplacements(replacements, dryRun = false) {
+    async applyReplacements(replacements, dryRun = false, originalMirrors) {
         const replacerStart = Date.now();
         if (replacements.length === 0) {
             this._logger.logGlobal(LogLevel.INFO, "No replacements to process.");
@@ -17258,7 +17258,8 @@ class FilterReplacer {
         // Build ASCII table: Site | From (startedHost) | To | Time
         // Show only actual domain changes in the table.
         // Deduplicate by siteName FIRST (keeping primary/effectiveNewHost entry),
-        // then filter to only show entries where the domain actually changed.
+        // then filter to only show entries where the domain actually changed
+        // AND where newHost differs from the original last_known_mirror.
         const primaryBySite = new Map();
         for (const r of replacements) {
             if (!primaryBySite.has(r.siteName)) {
@@ -17266,6 +17267,12 @@ class FilterReplacer {
             }
         }
         const uniqueChanges = [...primaryBySite.values()].filter(r => {
+            // Skip if newHost matches the original mirror (not a real change)
+            if (originalMirrors) {
+                const originalMirror = originalMirrors.get(r.siteName);
+                if (originalMirror && r.newHost === originalMirror)
+                    return false;
+            }
             const fromHost = r.startedHost || r.oldHost;
             return fromHost !== r.newHost;
         });
@@ -18072,7 +18079,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.14";
+const VERSION = "1.1.15";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
@@ -18155,6 +18162,14 @@ async function main() {
     const config = loadConfig(configPath);
     const watchers = loadWatchers();
     const logger = new Logger(config);
+    // Save original last_known_mirror values BEFORE processing
+    // Used later to detect if newHost was already known (not a real change)
+    const originalLastKnownMirrors = new Map();
+    for (const [siteName, site] of Object.entries(watchers.sites)) {
+        if (site.last_known_mirror) {
+            originalLastKnownMirrors.set(siteName, site.last_known_mirror);
+        }
+    }
     // Use filtersPath for target directory
     const targetPath = isTestMode && config.filtersdir_test
         ? config.filtersdir_test.repoPath
@@ -18456,12 +18471,10 @@ async function main() {
     }
     // Apply replacements first (to show table before summary)
     const replacer = new FilterReplacer(config, logger, isTestMode);
-    const replacerStats = await replacer.applyReplacements(summary.replacements, dryRun);
+    const replacerStats = await replacer.applyReplacements(summary.replacements, dryRun, originalLastKnownMirrors);
     // Determine whether there are any real changes to create a PR/commit for.
-    // A real change means actual line edits in filter files (not just force_search_ahead confirmations).
-    // Also check that there are unique summary replacements with actual domain changes (fromHost !== newHost).
-    // This prevents triggering PR/commit when replacer modified lines but all effective replacements
-    // ended up being no-ops after deduplication.
+    // A real change means the domain actually changed from what was in watcher BEFORE processing.
+    // If newHost === original last_known_mirror, it's not a change — just entry point resolution.
     const hasUniqueDomainChanges = (() => {
         const primaryBySite = new Map();
         for (const r of summary.replacements) {
@@ -18470,6 +18483,10 @@ async function main() {
             }
         }
         return [...primaryBySite.values()].some(r => {
+            // If newHost matches the original last_known_mirror, no real change occurred
+            const originalMirror = originalLastKnownMirrors.get(r.siteName);
+            if (originalMirror && r.newHost === originalMirror)
+                return false;
             const fromHost = r.startedHost || r.oldHost;
             return fromHost !== r.newHost;
         });
