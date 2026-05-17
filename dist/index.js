@@ -18642,14 +18642,15 @@ async function main() {
             });
         }
     }
+    // Always save logs to file if configured
+    logger.saveToFile();
     // Execute git operations (will include the log file in commit)
     let gitResult = {};
     if (skipReason) {
         logger.logGlobal(LogLevel.INFO, `Skipping PR/commit — ${skipReason}`);
     }
     else {
-        // prod_live, prod_dry, test_dry: save logs and execute git
-        logger.saveToFile();
+        // prod_live, prod_dry, test_dry: execute git
         gitResult = await gitManager.commitOrCreatePR(summary, dryRun);
     }
     // Set GitHub Actions outputs
