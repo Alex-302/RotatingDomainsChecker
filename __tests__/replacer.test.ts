@@ -1,4 +1,7 @@
-import { jest, describe, test, expect } from '@jest/globals';
+import { jest, describe, test, expect, afterEach } from '@jest/globals';
+import * as os from 'os';
+import * as fsp from 'fs/promises';
+import * as path from 'path';
 import {
   normalizeDomain,
   matchesNumericPattern,
@@ -935,5 +938,107 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
     expect(tableOutput).toContain('Site3');
 
     jest.restoreAllMocks();
+  });
+});
+
+// ============================================================================
+// 5. Line-ending preservation
+// ============================================================================
+
+describe('5.1 applyReplacements preserves original line endings', () => {
+  let tmpDir: string;
+
+  // Helper: build a minimal Config pointing to an arbitrary repoPath
+  function makeConfig(repoPath: string): Config {
+    return {
+      http: { timeout: 5000, retries: 1, heuristicTimeout: 3000, userAgent: 'test' },
+      processing: { parallel: 1, redirectDepth: 5 },
+      dnsPreCheck: { enabled: false, timeout: 1000, retryOnce: false },
+      contentProbe: { enabled: false },
+      antibot: { detectCodes: [], detectUrlPattern: '' },
+      thresholds: { failedDaysWarning: 3 },
+      heuristic: { enabled: false, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      logging: { saveToFile: false, incremental: false, filePath: '' },
+      git: { mode: 'debug', branch: 'master', prBranchPrefix: 'test-' },
+      filtersdir: {
+        repoPath,
+        filterDirPattern: '*Filter',
+        filePattern: '*.txt',
+      },
+      filtersdir_test: {
+        repoPath,
+        filterDirPattern: '*Filter',
+        filePattern: '*.txt',
+      },
+    };
+  }
+
+  beforeEach(async () => {
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rdc-test-'));
+    // Create a filter dir that matches '*Filter' pattern
+    await fsp.mkdir(path.join(tmpDir, 'SomeFilter'));
+  });
+
+  afterEach(async () => {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test('CRLF file → written back with CRLF (no conversion to LF)', async () => {
+    const filterFile = path.join(tmpDir, 'SomeFilter', 'filter.txt');
+    // Write file with CRLF line endings
+    const crlfContent = '||example501.com^\r\n||nopattern.com^\r\n';
+    await fsp.writeFile(filterFile, crlfContent, 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [{
+      siteName: 'TestSite',
+      oldHost: 'example501.com',
+      newHost: 'example502.com',
+      startedHost: 'example501.com',
+      checkDurationMs: 100,
+    }];
+
+    await replacer.applyReplacements(replacements, false);
+
+    const written = await fsp.readFile(filterFile, 'utf-8');
+    // Must contain CRLF
+    expect(written).toContain('\r\n');
+    // Must NOT have bare LF where CRLF was expected (every \n must be preceded by \r)
+    const bareNewlines = written.split('\n').slice(0, -1).filter(line => !line.endsWith('\r'));
+    expect(bareNewlines).toHaveLength(0);
+    // Domain must be replaced
+    expect(written).toContain('example502.com');
+    expect(written).not.toContain('example501.com');
+  });
+
+  test('LF file → written back with LF (no conversion to CRLF)', async () => {
+    const filterFile = path.join(tmpDir, 'SomeFilter', 'filter.txt');
+    // Write file with LF line endings only
+    const lfContent = '||example501.com^\n||nopattern.com^\n';
+    await fsp.writeFile(filterFile, lfContent, 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [{
+      siteName: 'TestSite',
+      oldHost: 'example501.com',
+      newHost: 'example502.com',
+      startedHost: 'example501.com',
+      checkDurationMs: 100,
+    }];
+
+    await replacer.applyReplacements(replacements, false);
+
+    const written = await fsp.readFile(filterFile, 'utf-8');
+    // Must NOT contain CRLF
+    expect(written).not.toContain('\r\n');
+    // Domain must be replaced
+    expect(written).toContain('example502.com');
+    expect(written).not.toContain('example501.com');
   });
 });
