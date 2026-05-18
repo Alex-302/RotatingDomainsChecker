@@ -15794,23 +15794,22 @@ class BatchProcessor {
         }
         const timeout = dnsConfig.timeout;
         const retryOnce = dnsConfig.retryOnce;
-        const raceWithTimeout = (promise, ms) => {
-            let timerId;
-            const timeoutPromise = new Promise((_, rej) => {
-                timerId = setTimeout(() => rej(new Error("DNS timeout")), ms);
-            });
-            return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timerId));
-        };
         try {
             const hostname = new URL(url).hostname;
-            await raceWithTimeout(external_dns_namespaceObject.promises.lookup(hostname), timeout);
+            await Promise.race([
+                external_dns_namespaceObject.promises.resolve(hostname),
+                new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), timeout))
+            ]);
             return true;
         }
         catch (err) {
             if (retryOnce && err.code === "EAI_AGAIN") {
                 try {
                     const hostname = new URL(url).hostname;
-                    await raceWithTimeout(external_dns_namespaceObject.promises.lookup(hostname), timeout);
+                    await Promise.race([
+                        external_dns_namespaceObject.promises.resolve(hostname),
+                        new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 2500))
+                    ]);
                     return true;
                 }
                 catch {
@@ -18134,7 +18133,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.22";
+const VERSION = "1.1.22-test";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
