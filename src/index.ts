@@ -12,7 +12,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.1.3";
+const VERSION = "1.1.30";
 
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
