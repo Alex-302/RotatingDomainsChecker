@@ -7,12 +7,12 @@ import { FilterReplacer } from "./replacer.js";
 import { GitManager } from "./git.js";
 import { Logger, LogLevel } from "./logger.js";
 import { connectionDiagnostics } from "./diagnostics.js";
+import { resolveHostname } from "./dnsResolver.js";
 import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
-import { promises as dns } from "dns";
 
 // Version
-const VERSION = "1.1.23";
+const VERSION = "1.1.24";
 
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
@@ -87,7 +87,7 @@ export async function dnsPreflightCheck(logger?: { logGlobal: (level: number, ms
   const preflightHosts = ["google.com", "cloudflare.com", "adguard.com"];
   const preflightResults = await Promise.all(
     preflightHosts.map(host =>
-      dns.lookup(host).then(() => true, () => false)
+      resolveHostname(host).then(() => true, () => false)
     )
   );
   const resolvedCount = preflightResults.filter(ok => ok).length;

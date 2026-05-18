@@ -2,7 +2,7 @@ import type { Config, Watchers, CheckResult, HeuristicTask, RedirectResult, Watc
 import { HttpResolver } from './httpResolver.js';
 import { ContentProbe } from './probe.js';
 import { Logger, LogLevel } from './logger.js';
-import { promises as dns } from 'dns';
+import { resolveHostname } from './dnsResolver.js';
 
 export class BatchProcessor {
   private probe: ContentProbe;
@@ -147,21 +147,14 @@ export class BatchProcessor {
     }
     const timeout = dnsConfig.timeout;
     const retryOnce = dnsConfig.retryOnce;
+    const hostname = new URL(url).hostname;
     try {
-      const hostname = new URL(url).hostname;
-      await Promise.race([
-        dns.resolve(hostname),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), timeout))
-      ]);
+      await resolveHostname(hostname, timeout);
       return true;
     } catch (err: any) {
       if (retryOnce && err.code === "EAI_AGAIN") {
         try {
-          const hostname = new URL(url).hostname;
-          await Promise.race([
-            dns.resolve(hostname),
-            new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 2500))
-          ]);
+          await resolveHostname(hostname, 2500);
           return true;
         } catch {
           return false;

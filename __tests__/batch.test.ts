@@ -1,12 +1,15 @@
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 import type { Config, Watchers, WatcherSite, RedirectResult, HeuristicTask } from '../src/types.js';
 
-// Mock dns module BEFORE importing BatchProcessor (which imports dns)
+// Mock DNS resolver BEFORE importing BatchProcessor
 const mockedDnsResolve = jest.fn().mockResolvedValue(['127.0.0.1'] as never);
-jest.unstable_mockModule('dns', () => ({
-  promises: {
+const mockedSetServers = jest.fn();
+jest.unstable_mockModule('node:dns/promises', () => ({
+  Resolver: jest.fn().mockImplementation(() => ({
     resolve: mockedDnsResolve,
-  },
+    setServers: mockedSetServers,
+    getServers: () => ['8.8.8.8', '1.1.1.1'],
+  })),
 }));
 
 // Dynamic imports after mock setup
@@ -665,6 +668,21 @@ describe('6.3 DNS pre-check', () => {
 
     expect(results[0].result.shouldTriggerHeuristic).toBe(true);
     expect(results[0].shouldUpdate).toBe(false);
+  });
+
+  test('uses forced DNS servers for batch pre-check', async () => {
+    const config = makeConfig({ heuristic: { enabled: false, maxAttempts: 0, skipOnAntibot: true, forceHeuristicOnCodes: [] } });
+    const site = makeSite({ last_known_mirror: 'example001.com' });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockResolvedValue(makeSuccessResult('example001.com') as never);
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    await processor.processAll();
+
+    expect(mockedSetServers).toHaveBeenCalledWith(['8.8.8.8', '1.1.1.1']);
   });
 });
 
