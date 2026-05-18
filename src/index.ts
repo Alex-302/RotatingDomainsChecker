@@ -494,8 +494,7 @@ export async function main() {
   if (summary.antibotAccepted > 0) {
     logger.logGlobal(LogLevel.RAW, `  ├─ Antibot accepted: ${summary.antibotAccepted} (not in failed count)`);
   }
-  // When no domain changes detected, unchanged includes failed sites
-  const actualUnchangedDisplay = summary.updated === 0 ? summary.checked - summary.updated : summary.unchanged;
+  const actualUnchangedDisplay = summary.unchanged;
   logger.logGlobal(LogLevel.RAW, `  └─ Unchanged sites: ${actualUnchangedDisplay}`);
   logger.logGlobal(LogLevel.RAW, ` 🚨  Failed: ${summary.failed}`);
   if (summary.antibotBlocked > 0) {
@@ -541,7 +540,6 @@ export async function main() {
   logger.logGlobal(LogLevel.RAW, `Total phase time: ${batchSeconds}s`);
 
   // Verification: display formula and check counts
-  // When no domain changes detected, unchanged includes failed sites
   const actualUnchanged = actualUnchangedDisplay;
   logger.logGlobal(LogLevel.DEBUG, `Checks number verification: ${summary.updated} + ${actualUnchanged} = ${summary.checked}`);
 
@@ -558,9 +556,15 @@ export async function main() {
     for (const result of results) {
       const site = watchers.sites[result.siteName];
       if (!site) continue;
+      if (!result.result.success) continue;
 
-      // Include all sites that didn't change domain (regardless of success/failure)
-      if (!result.hostChanged) {
+      const originalMirror = originalLastKnownMirrors.get(result.siteName);
+
+      if (originalMirror) {
+        if (result.newHost === originalMirror) {
+          unchangedHosts.push(result.newHost || originalMirror);
+        }
+      } else if (!result.hostChanged) {
         unchangedHosts.push(result.newHost);
       }
     }

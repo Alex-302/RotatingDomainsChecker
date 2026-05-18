@@ -762,7 +762,7 @@ export class BatchProcessor {
     return results.filter(Boolean);
   }
 
-  private async processSite(siteName: string, site: any, queuedMs = 0): Promise<CheckResult> {
+  private async processSite(siteName: string, site: any, queuedMs = 0, skipRecentMirror = false): Promise<CheckResult> {
     const siteStartTime = Date.now();
     if (queuedMs > 0) {
       this.logger.debug(siteName, `Queued for ${queuedMs}ms before start`);
@@ -777,12 +777,35 @@ export class BatchProcessor {
 
     // Optimization: if last_seen is recent (< 2 days), try last_known_mirror first
     let urlToCheck: string | undefined;
+    let triedRecentLastKnownMirror = false;
+    const fallbackInitialUrl = site.initial_domain ? this.appendSitePath(site.initial_domain, site.path) : undefined;
+    const normalizeCheckUrl = (value?: string): string => {
+      if (!value) return '';
+      try {
+        const normalized = value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`;
+        const parsed = new URL(normalized);
+        return `${parsed.hostname.toLowerCase()}${parsed.pathname}`;
+      } catch {
+        return value.toLowerCase();
+      }
+    };
+    const maybeFallbackToInitialDomain = async (reason: string): Promise<CheckResult | null> => {
+      if (skipRecentMirror || !triedRecentLastKnownMirror || !fallbackInitialUrl) {
+        return null;
+      }
+      if (normalizeCheckUrl(fallbackInitialUrl) === normalizeCheckUrl(urlToCheck)) {
+        return null;
+      }
+      this.logger.info(siteName, `Recent last_known_mirror failed (${reason}), retrying via initial_domain`);
+      return this.processSite(siteName, site, 0, true);
+    };
 
-    if (site.last_seen) {
+    if (!skipRecentMirror && site.last_seen) {
       const daysSinceLastSeen = this.calculateDaysSince(site.last_seen);
       if (daysSinceLastSeen < 2 && site.last_known_mirror) {
         // Recent success - try last_known_mirror first
         urlToCheck = this.appendSitePath(site.last_known_mirror, site.path);
+        triedRecentLastKnownMirror = true;
         this.logger.debug(siteName, `Recent success (${daysSinceLastSeen} days ago), trying last_known_mirror first`);
       }
     }
@@ -857,6 +880,11 @@ export class BatchProcessor {
       const siteDuration = Date.now() - siteStartTime;
       this.logger.debug(siteName, `Check completed in ${siteDuration}ms (dns: ${dnsCheckDuration}ms) - DNS FAILED`);
 
+      const fallbackResult = await maybeFallbackToInitialDomain('dns failure');
+      if (fallbackResult) {
+        return fallbackResult;
+      }
+
       return {
         siteName,
         oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
@@ -898,6 +926,11 @@ export class BatchProcessor {
       // Heuristic is now handled in Phase 2 (unified queue)
       const siteDuration = Date.now() - siteStartTime;
       this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - FAILED`);
+
+      const fallbackResult = await maybeFallbackToInitialDomain(result.error || 'resolve failure');
+      if (fallbackResult) {
+        return fallbackResult;
+      }
 
       return {
         siteName,
@@ -943,6 +976,11 @@ export class BatchProcessor {
           result.success = false;
           result.error = "Content probe failed";
 
+          const fallbackResult = await maybeFallbackToInitialDomain('content probe failed');
+          if (fallbackResult) {
+            return fallbackResult;
+          }
+
           return {
             siteName,
             oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
@@ -979,6 +1017,12 @@ export class BatchProcessor {
         );
         const siteDuration = Date.now() - siteStartTime;
         this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PATH MISMATCH`);
+
+        const fallbackResult = await maybeFallbackToInitialDomain('path mismatch');
+        if (fallbackResult) {
+          return fallbackResult;
+        }
+
         return {
           siteName,
           oldHost,
