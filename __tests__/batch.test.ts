@@ -429,6 +429,47 @@ describe('4.7 calculateDaysSince (via recent last_seen optimization)', () => {
     expect(firstCallUrl).toBe('mirror.com');
   });
 
+  test('recent dead last_known_mirror → falls back to initial_domain discovery entrypoint', async () => {
+    const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
+    const now = new Date();
+    const recentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const site = makeSite({
+      initial_domain: 'https://voe.sx/e/abc123',
+      last_known_mirror: 'ericeastweight_old.com',
+      path: 'e/abc123',
+      last_seen: recentDate,
+    });
+    const watchers = makeWatchers({ 'woe.sx': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    const resolveSpy = jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      if (url === 'https://ericeastweight_old.com/e/abc123') {
+        return makeFailResult('Dead mirror');
+      }
+      if (url === 'https://voe.sx/e/abc123') {
+        return makeSuccessResult('ericeastweight.com', {
+          finalUrl: 'https://ericeastweight.com/e/abc123',
+        });
+      }
+      return makeFailResult(`Unexpected URL: ${url}`);
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(resolveSpy.mock.calls.map(call => call[0])).toEqual([
+      'https://ericeastweight_old.com/e/abc123',
+      'https://voe.sx/e/abc123',
+    ]);
+    expect(results[0].result.success).toBe(true);
+    expect(results[0].newHost).toBe('ericeastweight.com');
+    expect(results[0].oldHost).toBe('ericeastweight_old.com');
+    expect(results[0].startedHost).toBe('voe.sx');
+    expect(results[0].hostChanged).toBe(true);
+    expect(results[0].shouldUpdate).toBe(true);
+  });
+
   test('last_seen old (> 2 days) → uses initial_domain', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
     const site = makeSite({
@@ -1277,6 +1318,44 @@ describe('8. force_search_ahead scenarios', () => {
     expect(additional).toContain('testsite2.com');
     // testsite3.com → redirects to different.com (200) → different.com is collected
     expect(additional).toContain('different.com');
+  });
+
+  test('8.6b force_search_ahead: if many candidates redirect to current primary, collect candidate hosts uniquely', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 4, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'testsite1013.pro',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'Test Site': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'testsite1013.pro') {
+        await new Promise(resolve => setTimeout(resolve, 15));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      if (host === 'testsite1014.pro') {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      if (host === 'testsite1015.pro') {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].newHost).toBe('www.testsite1013.pro');
+    expect(results[0].additionalWorkingDomains).toEqual(['testsite1014.pro', 'testsite1015.pro']);
+    expect(results[0].additionalWorkingDomains).not.toContain('www.testsite1013.pro');
   });
 
   test('8.7 force_search_ahead + non-pattern initial_domain → falls back to last_known_mirror for candidates', async () => {

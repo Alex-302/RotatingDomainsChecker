@@ -129,4 +129,26 @@ sites:
     expect(reloaded.sites['site1'].last_seen).toBe('2024-02-01 12:00');
     expect(reloaded.sites['site1'].probe_text).toEqual(['keyword']);
   });
+
+  test('replace_initial_domain is preserved through load and save', () => {
+    const watchersContent = `sites:
+  site1:
+    initial_domain: gateway.example
+    replace_initial_domain: false
+    last_known_mirror: mirror085.example
+    last_seen: "2024-01-15"
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    const watchers = loadWatchers(watchersPath);
+    expect(watchers.sites['site1'].replace_initial_domain).toBe(false);
+
+    watchers.sites['site1'].last_known_mirror = 'mirror086.example';
+    saveWatchers(watchers, watchersPath);
+
+    const reloaded = loadWatchers(watchersPath);
+    expect(reloaded.sites['site1'].replace_initial_domain).toBe(false);
+    expect(reloaded.sites['site1'].last_known_mirror).toBe('mirror086.example');
+  });
 });

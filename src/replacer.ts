@@ -147,12 +147,11 @@ function processDomainList(
   }
 
   // 4. Remove predicted mirrors and deduplicate
-  // Only clean up predicted mirrors when a domain rotation actually occurred (changed=true).
-  // When the primary domain is unchanged, leave the existing domain list intact so that
-  // previously-collected force_search_ahead domains are not silently removed on runs where
-  // they happen to be temporarily unreachable or not re-discovered.
+  // Clean up predicted mirrors on real rotation, and also when force_search_ahead supplied
+  // a fresh set of additional domains for the current primary host. This allows filter lines
+  // to prune stale predicted mirrors even when the primary domain itself stayed unchanged.
   const hasNumericPatterns = domains.some(d => matchesNumericPattern(d));
-  if (changed && hasNumericPatterns && priorityMap.size > 0) {
+  if ((changed || additionalDomainsMap.size > 0) && hasNumericPatterns && priorityMap.size > 0) {
     // Find matching last_known_mirror for current pattern
     const currentPattern = extractBasePattern(domains[0]);
     let matchingLastKnown = null;
@@ -304,10 +303,6 @@ export class FilterReplacer {
       if (!hostMap.has(r.oldHost)) {
         hostMap.set(r.oldHost, r.newHost);
       }
-      // Also map initial_domain (startedHost) to newHost
-      if (r.startedHost && r.startedHost !== r.oldHost && !hostMap.has(r.startedHost)) {
-        hostMap.set(r.startedHost, r.newHost);
-      }
     }
 
     // Build additionalDomainsMap: primary domain → additional domains from force_search_ahead + patternChangedDomain
@@ -361,7 +356,7 @@ export class FilterReplacer {
         // Only set once per site (use first occurrence)
         if (!priorityMap.has(r.newHost)) {
           priorityMap.set(r.newHost, {
-            initial: r.startedHost || null,
+            initial: null,
             lastKnown: r.newHost,
             oldHost: r.oldHost,
             workingDomains: siteWorkingDomains.get(r.siteName) || new Set(),

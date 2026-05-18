@@ -4,6 +4,25 @@ import { ContentProbe } from './probe.js';
 import { Logger, LogLevel } from './logger.js';
 import { resolveHostname } from './dnsResolver.js';
 
+function naturalCompare(a: string, b: string): number {
+  const re = /(\d+)|(\D+)/g;
+  const chunksA = a.match(re) ?? [a];
+  const chunksB = b.match(re) ?? [b];
+  for (let i = 0; i < Math.max(chunksA.length, chunksB.length); i++) {
+    const ca = chunksA[i] ?? '';
+    const cb = chunksB[i] ?? '';
+    const na = parseInt(ca, 10);
+    const nb = parseInt(cb, 10);
+    if (!isNaN(na) && !isNaN(nb)) {
+      if (na !== nb) return na - nb;
+    } else {
+      if (ca < cb) return -1;
+      if (ca > cb) return 1;
+    }
+  }
+  return 0;
+}
+
 export class BatchProcessor {
   private probe: ContentProbe;
 
@@ -594,22 +613,34 @@ export class BatchProcessor {
             if (probeOk) {
               const oldHost = this.resolver.extractHostWithoutQuery(task.oldMirror);
               const newHost = result.finalHost.toLowerCase();
+              const candidateHost = this.resolver.extractHostWithoutQuery(task.candidateUrl).toLowerCase();
               const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
               this.logger.info(task.siteName, `Heuristic SUCCESS: ${task.candidateUrl}`);
               this.logger.info(task.siteName, `Heuristic redirect chain: ${chainFormatted}`);
 
-              // If force_search_ahead, collect the final working domain
-              // The finalHost is the domain that returned 200 OK, which is what we want
+              // If force_search_ahead, collect a unique working domain token for filter updates.
+              // When a candidate redirects to an already-known primary/final domain, keep the
+              // candidate host itself so filter domain lists can retain reachable aliases.
+              // When the final domain is new, keep the final host as before.
               if (task.site.force_search_ahead) {
                 if (!foundDomainsPerSite.has(task.siteIndex)) {
                   foundDomainsPerSite.set(task.siteIndex, []);
                 }
-                foundDomainsPerSite.get(task.siteIndex)!.push({
-                  domain: newHost,
-                  result,
-                  candidateUrl: task.candidateUrl,
-                });
-                this.logger.info(task.siteName, `force_search_ahead: collected working final domain ${newHost} from ${task.candidateUrl}`);
+                const currentDomains = foundDomainsPerSite.get(task.siteIndex)!;
+                const knownPrimary = results[task.siteIndex]?.newHost;
+                const alreadyKnownFinal = currentDomains.some(entry => entry.domain === newHost);
+                const collectedDomain = candidateHost !== newHost && ((knownPrimary && newHost === knownPrimary) || alreadyKnownFinal)
+                  ? candidateHost
+                  : newHost;
+
+                if (!currentDomains.some(entry => entry.domain === collectedDomain)) {
+                  currentDomains.push({
+                    domain: collectedDomain,
+                    result,
+                    candidateUrl: task.candidateUrl,
+                  });
+                  this.logger.info(task.siteName, `force_search_ahead: collected working domain ${collectedDomain} from ${task.candidateUrl} (final: ${newHost})`);
+                }
               }
 
               // Mark site as found (first success or non-force_search_ahead)
@@ -742,13 +773,16 @@ export class BatchProcessor {
           for (const [siteIndex, domains] of foundDomainsPerSite.entries()) {
             const siteName = siteEntries[siteIndex][0];
             if (results[siteIndex] && domains.length > 1) {
+              const uniqueSortedDomains = [...new Set(domains
+                .map((d: { domain: string }) => d.domain))]
+                .sort(naturalCompare);
+
               // Extract domain names excluding the first one (which is already in newHost)
               const firstDomain = results[siteIndex].newHost;
-              results[siteIndex].additionalWorkingDomains = domains
-                .map((d: { domain: string }) => d.domain)
+              results[siteIndex].additionalWorkingDomains = uniqueSortedDomains
                 .filter(domain => domain !== firstDomain);
 
-              this.logger.info(siteName, `force_search_ahead: collected ${domains.length} working domains: ${domains.map((d: { domain: string }) => d.domain).join(', ')}`);
+              this.logger.info(siteName, `force_search_ahead: collected ${uniqueSortedDomains.length} working domains: ${uniqueSortedDomains.join(', ')}`);
             }
           }
         }
@@ -762,7 +796,7 @@ export class BatchProcessor {
     return results.filter(Boolean);
   }
 
-  private async processSite(siteName: string, site: any, queuedMs = 0): Promise<CheckResult> {
+  private async processSite(siteName: string, site: any, queuedMs = 0, skipRecentMirror = false): Promise<CheckResult> {
     const siteStartTime = Date.now();
     if (queuedMs > 0) {
       this.logger.debug(siteName, `Queued for ${queuedMs}ms before start`);
@@ -777,12 +811,35 @@ export class BatchProcessor {
 
     // Optimization: if last_seen is recent (< 2 days), try last_known_mirror first
     let urlToCheck: string | undefined;
+    let triedRecentLastKnownMirror = false;
+    const fallbackInitialUrl = site.initial_domain ? this.appendSitePath(site.initial_domain, site.path) : undefined;
+    const normalizeCheckUrl = (value?: string): string => {
+      if (!value) return '';
+      try {
+        const normalized = value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`;
+        const parsed = new URL(normalized);
+        return `${parsed.hostname.toLowerCase()}${parsed.pathname}`;
+      } catch {
+        return value.toLowerCase();
+      }
+    };
+    const maybeFallbackToInitialDomain = async (reason: string): Promise<CheckResult | null> => {
+      if (skipRecentMirror || !triedRecentLastKnownMirror || !fallbackInitialUrl) {
+        return null;
+      }
+      if (normalizeCheckUrl(fallbackInitialUrl) === normalizeCheckUrl(urlToCheck)) {
+        return null;
+      }
+      this.logger.info(siteName, `Recent last_known_mirror failed (${reason}), retrying via initial_domain`);
+      return this.processSite(siteName, site, 0, true);
+    };
 
-    if (site.last_seen) {
+    if (!skipRecentMirror && site.last_seen) {
       const daysSinceLastSeen = this.calculateDaysSince(site.last_seen);
       if (daysSinceLastSeen < 2 && site.last_known_mirror) {
         // Recent success - try last_known_mirror first
         urlToCheck = this.appendSitePath(site.last_known_mirror, site.path);
+        triedRecentLastKnownMirror = true;
         this.logger.debug(siteName, `Recent success (${daysSinceLastSeen} days ago), trying last_known_mirror first`);
       }
     }
@@ -857,6 +914,11 @@ export class BatchProcessor {
       const siteDuration = Date.now() - siteStartTime;
       this.logger.debug(siteName, `Check completed in ${siteDuration}ms (dns: ${dnsCheckDuration}ms) - DNS FAILED`);
 
+      const fallbackResult = await maybeFallbackToInitialDomain('dns failure');
+      if (fallbackResult) {
+        return fallbackResult;
+      }
+
       return {
         siteName,
         oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
@@ -898,6 +960,11 @@ export class BatchProcessor {
       // Heuristic is now handled in Phase 2 (unified queue)
       const siteDuration = Date.now() - siteStartTime;
       this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - FAILED`);
+
+      const fallbackResult = await maybeFallbackToInitialDomain(result.error || 'resolve failure');
+      if (fallbackResult) {
+        return fallbackResult;
+      }
 
       return {
         siteName,
@@ -943,6 +1010,11 @@ export class BatchProcessor {
           result.success = false;
           result.error = "Content probe failed";
 
+          const fallbackResult = await maybeFallbackToInitialDomain('content probe failed');
+          if (fallbackResult) {
+            return fallbackResult;
+          }
+
           return {
             siteName,
             oldHost: site.last_known_mirror ? this.resolver.normalizeAndExtractHost(site.last_known_mirror) : "",
@@ -979,6 +1051,12 @@ export class BatchProcessor {
         );
         const siteDuration = Date.now() - siteStartTime;
         this.logger.debug(siteName, `Check completed in ${siteDuration}ms (resolve: ${resolveDuration}ms) - PATH MISMATCH`);
+
+        const fallbackResult = await maybeFallbackToInitialDomain('path mismatch');
+        if (fallbackResult) {
+          return fallbackResult;
+        }
+
         return {
           siteName,
           oldHost,

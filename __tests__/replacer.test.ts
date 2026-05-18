@@ -715,6 +715,35 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
     expect(processed).toContain('extra.com');
     expect(processed).not.toContain('example001.com');
   });
+
+  test('processDomainList: unchanged primary + fresh additional domains prunes stale predicted mirrors', () => {
+    const unchangedHostMap = new Map([['example1013.pro', 'www.example1013.pro']]);
+    const emptyInitialMap = new Map<string, string>();
+    const priorityMap = new Map([
+      ['www.example1013.pro', {
+        initial: null,
+        lastKnown: 'www.example1013.pro',
+        oldHost: 'example1013.pro',
+        workingDomains: new Set(['www.example1013.pro', 'example1014.pro', 'example1015.pro']),
+      }],
+    ]) as Map<string, { initial: string | null; lastKnown: string; oldHost: string; workingDomains?: Set<string> }>;
+    const additionalDomainsMap = new Map([
+      ['example1013.pro', ['example1014.pro', 'example1015.pro']],
+    ]);
+
+    const { processed } = processDomainList(
+      ['example1013.pro', 'example1014.pro', 'example1016.pro'],
+      unchangedHostMap,
+      emptyInitialMap,
+      priorityMap as Map<string, { initial: string | null; lastKnown: string; oldHost: string }>,
+      additionalDomainsMap,
+    );
+
+    expect(processed).toContain('www.example1013.pro');
+    expect(processed).toContain('example1014.pro');
+    expect(processed).toContain('example1015.pro');
+    expect(processed).not.toContain('example1016.pro');
+  });
 });
 
 // ============================================================================
@@ -928,6 +957,84 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
     // (The fix in index.ts ensures this replacement is never created in the first place)
     expect(result).toContain('||example029.com^');
     expect(result).not.toContain('||t.co^$important');
+
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test('discovery-only startedHost does not replace shortener rules when oldHost is previous mirror', async () => {
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rdc-discovery-only-test-'));
+    const filterSubDir = path.join(tmpDir, 'TestFilter');
+    await fsp.mkdir(filterSubDir, { recursive: true });
+
+    const filterContent = [
+      '||short.link^$important',
+      '||example200.com^',
+      '@@||short.link^$domain=testsite.com',
+    ].join('\n');
+    await fsp.writeFile(path.join(filterSubDir, 'filter.txt'), filterContent, 'utf8');
+
+    const cfg: Config = {
+      ...mockConfig,
+      filtersdir: { repoPath: tmpDir, filterDirPattern: '*', filePattern: '*.txt' },
+      filtersdir_test: { repoPath: tmpDir, filterDirPattern: '*', filePattern: '*.txt' },
+    };
+
+    const replacements: ReplacementPair[] = [{
+      siteName: 'DiscoveryWatcher',
+      oldHost: 'example200.com',
+      newHost: 'example201.com',
+      startedHost: 'short.link',
+      checkDurationMs: 100,
+    }];
+
+    const replacer = new FilterReplacer(cfg, silentLogger, false);
+    await replacer.applyReplacements(replacements, false, new Map([['DiscoveryWatcher', 'example200.com']]));
+
+    const result = await fsp.readFile(path.join(filterSubDir, 'filter.txt'), 'utf8');
+
+    expect(result).toContain('||example201.com^');
+    expect(result).not.toContain('||example200.com^');
+    expect(result).toContain('||short.link^$important');
+    expect(result).toContain('@@||short.link^$domain=testsite.com');
+
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test('discovery-only startedHost does not replace bare gateway rules when oldHost is previous mirror', async () => {
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rdc-gateway-discovery-test-'));
+    const filterSubDir = path.join(tmpDir, 'TestFilter');
+    await fsp.mkdir(filterSubDir, { recursive: true });
+
+    const filterContent = [
+      '||gateway.example^',
+      '||mirror085.example^',
+      '@@||gateway.example^$domain=testsite.com',
+    ].join('\n');
+    await fsp.writeFile(path.join(filterSubDir, 'filter.txt'), filterContent, 'utf8');
+
+    const cfg: Config = {
+      ...mockConfig,
+      filtersdir: { repoPath: tmpDir, filterDirPattern: '*', filePattern: '*.txt' },
+      filtersdir_test: { repoPath: tmpDir, filterDirPattern: '*', filePattern: '*.txt' },
+    };
+
+    const replacements: ReplacementPair[] = [{
+      siteName: 'GatewayWatcher',
+      oldHost: 'mirror085.example',
+      newHost: 'mirror086.example',
+      startedHost: 'gateway.example',
+      checkDurationMs: 100,
+    }];
+
+    const replacer = new FilterReplacer(cfg, silentLogger, false);
+    await replacer.applyReplacements(replacements, false, new Map([['GatewayWatcher', 'mirror085.example']]));
+
+    const result = await fsp.readFile(path.join(filterSubDir, 'filter.txt'), 'utf8');
+
+    expect(result).toContain('||mirror086.example^');
+    expect(result).not.toContain('||mirror085.example^');
+    expect(result).toContain('||gateway.example^');
+    expect(result).toContain('@@||gateway.example^$domain=testsite.com');
 
     await fsp.rm(tmpDir, { recursive: true, force: true });
   });

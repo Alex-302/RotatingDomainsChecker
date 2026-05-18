@@ -210,6 +210,9 @@ sites:
                                         # The redirect target becomes last_known_mirror. The hostname from the
                                         # shortener URL (e.g., abc.com) will NOT be replaced in filter files (only
                                         # the final resolved domain is used in replacement).
+    replace_initial_domain: true        # Optional. Applies only to bare initial_domain values without a path.
+                                        # Set to false for stable gateway domains that should remain in filters
+                                        # while only the previous last_known_mirror is replaced.
     last_known_mirror: "example.com"    # Last working mirror (auto-updated by script).
                                         # With force_search_ahead, always set to the naturally
                                         # smallest domain among all found working mirrors.
@@ -396,6 +399,26 @@ Heuristic candidate search is always triggered regardless of whether the current
 `last_known_mirror` is always set to the **naturally smallest** domain among all collected working mirrors (e.g. `example9.live` wins over `example18.live`, `example18.live` wins over `example20.live`), ensuring deterministic selection even when parallel HTTP checks complete in arbitrary order.
 
 If `initial_domain` is a redirect shortener or URL without a numeric pattern (e.g. `https://ksln.link/abc`), heuristic candidate generation automatically falls back to `last_known_mirror` to extract the pattern.
+
+If `initial_domain` is a bare gateway domain that should be used only as an entry point, set `replace_initial_domain: false`. In that mode the gateway host is kept in filters, and replacements are applied only from the previous `last_known_mirror` to the newly resolved mirror.
+
+Example: suppose your filters intentionally contain `||srcdomain.is^` because it is a stable landing domain for users, but the actual rotating mirror changes from `destdomain85.cfd` to `destdomain86.cfd`. With this watcher:
+
+```yaml
+sites:
+  Example site:
+    initial_domain: srcdomain.is
+    replace_initial_domain: false
+    last_known_mirror: destdomain85.cfd
+```
+
+and redirect result:
+
+```text
+srcdomain.is -> destdomain86.cfd
+```
+
+the script will update `last_known_mirror` to `destdomain86.cfd` and replace `destdomain85.cfd -> destdomain86.cfd` in filters, but it will NOT replace `srcdomain.is` itself. This is useful when the gateway domain should stay stable in filter rules, while only the current mirror domain rotates.
 
 **Without `force_search_ahead` (default):**
 

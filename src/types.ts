@@ -67,6 +67,8 @@ export interface Config {
 export interface WatcherSite {
   initial_domain?: string;
   last_known_mirror: string;
+  /** Treat bare initial_domain as discovery-only entrypoint and do not replace it in filters */
+  replace_initial_domain?: boolean;
   path?: string;
   probe_text?: string[];
   /** Disable heuristic fallback for this site */
