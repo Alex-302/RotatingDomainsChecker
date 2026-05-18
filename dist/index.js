@@ -17367,10 +17367,6 @@ class FilterReplacer {
             if (!hostMap.has(r.oldHost)) {
                 hostMap.set(r.oldHost, r.newHost);
             }
-            // Also map initial_domain (startedHost) to newHost
-            if (r.startedHost && r.startedHost !== r.oldHost && !hostMap.has(r.startedHost)) {
-                hostMap.set(r.startedHost, r.newHost);
-            }
         }
         // Build additionalDomainsMap: primary domain → additional domains from force_search_ahead + patternChangedDomain
         // Key is normalized primary domain, value is array of additional domains to add to filter lines
@@ -17421,7 +17417,7 @@ class FilterReplacer {
                 // Only set once per site (use first occurrence)
                 if (!priorityMap.has(r.newHost)) {
                     priorityMap.set(r.newHost, {
-                        initial: r.startedHost || null,
+                        initial: null,
                         lastKnown: r.newHost,
                         oldHost: r.oldHost,
                         workingDomains: siteWorkingDomains.get(r.siteName) || new Set(),
@@ -18185,6 +18181,75 @@ function selectFirstByOrder(newHost, additionalDomains) {
     all.sort(naturalCompare);
     return all[0];
 }
+function extractHostname(value) {
+    if (!value)
+        return null;
+    try {
+        const url = value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`;
+        return new URL(url).hostname.toLowerCase();
+    }
+    catch {
+        const hostname = value.split('/')[0]?.trim().toLowerCase();
+        return hostname || null;
+    }
+}
+function hasNonRootPath(value) {
+    if (!value)
+        return false;
+    try {
+        const url = value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`;
+        return new URL(url).pathname !== '/';
+    }
+    catch {
+        return value.includes('/');
+    }
+}
+function isDiscoveryOnlyInitialDomain(site) {
+    if (!site.initial_domain)
+        return false;
+    if (hasNonRootPath(site.initial_domain))
+        return true;
+    return site.replace_initial_domain === false;
+}
+function getReplacementSources(site, previousLastKnownMirror) {
+    const sources = [];
+    const previousMirrorHost = extractHostname(previousLastKnownMirror);
+    if (previousMirrorHost) {
+        sources.push(previousMirrorHost);
+    }
+    if (!site.initial_domain || isDiscoveryOnlyInitialDomain(site)) {
+        return [...new Set(sources)];
+    }
+    const initialHost = extractHostname(site.initial_domain);
+    if (initialHost) {
+        sources.unshift(initialHost);
+    }
+    return [...new Set(sources)];
+}
+function addReplacementEntries(summary, siteName, replacementSources, primaryNewHost, startedHost, checkDurationMs, patternChangedDomain, additionalDomains) {
+    for (const oldHost of replacementSources) {
+        summary.replacements.push({
+            oldHost,
+            newHost: primaryNewHost,
+            siteName,
+            startedHost,
+            checkDurationMs,
+            patternChangedDomain,
+        });
+        for (const additionalDomain of additionalDomains || []) {
+            if (additionalDomain === primaryNewHost)
+                continue;
+            summary.replacements.push({
+                oldHost,
+                newHost: additionalDomain,
+                siteName,
+                startedHost,
+                checkDurationMs,
+                patternChangedDomain,
+            });
+        }
+    }
+}
 function formatDateTime(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -18388,31 +18453,11 @@ async function main() {
                 const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
                     ? site.heuristic_history[site.heuristic_history.length - 1]
                     : undefined;
-                // Primary replacement entry uses effectiveNewHostAntibot
-                summary.replacements.push({
-                    oldHost: result.oldHost,
-                    newHost: effectiveNewHostAntibot,
-                    siteName: result.siteName,
-                    startedHost: result.startedHost || "",
-                    checkDurationMs: result.checkDurationMs,
-                    patternChangedDomain,
-                });
-                // Additional working domains OTHER than effectiveNewHostAntibot
                 const allWorkingDomainsAntibot = [result.newHost, ...(result.additionalWorkingDomains || [])];
-                for (const additionalDomain of allWorkingDomainsAntibot) {
-                    if (additionalDomain === effectiveNewHostAntibot)
-                        continue;
-                    summary.replacements.push({
-                        oldHost: result.oldHost,
-                        newHost: additionalDomain,
-                        siteName: result.siteName,
-                        startedHost: result.startedHost || "",
-                        checkDurationMs: result.checkDurationMs,
-                        patternChangedDomain,
-                    });
-                }
-                // Update watcher
                 const oldLastKnownMirrorAntibot = site.last_known_mirror;
+                const replacementSources = getReplacementSources(site, oldLastKnownMirrorAntibot);
+                addReplacementEntries(summary, result.siteName, replacementSources, effectiveNewHostAntibot, result.startedHost || "", result.checkDurationMs, patternChangedDomain, allWorkingDomainsAntibot);
+                // Update watcher
                 site.last_known_mirror = effectiveNewHostAntibot;
                 if (result.hostChanged && !result.historyUpdated) {
                     processor.updateDomainHistory(site, effectiveNewHostAntibot, oldLastKnownMirrorAntibot);
@@ -18443,30 +18488,10 @@ async function main() {
                     : undefined;
                 // Compute effective newHost with selectFirstByOrder BEFORE building replacements
                 const effectiveNewHost = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
-                // Primary replacement entry uses effectiveNewHost
-                summary.replacements.push({
-                    oldHost: result.oldHost,
-                    newHost: effectiveNewHost,
-                    siteName: result.siteName,
-                    startedHost: result.startedHost || "",
-                    checkDurationMs: result.checkDurationMs,
-                    patternChangedDomain,
-                });
-                // Add replacements for additional working domains (force_search_ahead)
-                // These are domains OTHER than effectiveNewHost
                 const allWorkingDomains = [result.newHost, ...(result.additionalWorkingDomains || [])];
-                for (const additionalDomain of allWorkingDomains) {
-                    if (additionalDomain === effectiveNewHost)
-                        continue; // Skip, already added above
-                    summary.replacements.push({
-                        oldHost: result.oldHost,
-                        newHost: additionalDomain,
-                        siteName: result.siteName,
-                        startedHost: result.startedHost || "",
-                        checkDurationMs: result.checkDurationMs,
-                        patternChangedDomain,
-                    });
-                }
+                const oldLastKnownMirror = site.last_known_mirror;
+                const replacementSources = getReplacementSources(site, oldLastKnownMirror);
+                addReplacementEntries(summary, result.siteName, replacementSources, effectiveNewHost, result.startedHost || "", result.checkDurationMs, patternChangedDomain, allWorkingDomains);
                 // Update watcher on successful change
                 // Always save only the hostname (domain), regardless of initial_domain format
                 site.last_known_mirror = effectiveNewHost;
@@ -18499,70 +18524,6 @@ async function main() {
             delete site.failed_days;
             delete site.failed_since;
             delete site.potentially_dead; // Remove flag on success
-        }
-    }
-    // Add replacements for initial_domain -> last_known_mirror if they differ
-    // This ensures filters always use the current working mirror, even when no change occurred
-    for (const result of results) {
-        const site = watchers.sites[result.siteName];
-        if (!site)
-            continue;
-        // Skip if failed or no last_known_mirror
-        if (!site.last_known_mirror || site.potentially_dead)
-            continue;
-        // If the final resolved host matches last_known_mirror, nothing changed — skip
-        if (result.newHost && result.newHost === site.last_known_mirror)
-            continue;
-        // Extract domain from initial_domain for comparison
-        let initialDomain = site.initial_domain;
-        if (initialDomain) {
-            // Skip initial_domain values that contain a path (e.g. https://voe.sx/e/abc123, t.co/xyz).
-            // These are redirect shorteners used only as entry points for resolution — their hostname
-            // must NOT be added to the replacement map, as it would replace unrelated filter rules
-            // (e.g. all ||voe.sx^ or ||t.co^ occurrences).
-            const hasPath = (() => {
-                try {
-                    const url = initialDomain.startsWith('http') ? initialDomain : `https://${initialDomain}`;
-                    return new URL(url).pathname !== '/';
-                }
-                catch {
-                    return initialDomain.includes('/');
-                }
-            })();
-            if (hasPath)
-                continue;
-            // initial_domain is a plain domain (no path) — extract hostname for comparison
-            try {
-                const url = initialDomain.startsWith('http') ? initialDomain : `https://${initialDomain}`;
-                initialDomain = new URL(url).hostname;
-            }
-            catch {
-                // already a bare domain, use as-is
-            }
-            // Extract hostname from last_known_mirror
-            let lastKnownDomain = site.last_known_mirror;
-            if (lastKnownDomain.includes('/')) {
-                try {
-                    const url = lastKnownDomain.startsWith('http') ? lastKnownDomain : `https://${lastKnownDomain}`;
-                    lastKnownDomain = new URL(url).hostname;
-                }
-                catch {
-                    lastKnownDomain = lastKnownDomain.split('/')[0];
-                }
-            }
-            // Add replacement if domains differ and not already in replacements
-            if (initialDomain !== lastKnownDomain) {
-                const alreadyExists = summary.replacements.some(r => r.siteName === result.siteName && r.oldHost === initialDomain);
-                if (!alreadyExists) {
-                    summary.replacements.push({
-                        oldHost: initialDomain,
-                        newHost: lastKnownDomain,
-                        siteName: result.siteName,
-                        startedHost: result.startedHost || initialDomain,
-                        checkDurationMs: result.checkDurationMs,
-                    });
-                }
-            }
         }
     }
     // Apply replacements first (to show table before summary)

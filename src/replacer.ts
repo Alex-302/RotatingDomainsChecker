@@ -304,10 +304,6 @@ export class FilterReplacer {
       if (!hostMap.has(r.oldHost)) {
         hostMap.set(r.oldHost, r.newHost);
       }
-      // Also map initial_domain (startedHost) to newHost
-      if (r.startedHost && r.startedHost !== r.oldHost && !hostMap.has(r.startedHost)) {
-        hostMap.set(r.startedHost, r.newHost);
-      }
     }
 
     // Build additionalDomainsMap: primary domain → additional domains from force_search_ahead + patternChangedDomain
@@ -361,7 +357,7 @@ export class FilterReplacer {
         // Only set once per site (use first occurrence)
         if (!priorityMap.has(r.newHost)) {
           priorityMap.set(r.newHost, {
-            initial: r.startedHost || null,
+            initial: null,
             lastKnown: r.newHost,
             oldHost: r.oldHost,
             workingDomains: siteWorkingDomains.get(r.siteName) || new Set(),
