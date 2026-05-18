@@ -147,22 +147,21 @@ export class BatchProcessor {
     }
     const timeout = dnsConfig.timeout;
     const retryOnce = dnsConfig.retryOnce;
-    const raceWithTimeout = (promise: Promise<unknown>, ms: number): Promise<unknown> => {
-      let timerId: ReturnType<typeof setTimeout>;
-      const timeoutPromise = new Promise<never>((_, rej) => {
-        timerId = setTimeout(() => rej(new Error("DNS timeout")), ms);
-      });
-      return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timerId));
-    };
     try {
       const hostname = new URL(url).hostname;
-      await raceWithTimeout(dns.lookup(hostname), timeout);
+      await Promise.race([
+        dns.resolve(hostname),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), timeout))
+      ]);
       return true;
     } catch (err: any) {
       if (retryOnce && err.code === "EAI_AGAIN") {
         try {
           const hostname = new URL(url).hostname;
-          await raceWithTimeout(dns.lookup(hostname), timeout);
+          await Promise.race([
+            dns.resolve(hostname),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 2500))
+          ]);
           return true;
         } catch {
           return false;

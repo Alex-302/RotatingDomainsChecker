@@ -12,7 +12,7 @@ import { appendFileSync } from "fs";
 import { promises as dns } from "dns";
 
 // Version
-const VERSION = "1.1.22";
+const VERSION = "1.1.22-test";
 
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
