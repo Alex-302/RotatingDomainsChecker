@@ -18133,7 +18133,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.22-test";
+const VERSION = "1.1.23";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
@@ -18502,16 +18502,28 @@ async function main() {
         // Extract domain from initial_domain for comparison
         let initialDomain = site.initial_domain;
         if (initialDomain) {
-            // Extract hostname from URL if initial_domain contains path
-            if (initialDomain.includes('/')) {
+            // Skip initial_domain values that contain a path (e.g. https://voe.sx/e/abc123, t.co/xyz).
+            // These are redirect shorteners used only as entry points for resolution — their hostname
+            // must NOT be added to the replacement map, as it would replace unrelated filter rules
+            // (e.g. all ||voe.sx^ or ||t.co^ occurrences).
+            const hasPath = (() => {
                 try {
                     const url = initialDomain.startsWith('http') ? initialDomain : `https://${initialDomain}`;
-                    initialDomain = new URL(url).hostname;
+                    return new URL(url).pathname !== '/';
                 }
                 catch {
-                    // If URL parsing fails, try to extract domain manually
-                    initialDomain = initialDomain.split('/')[0];
+                    return initialDomain.includes('/');
                 }
+            })();
+            if (hasPath)
+                continue;
+            // initial_domain is a plain domain (no path) — extract hostname for comparison
+            try {
+                const url = initialDomain.startsWith('http') ? initialDomain : `https://${initialDomain}`;
+                initialDomain = new URL(url).hostname;
+            }
+            catch {
+                // already a bare domain, use as-is
             }
             // Extract hostname from last_known_mirror
             let lastKnownDomain = site.last_known_mirror;

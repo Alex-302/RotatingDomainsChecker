@@ -205,6 +205,11 @@ sites:
                                         # (e.g. "https://t.me/s/channel" or "https://short.link/abc").
                                         # Recommended for new sites. If this URL has no numeric pattern,
                                         # heuristic candidate generation automatically falls back to last_known_mirror.
+                                        # IMPORTANT: if initial_domain contains a path (e.g., https://voe.sx/e/xyz),
+                                        # it's used only as a redirect entry point to find the current working mirror.
+                                        # The redirect target becomes last_known_mirror. The hostname from the
+                                        # shortener URL (e.g., voe.sx) will NOT be replaced in filter files (only
+                                        # the final resolved domain is used in replacement).
     last_known_mirror: "example.com"    # Last working mirror (auto-updated by script).
                                         # With force_search_ahead, always set to the naturally
                                         # smallest domain among all found working mirrors.
