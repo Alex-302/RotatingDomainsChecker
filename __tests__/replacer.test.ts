@@ -429,14 +429,14 @@ describe('2.11 findTargetFiles', () => {
   test('finds .txt files in *Filter directories', async () => {
     // Use the actual TestFilters directory in the repo
     const root = process.cwd();
-    const files = await findTargetFiles(root + '/TestFilters', 'Filter', '*.txt');
+    const files = await findTargetFiles(root + '/TestFilters', '*Filter', '*.txt');
     expect(files.length).toBeGreaterThan(0);
     expect(files.some(f => f.endsWith('testfilter.txt'))).toBe(true);
   });
 
   test('does not include .rar files', async () => {
     const root = process.cwd();
-    const files = await findTargetFiles(root + '/TestFilters', 'Filter', '*.txt');
+    const files = await findTargetFiles(root + '/TestFilters', '*Filter', '*.txt');
     expect(files.every(f => f.endsWith('.txt'))).toBe(true);
   });
 });

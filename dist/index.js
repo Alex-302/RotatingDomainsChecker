@@ -17508,7 +17508,30 @@ async function findTargetFiles(root, dirPattern, filePattern) {
         for (const e of entries) {
             const full = external_path_default().join(dir, e.name);
             if (e.isDirectory()) {
-                if (wantDirSuffix && e.name.endsWith(wantDirSuffix)) {
+                // Glob-like matching for filterDirPattern:
+                //   "Filter*" → startsWith, "*Filter" → endsWith
+                //   "*Filter*" → includes, "Filter" → exact match
+                //   "*" → all dirs
+                const hasStarSuffix = dirPattern.endsWith("*");
+                const hasStarPrefix = dirPattern.startsWith("*");
+                const needle = wantDirSuffix.replace(/\*/g, "");
+                let dirMatch = false;
+                if (!needle) {
+                    dirMatch = true; // "*" → all dirs
+                }
+                else if (hasStarPrefix && hasStarSuffix) {
+                    dirMatch = e.name.includes(needle);
+                }
+                else if (hasStarSuffix) {
+                    dirMatch = e.name.startsWith(needle); // "Filter*" = starts with Filter
+                }
+                else if (hasStarPrefix) {
+                    dirMatch = e.name.endsWith(needle); // "*Filter" = ends with Filter
+                }
+                else {
+                    dirMatch = e.name === needle;
+                }
+                if (dirMatch) {
                     await collectTxtRecursive(full);
                 }
                 await walk(full);
@@ -18110,7 +18133,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.20";
+const VERSION = "1.1.21";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
