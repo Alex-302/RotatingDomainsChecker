@@ -15654,8 +15654,29 @@ class Logger {
     }
 }
 
-;// CONCATENATED MODULE: external "dns"
-const external_dns_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("dns");
+;// CONCATENATED MODULE: external "node:dns/promises"
+const promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:dns/promises");
+;// CONCATENATED MODULE: ./src/dnsResolver.ts
+
+const FORCED_DNS_SERVERS = ['8.8.8.8', '1.1.1.1'];
+const forcedDnsResolver = new promises_namespaceObject.Resolver();
+forcedDnsResolver.setServers([...FORCED_DNS_SERVERS]);
+function getForcedDnsServers() {
+    return forcedDnsResolver.getServers();
+}
+async function resolveHostname(hostname, timeoutMs) {
+    const resolvePromise = forcedDnsResolver.resolve(hostname);
+    if (timeoutMs === undefined) {
+        return resolvePromise;
+    }
+    return Promise.race([
+        resolvePromise,
+        new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('DNS timeout')), timeoutMs);
+        }),
+    ]);
+}
+
 ;// CONCATENATED MODULE: ./src/batch.ts
 
 
@@ -15794,22 +15815,15 @@ class BatchProcessor {
         }
         const timeout = dnsConfig.timeout;
         const retryOnce = dnsConfig.retryOnce;
+        const hostname = new URL(url).hostname;
         try {
-            const hostname = new URL(url).hostname;
-            await Promise.race([
-                external_dns_namespaceObject.promises.resolve(hostname),
-                new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), timeout))
-            ]);
+            await resolveHostname(hostname, timeout);
             return true;
         }
         catch (err) {
             if (retryOnce && err.code === "EAI_AGAIN") {
                 try {
-                    const hostname = new URL(url).hostname;
-                    await Promise.race([
-                        external_dns_namespaceObject.promises.resolve(hostname),
-                        new Promise((_, rej) => setTimeout(() => rej(new Error("DNS timeout")), 2500))
-                    ]);
+                    await resolveHostname(hostname, 2500);
                     return true;
                 }
                 catch {
@@ -18133,7 +18147,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.23";
+const VERSION = "1.1.24";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
@@ -18207,7 +18221,7 @@ function calculateDaysSince(dateStr) {
  */
 async function dnsPreflightCheck(logger) {
     const preflightHosts = ["google.com", "cloudflare.com", "adguard.com"];
-    const preflightResults = await Promise.all(preflightHosts.map(host => external_dns_namespaceObject.promises.lookup(host).then(() => true, () => false)));
+    const preflightResults = await Promise.all(preflightHosts.map(host => resolveHostname(host).then(() => true, () => false)));
     const resolvedCount = preflightResults.filter(ok => ok).length;
     if (resolvedCount < 2) {
         logger?.logGlobal(0, `FATAL: DNS pre-flight check failed — only ${resolvedCount}/${preflightHosts.length} hosts resolved: ${preflightHosts.join(", ")}. Check network/DNS availability.`);

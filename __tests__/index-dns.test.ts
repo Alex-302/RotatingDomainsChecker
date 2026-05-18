@@ -1,26 +1,31 @@
 // Tests for DNS pre-flight check (dnsPreflightCheck function)
 import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 
-const mockedDnsLookup = jest.fn().mockResolvedValue({ address: '127.0.0.1', family: 4 } as never);
-jest.unstable_mockModule('dns', () => ({
-  promises: {
-    resolve: jest.fn(),
-    lookup: mockedDnsLookup,
-  },
+const mockedDnsResolve = jest.fn().mockResolvedValue(['127.0.0.1'] as never);
+const mockedSetServers = jest.fn();
+const processForTest = (globalThis as unknown as { process: { exit: (code?: number) => never } }).process;
+
+jest.unstable_mockModule('node:dns/promises', () => ({
+  Resolver: jest.fn().mockImplementation(() => ({
+    resolve: mockedDnsResolve,
+    setServers: mockedSetServers,
+    getServers: () => ['8.8.8.8', '1.1.1.1'],
+  })),
 }));
 
 // Dynamic import — dnsPreflightCheck is exported from index.ts
 const { dnsPreflightCheck } = await import('../src/index.js');
 
 describe('dnsPreflightCheck', () => {
-  let exitSpy: jest.SpiedFunction<typeof process.exit>;
+  let exitSpy: jest.SpiedFunction<(code?: number) => never>;
   let logSpy: jest.Mock;
   let logger: { logGlobal: jest.Mock };
 
   beforeEach(() => {
-    mockedDnsLookup.mockReset();
+    mockedDnsResolve.mockReset();
+    mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
 
-    exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
+    exitSpy = jest.spyOn(processForTest, 'exit').mockImplementation(() => {
       throw new Error('process.exit called');
     }) as never;
 
@@ -33,7 +38,7 @@ describe('dnsPreflightCheck', () => {
   });
 
   test('all 3 DNS fail → process.exit(1) and logs FATAL message', async () => {
-    mockedDnsLookup.mockRejectedValue(new Error('ENOTFOUND') as never);
+    mockedDnsResolve.mockRejectedValue(new Error('ENOTFOUND') as never);
 
     await expect(dnsPreflightCheck(logger)).rejects.toThrow('process.exit called');
     expect(exitSpy).toHaveBeenCalledWith(1);
@@ -42,8 +47,8 @@ describe('dnsPreflightCheck', () => {
   });
 
   test('only 1 of 3 resolves → process.exit(1)', async () => {
-    mockedDnsLookup
-      .mockResolvedValueOnce({ address: '8.8.8.8', family: 4 } as never)  // google.com OK
+    mockedDnsResolve
+      .mockResolvedValueOnce(['8.8.8.8'] as never)                         // google.com OK
       .mockRejectedValueOnce(new Error('ENOTFOUND') as never)             // cloudflare.com fail
       .mockRejectedValueOnce(new Error('ENOTFOUND') as never);            // adguard.com fail
 
@@ -53,9 +58,9 @@ describe('dnsPreflightCheck', () => {
   });
 
   test('2 of 3 resolve → resolves without exit', async () => {
-    mockedDnsLookup
-      .mockResolvedValueOnce({ address: '8.8.8.8', family: 4 } as never)  // google.com OK
-      .mockResolvedValueOnce({ address: '1.1.1.1', family: 4 } as never)  // cloudflare.com OK
+    mockedDnsResolve
+      .mockResolvedValueOnce(['8.8.8.8'] as never)                        // google.com OK
+      .mockResolvedValueOnce(['1.1.1.1'] as never)                        // cloudflare.com OK
       .mockRejectedValueOnce(new Error('ENOTFOUND') as never);            // adguard.com fail
 
     await dnsPreflightCheck(logger);
@@ -64,7 +69,7 @@ describe('dnsPreflightCheck', () => {
   });
 
   test('all 3 resolve → resolves without exit', async () => {
-    mockedDnsLookup.mockResolvedValue({ address: '127.0.0.1', family: 4 } as never);
+    mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
 
     await dnsPreflightCheck(logger);
 
@@ -72,10 +77,10 @@ describe('dnsPreflightCheck', () => {
   });
 
   test('google.com fail, cloudflare.com OK, adguard.com OK → resolves without exit', async () => {
-    mockedDnsLookup
+    mockedDnsResolve
       .mockRejectedValueOnce(new Error('ENOTFOUND') as never)             // google.com fail
-      .mockResolvedValueOnce({ address: '1.1.1.1', family: 4 } as never)  // cloudflare.com OK
-      .mockResolvedValueOnce({ address: '127.0.0.1', family: 4 } as never); // adguard.com OK
+      .mockResolvedValueOnce(['1.1.1.1'] as never)                        // cloudflare.com OK
+      .mockResolvedValueOnce(['127.0.0.1'] as never);                     // adguard.com OK
 
     await dnsPreflightCheck(logger);
 
@@ -83,7 +88,7 @@ describe('dnsPreflightCheck', () => {
   });
 
   test('FATAL log includes all host names', async () => {
-    mockedDnsLookup.mockRejectedValue(new Error('ENOTFOUND') as never);
+    mockedDnsResolve.mockRejectedValue(new Error('ENOTFOUND') as never);
 
     await expect(dnsPreflightCheck(logger)).rejects.toThrow('process.exit called');
     const logMsg = logSpy.mock.calls[0]?.[1] ?? '';
@@ -93,12 +98,18 @@ describe('dnsPreflightCheck', () => {
   });
 
   test('works without logger (no error when logger undefined)', async () => {
-    mockedDnsLookup
+    mockedDnsResolve
       .mockRejectedValueOnce(new Error('ENOTFOUND') as never)
-      .mockResolvedValueOnce({ address: '1.1.1.1', family: 4 } as never)
-      .mockResolvedValueOnce({ address: '127.0.0.1', family: 4 } as never);
+      .mockResolvedValueOnce(['1.1.1.1'] as never)
+      .mockResolvedValueOnce(['127.0.0.1'] as never);
 
     await expect(dnsPreflightCheck(undefined)).resolves.toBeUndefined();
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  test('configures forced DNS servers on resolver creation', async () => {
+    await dnsPreflightCheck(logger);
+
+    expect(mockedSetServers).toHaveBeenCalledWith(['8.8.8.8', '1.1.1.1']);
   });
 });
