@@ -880,6 +880,58 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
     jest.restoreAllMocks();
   });
 
+  test('shortener hostname as oldHost would corrupt filter — guard in index.ts must prevent this', async () => {
+    // REGRESSION TEST for critical bug (fixed in index.ts):
+    // If initial_domain = "https://t.co/somepath", code previously extracted "t.co" as the
+    // hostname and added it to replacements as oldHost. This caused ALL ||t.co^ rules in
+    // filter files to be replaced with the watcher's current mirror domain — corrupting filters.
+    //
+    // The fix in index.ts: skip adding initial_domain replacement when initial_domain has a
+    // path component (i.e. it's a redirect shortener URL, not a plain domain like "example.com").
+    //
+    // This test verifies that IF such a replacement were passed to FilterReplacer (which should
+    // never happen after the fix), it WOULD replace ||t.co^ in the filter — proving the upstream
+    // guard is essential.
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rdc-shortener-test-'));
+    const filterSubDir = path.join(tmpDir, 'TestFilter');
+    await fsp.mkdir(filterSubDir, { recursive: true });
+
+    // Filter file that has legitimate t.co blocking rules
+    const filterContent = [
+      '||t.co^$important',
+      '||example029.com^',
+      '@@||t.co^$domain=twitter.com',
+    ].join('\n');
+    await fsp.writeFile(path.join(filterSubDir, 'filter.txt'), filterContent, 'utf8');
+
+    const cfg: Config = {
+      ...mockConfig,
+      filtersdir: { repoPath: tmpDir, filterDirPattern: '*', filePattern: '*.txt' },
+      filtersdir_test: { repoPath: tmpDir, filterDirPattern: '*', filePattern: '*.txt' },
+    };
+
+    // Simulate the WRONG behavior: shortener hostname as oldHost
+    const badReplacements: ReplacementPair[] = [{
+      siteName: 'SomeWatcher',
+      oldHost: 't.co',            // extracted from "https://t.co/somepath" — WRONG!
+      newHost: 'example029.com',  // last_known_mirror of the watcher
+      startedHost: 't.co',
+      checkDurationMs: 100,
+    }];
+
+    const replacer = new FilterReplacer(cfg, silentLogger, false);
+    await replacer.applyReplacements(badReplacements, false, new Map([['SomeWatcher', 'example028.com']]));
+
+    const result = await fsp.readFile(path.join(filterSubDir, 'filter.txt'), 'utf8');
+
+    // This confirms what the bug WOULD cause: t.co rules get corrupted
+    // (The fix in index.ts ensures this replacement is never created in the first place)
+    expect(result).toContain('||example029.com^');
+    expect(result).not.toContain('||t.co^$important');
+
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
   test('multiple sites: mix of real changes and entry point resolutions', async () => {
     // Site1: entry point → same domain (NO change)
     // Site2: entry point → new domain (change)
