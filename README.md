@@ -163,7 +163,7 @@ git:
 # Filters directory settings
 filtersdir:
   repoPath: "./"                    # Path to filters directory
-  filterDirPattern: "*Filter"       # Directories ending with "Filter"
+  filterDirPattern: "*Filter"       # Glob: *Filter - ends with, *Filter* - contains, Filter - exact, * - all
   filePattern: "*.txt"
 
 # HTTP settings
@@ -273,7 +273,7 @@ git:
 
 filtersdir:
   repoPath: "./"          # Path to your filters directory
-  filterDirPattern: "*Filter"
+  filterDirPattern: "*Filter"  # Glob: *Filter - ends with, *Filter* - contains, Filter - exact, * - all
   filePattern: "*.txt"
 ```
 
