@@ -17435,6 +17435,7 @@ class FilterReplacer {
                 this._logger.info("replacer", `Skip unreadable file: ${file}`);
                 continue;
             }
+            const lineEnding = content.includes('\r\n') ? '\r\n' : '\n';
             const lines = content.split(/\r?\n/);
             let changed = false;
             const lineChanges = [];
@@ -17446,13 +17447,13 @@ class FilterReplacer {
                     lines.splice(i, 1, ...updatedLines);
                     changed = true;
                     totalLineEdits++;
-                    lineChanges.push({ line: i + 1, before: original, after: updatedLines.join('\n') });
+                    lineChanges.push({ line: i + 1, before: original, after: updatedLines.join(lineEnding) });
                 }
             }
             if (changed) {
                 modifiedFiles++;
                 if (!dryRun) {
-                    await external_fs_namespaceObject.promises.writeFile(file, lines.join("\n"), "utf-8");
+                    await external_fs_namespaceObject.promises.writeFile(file, lines.join(lineEnding), "utf-8");
                 }
                 fileChanges.push({ file, changes: lineChanges });
             }
@@ -18133,7 +18134,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.21";
+const VERSION = "1.1.22";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
