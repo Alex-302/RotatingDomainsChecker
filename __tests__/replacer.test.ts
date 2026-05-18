@@ -715,6 +715,35 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
     expect(processed).toContain('extra.com');
     expect(processed).not.toContain('example001.com');
   });
+
+  test('processDomainList: unchanged primary + fresh additional domains prunes stale predicted mirrors', () => {
+    const unchangedHostMap = new Map([['papazsports1013.pro', 'www.papazsports1013.pro']]);
+    const emptyInitialMap = new Map<string, string>();
+    const priorityMap = new Map([
+      ['www.papazsports1013.pro', {
+        initial: null,
+        lastKnown: 'www.papazsports1013.pro',
+        oldHost: 'papazsports1013.pro',
+        workingDomains: new Set(['www.papazsports1013.pro', 'papazsports1014.pro', 'papazsports1015.pro']),
+      }],
+    ]) as Map<string, { initial: string | null; lastKnown: string; oldHost: string; workingDomains?: Set<string> }>;
+    const additionalDomainsMap = new Map([
+      ['papazsports1013.pro', ['papazsports1014.pro', 'papazsports1015.pro']],
+    ]);
+
+    const { processed } = processDomainList(
+      ['papazsports1013.pro', 'papazsports1014.pro', 'papazsports1016.pro'],
+      unchangedHostMap,
+      emptyInitialMap,
+      priorityMap as Map<string, { initial: string | null; lastKnown: string; oldHost: string }>,
+      additionalDomainsMap,
+    );
+
+    expect(processed).toContain('www.papazsports1013.pro');
+    expect(processed).toContain('papazsports1014.pro');
+    expect(processed).toContain('papazsports1015.pro');
+    expect(processed).not.toContain('papazsports1016.pro');
+  });
 });
 
 // ============================================================================

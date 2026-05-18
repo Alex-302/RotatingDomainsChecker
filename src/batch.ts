@@ -4,6 +4,25 @@ import { ContentProbe } from './probe.js';
 import { Logger, LogLevel } from './logger.js';
 import { resolveHostname } from './dnsResolver.js';
 
+function naturalCompare(a: string, b: string): number {
+  const re = /(\d+)|(\D+)/g;
+  const chunksA = a.match(re) ?? [a];
+  const chunksB = b.match(re) ?? [b];
+  for (let i = 0; i < Math.max(chunksA.length, chunksB.length); i++) {
+    const ca = chunksA[i] ?? '';
+    const cb = chunksB[i] ?? '';
+    const na = parseInt(ca, 10);
+    const nb = parseInt(cb, 10);
+    if (!isNaN(na) && !isNaN(nb)) {
+      if (na !== nb) return na - nb;
+    } else {
+      if (ca < cb) return -1;
+      if (ca > cb) return 1;
+    }
+  }
+  return 0;
+}
+
 export class BatchProcessor {
   private probe: ContentProbe;
 
@@ -594,22 +613,34 @@ export class BatchProcessor {
             if (probeOk) {
               const oldHost = this.resolver.extractHostWithoutQuery(task.oldMirror);
               const newHost = result.finalHost.toLowerCase();
+              const candidateHost = this.resolver.extractHostWithoutQuery(task.candidateUrl).toLowerCase();
               const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
               this.logger.info(task.siteName, `Heuristic SUCCESS: ${task.candidateUrl}`);
               this.logger.info(task.siteName, `Heuristic redirect chain: ${chainFormatted}`);
 
-              // If force_search_ahead, collect the final working domain
-              // The finalHost is the domain that returned 200 OK, which is what we want
+              // If force_search_ahead, collect a unique working domain token for filter updates.
+              // When a candidate redirects to an already-known primary/final domain, keep the
+              // candidate host itself so filter domain lists can retain reachable aliases.
+              // When the final domain is new, keep the final host as before.
               if (task.site.force_search_ahead) {
                 if (!foundDomainsPerSite.has(task.siteIndex)) {
                   foundDomainsPerSite.set(task.siteIndex, []);
                 }
-                foundDomainsPerSite.get(task.siteIndex)!.push({
-                  domain: newHost,
-                  result,
-                  candidateUrl: task.candidateUrl,
-                });
-                this.logger.info(task.siteName, `force_search_ahead: collected working final domain ${newHost} from ${task.candidateUrl}`);
+                const currentDomains = foundDomainsPerSite.get(task.siteIndex)!;
+                const knownPrimary = results[task.siteIndex]?.newHost;
+                const alreadyKnownFinal = currentDomains.some(entry => entry.domain === newHost);
+                const collectedDomain = candidateHost !== newHost && ((knownPrimary && newHost === knownPrimary) || alreadyKnownFinal)
+                  ? candidateHost
+                  : newHost;
+
+                if (!currentDomains.some(entry => entry.domain === collectedDomain)) {
+                  currentDomains.push({
+                    domain: collectedDomain,
+                    result,
+                    candidateUrl: task.candidateUrl,
+                  });
+                  this.logger.info(task.siteName, `force_search_ahead: collected working domain ${collectedDomain} from ${task.candidateUrl} (final: ${newHost})`);
+                }
               }
 
               // Mark site as found (first success or non-force_search_ahead)
@@ -742,13 +773,16 @@ export class BatchProcessor {
           for (const [siteIndex, domains] of foundDomainsPerSite.entries()) {
             const siteName = siteEntries[siteIndex][0];
             if (results[siteIndex] && domains.length > 1) {
+              const uniqueSortedDomains = [...new Set(domains
+                .map((d: { domain: string }) => d.domain))]
+                .sort(naturalCompare);
+
               // Extract domain names excluding the first one (which is already in newHost)
               const firstDomain = results[siteIndex].newHost;
-              results[siteIndex].additionalWorkingDomains = domains
-                .map((d: { domain: string }) => d.domain)
+              results[siteIndex].additionalWorkingDomains = uniqueSortedDomains
                 .filter(domain => domain !== firstDomain);
 
-              this.logger.info(siteName, `force_search_ahead: collected ${domains.length} working domains: ${domains.map((d: { domain: string }) => d.domain).join(', ')}`);
+              this.logger.info(siteName, `force_search_ahead: collected ${uniqueSortedDomains.length} working domains: ${uniqueSortedDomains.join(', ')}`);
             }
           }
         }

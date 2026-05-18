@@ -1320,6 +1320,44 @@ describe('8. force_search_ahead scenarios', () => {
     expect(additional).toContain('different.com');
   });
 
+  test('8.6b force_search_ahead: if many candidates redirect to current primary, collect candidate hosts uniquely', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 4, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'testsite1013.pro',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'Test Site': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'testsite1013.pro') {
+        await new Promise(resolve => setTimeout(resolve, 15));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      if (host === 'testsite1014.pro') {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      if (host === 'testsite1015.pro') {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].newHost).toBe('www.testsite1013.pro');
+    expect(results[0].additionalWorkingDomains).toEqual(['testsite1014.pro', 'testsite1015.pro']);
+    expect(results[0].additionalWorkingDomains).not.toContain('www.testsite1013.pro');
+  });
+
   test('8.7 force_search_ahead + non-pattern initial_domain → falls back to last_known_mirror for candidates', async () => {
     // Reproduces bug: initial_domain is a redirect shortener (no numeric pattern),
     // so generateCandidates returns [] for it. Must fall back to last_known_mirror.

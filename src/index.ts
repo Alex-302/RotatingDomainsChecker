@@ -12,7 +12,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.1.24";
+const VERSION = "1.1.3";
 
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
@@ -397,8 +397,9 @@ export async function main() {
     } else if (result.shouldUpdate) {
       // Only update filters if check was successful
       if (result.result.success) {
+        const hasAdditionalWorkingDomains = Boolean(result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0);
         // Count as updated only if domain actually changed
-        if (result.hostChanged) {
+        if (result.hostChanged || hasAdditionalWorkingDomains) {
           summary.updated++;
         } else {
           summary.unchanged++;
@@ -559,6 +560,11 @@ export async function main() {
       if (!result.result.success) continue;
 
       const originalMirror = originalLastKnownMirrors.get(result.siteName);
+
+      const hasAdditionalWorkingDomains = Boolean(result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0);
+      if (hasAdditionalWorkingDomains) {
+        continue;
+      }
 
       if (originalMirror) {
         if (result.newHost === originalMirror) {
