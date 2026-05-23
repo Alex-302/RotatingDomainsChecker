@@ -3,7 +3,8 @@
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Rotating%20Domains%20Checker-blue?logo=github)](https://github.com/marketplace/actions/rotating-domains-checker)
 [![GitHub release](https://img.shields.io/github/v/release/Alex-302/RotatingDomainsChecker)](https://github.com/Alex-302/RotatingDomainsChecker/releases)
 
-Automates redirect checking for ad blocking filter lists. Tracks frequently changing domains and automatically updates filter rules. Available as both a standalone tool and a GitHub Action.
+AutomAutomates redirect checking for ad blocking filter lists. Tracks frequently changing domains and automatically
+updates filter rules. Available as both a standalone tool and a GitHub Action.
 
 ## Table of Contents
 
@@ -90,7 +91,8 @@ For advanced use cases (fork, customization), see the [Integration Guide](#integ
 ## Purpose
 
 - Track HTTP redirects to new website mirrors with loop protection
-- Follow JavaScript and `<meta>` refresh redirects (`location.replace()`, `window.location.href`, `location.href`, `<meta http-equiv="refresh">`)
+- Follow JavaScript and `<meta>` refresh redirects (`location.replace()`, `window.location.href`, `location.href`,
+  `<meta http-equiv="refresh">`)
 - Heuristics for sequentially numbered domains:
   - `domain[N].tld` - number after domain name (e.g., `example1916.com`)
   - `domain[N][text].tld` - number with text suffix (e.g., `example126aa.de`)
@@ -112,11 +114,13 @@ For advanced use cases (fork, customization), see the [Integration Guide](#integ
 
 See [Installation](#installation) for a minimal workflow you can copy directly.
 
-For a full workflow with all options (custom config path, filters path, comments), see [example-external-public.yml](.github/workflows/example-external-public.yml).
+For a full workflow with all options (custom config path, filters path, comments), see
+[example-external-public.yml](.github/workflows/example-external-public.yml).
 
 ### Required Setup
 
-Create `config.yml` and `watchers.yml` files in your repository root. See detailed field descriptions in the [Configuration](#configuration) section.
+Create `config.yml` and `watchers.yml` files in your repository root. See detailed field descriptions in the
+[Configuration](#configuration) section.
 
 ## Usage
 
@@ -131,18 +135,24 @@ Create `config.yml` and `watchers.yml` files in your repository root. See detail
 
 **Mode descriptions:**
 
-- **`prod_live`** (`npm run prod_live`) - Full production run: checks domains, updates files, creates commit/PR (based on `git.mode` in `config.yml`)
-- **`prod_dry`** (`npm run prod_dry`) - Production dry run: checks domains, shows commit message preview (no actual file modifications or git operations)
-- **`test_live`** (`npm run test_live`) - Test run with modifications: checks domains, updates test files only (skips git operations entirely)
-- **`test_dry`** (`npm run test_dry`) - Test dry run: checks domains, shows commit message preview for test files (no modifications or git operations)
+- **`prod_live`** (`npm run prod_live`) - Full production run: checks domains, updates files, creates commit/PR (based
+  on `git.mode` in `config.yml`)
+- **`prod_dry`** (`npm run prod_dry`) - Production dry run: checks domains, shows commit message preview (no actual
+  file modifications or git operations)
+- **`test_live`** (`npm run test_live`) - Test run with modifications: checks domains, updates test files only (skips
+  git operations entirely)
+- **`test_dry`** (`npm run test_dry`) - Test dry run: checks domains, shows commit message preview for test files (no
+  modifications or git operations)
 
 **Git operations:**
 
-- **Commit/PR** (`prod_live`) - Executes real git commands: creates commits or pull requests based on `git.mode` setting in `config.yml`
+- **Commit/PR** (`prod_live`) - Executes real git commands: creates commits or pull requests based on `git.mode`
+  setting in `config.yml`
 - **Simulated** (`prod_dry`, `test_dry`) - Generates and displays commit message, but doesn't execute git commands
 - **Skipped** (`test_live`) - Bypasses git code entirely for fast local testing with file modifications
 
-> **Note:** The `git.mode` setting in `config.yml` (`"prod"` for direct commit or `"debug"` for PR) only affects `prod_live` mode. Test modes always skip git operations.
+> **Note:** The `git.mode` setting in `config.yml` (`"prod"` for direct commit or `"debug"` for PR) only affects
+> `prod_live` mode. Test modes always skip git operations.
 
 ## Configuration
 
@@ -180,7 +190,7 @@ processing:
 
 # Global skip_text — skip domains whose response body contains these phrases (parked/expired domains)
 skip_text:
-  - "This domain is parked"
+  - This domain is parked
 
 # Logging
 logging:
@@ -223,8 +233,10 @@ sites:
                                         # or a different site. Automatically appended to last_known_mirror
                                         # and heuristic candidates if they lack a path (only "/").
                                         # If `path` is not set, no new behavior is introduced.
-    probe_text: "Example Domain"        # Key phrases for content verification (array or string)
-    skip_text: "This domain is parked"  # Skip domains containing this text (array or string)
+    probe_text:                         # Key phrases for content verification (YAML list; quotes optional)
+      - Example Domain
+    skip_text:                          # Skip domains containing these phrases (YAML list; quotes optional)
+      - This domain is parked
     skip_text_allow:                    # Allow specific phrases from global skip_text for this site
       - Redirecting...                  # Exact match exclusion — this phrase won't trigger skip
 
@@ -244,10 +256,10 @@ sites:
     failed_days: 0                      # Days since last failure
     potentially_dead: false             # Marked as potentially dead after many failures
 
-    # Advanced auto-generated fields (rarely needed)
-    pattern_changed: false              # Flag: site changed from pattern to non-pattern
-    heuristic_history: []               # History of working pattern domains (auto-updated when switching between pattern/non-pattern)
-    non_pattern_mirror: ""              # Current non-pattern mirror when pattern_changed=true
+    # Advanced auto-generated fields (currently NOT implemented consistently; shown here only as future/runtime TODO)
+    # pattern_changed: false            # TODO/runtime gap: non-pattern transition state is not finalized yet
+    # heuristic_history: []             # TODO/runtime gap: behavior is not finalized and may differ from docs
+    # non_pattern_mirror: ""            # TODO/runtime gap: documented, but not implemented as a real runtime field yet
 ```
 
 </details>
@@ -262,14 +274,17 @@ Integrate Rotating Domains Checker into your ad blocking filters repository.
 
 Copy the example workflow to your filters repository:
 
-- **[example-external-public.yml](.github/workflows/example-external-public.yml)** - For external filters repository (uses `uses:` action syntax)
-- **[example-local-testing.yml](.github/workflows/example-local-testing.yml)** - For local testing (runs in this repository)
+- **[example-external-public.yml](.github/workflows/example-external-public.yml)** - For external filters repository
+  (uses `uses:` action syntax)
+- **[example-local-testing.yml](.github/workflows/example-local-testing.yml)** - For local testing (runs in this
+  repository)
 
 Rename it to `.github/workflows/rotating-domains-checker.yml` and adjust as needed.
 
 #### Step 2: Create Configuration Files
 
-Create `config.yml` and `watchers.yml` in your repository root. See the [Configuration](#configuration) section for detailed field descriptions and examples.
+Create `config.yml` and `watchers.yml` in your repository root. See the [Configuration](#configuration) section for
+detailed field descriptions and examples.
 
 **Key settings for filters repository:**
 
@@ -378,7 +393,8 @@ config-path: './config.yml'  # Must exist in repository root
 
 ### Cloudflare / Antibot Sites with Rotating Domains
 
-For sites behind Cloudflare or other antibot protection that also rotate domains (e.g. `example39.com` → `example40.com`), use the combination of `accept_antibot` and `force_search_ahead`:
+For sites behind Cloudflare or other antibot protection that also rotate domains (e.g. `example39.com` →
+`example40.com`), use the combination of `accept_antibot` and `force_search_ahead`:
 
 ```yaml
 sites:
@@ -390,19 +406,28 @@ sites:
 
 **When to use `force_search_ahead`:**
 
-This is **recommended** when a site rotates domains frequently and multiple mirrors may be active simultaneously. Without this flag, only the first working domain is collected, potentially missing other active mirrors that users might access directly.
+This is **recommended** when a site rotates domains frequently and multiple mirrors may be active simultaneously.
+Without this flag, only the first working domain is collected, potentially missing other active mirrors that users
+might access directly.
 
 **How it works:**
 
-Heuristic candidate search is always triggered regardless of whether the current `last_known_mirror` is alive or dead. All final working domains (after following redirects) are collected into filter rules.
+Heuristic candidate search is always triggered regardless of whether the current `last_known_mirror` is alive or dead.
+All final working domains (after following redirects) are collected into filter rules.
 
-`last_known_mirror` is always set to the **naturally smallest** domain among all collected working mirrors (e.g. `example9.live` wins over `example18.live`, `example18.live` wins over `example20.live`), ensuring deterministic selection even when parallel HTTP checks complete in arbitrary order.
+`last_known_mirror` is always set to the **naturally smallest** domain among all collected working mirrors (e.g.
+`example9.live` wins over `example18.live`, `example18.live` wins over `example20.live`), ensuring deterministic
+selection even when parallel HTTP checks complete in arbitrary order.
 
-If `initial_domain` is a redirect shortener or URL without a numeric pattern (e.g. `https://ksln.link/abc`), heuristic candidate generation automatically falls back to `last_known_mirror` to extract the pattern.
+If `initial_domain` is a redirect shortener or URL without a numeric pattern (e.g. `https://ksln.link/abc`), heuristic
+candidate generation automatically falls back to `last_known_mirror` to extract the pattern.
 
-If `initial_domain` is a bare gateway domain that should be used only as an entry point, set `replace_initial_domain: false`. In that mode the gateway host is kept in filters, and replacements are applied only from the previous `last_known_mirror` to the newly resolved mirror.
+If `initial_domain` is a bare gateway domain that should be used only as an entry point, set `replace_initial_domain:
+false`. In that mode the gateway host is kept in filters, and replacements are applied only from the previous
+`last_known_mirror` to the newly resolved mirror.
 
-Example: suppose your filters intentionally contain `||srcdomain.is^` because it is a stable landing domain for users, but the actual rotating mirror changes from `destdomain85.cfd` to `destdomain86.cfd`. With this watcher:
+Example: suppose your filters intentionally contain `||srcdomain.is^` because it is a stable landing domain for users,
+but the actual rotating mirror changes from `destdomain85.cfd` to `destdomain86.cfd`. With this watcher:
 
 ```yaml
 sites:
@@ -418,7 +443,9 @@ and redirect result:
 srcdomain.is -> destdomain86.cfd
 ```
 
-the script will update `last_known_mirror` to `destdomain86.cfd` and replace `destdomain85.cfd -> destdomain86.cfd` in filters, but it will NOT replace `srcdomain.is` itself. This is useful when the gateway domain should stay stable in filter rules, while only the current mirror domain rotates.
+the script will update `last_known_mirror` to `destdomain86.cfd` and replace `destdomain85.cfd -> destdomain86.cfd` in
+filters, but it will NOT replace `srcdomain.is` itself. This is useful when the gateway domain should stay stable in
+filter rules, while only the current mirror domain rotates.
 
 **Without `force_search_ahead` (default):**
 
@@ -458,7 +485,8 @@ Result in filter: example949.com,example950.com,example951.com
 
 **Redirect patterns as indicators:**
 
-When many domains redirect to a single domain, this **may indicate** that the final domain is a real working mirror, not just an antibot placeholder:
+When many domains redirect to a single domain, this **may indicate** that the final domain is a real working mirror,
+not just an antibot placeholder:
 
 ```text
 example930.com (301) → helper.com (302) → example949.com (403)
@@ -470,7 +498,8 @@ example949.com → HTTP 403 (direct response)
 example950.com → HTTP 403 (direct response)
 ```
 
-In this case, `example949.com` and `example950.com` are likely real mirrors (direct antibot responses), while `example930-948.com` are convenience redirects for users. Only the final working domains are added to filters.
+In this case, `example949.com` and `example950.com` are likely real mirrors (direct antibot responses), while
+`example930-948.com` are convenience redirects for users. Only the final working domains are added to filters.
 
 **Important:** Ensure `forceHeuristicOnCodes` in `config.yml` includes `403`:
 
@@ -579,7 +608,8 @@ sites:
   yoursite.com:
     initial_domain: "yoursite.com"    # Required for new sites
     last_known_mirror: "yoursite.com"
-    probe_text: "Your Site Title"     # Optional: key phrases to verify
+    probe_text:                        # Optional: key phrases to verify (YAML list; quotes optional)
+      - Your Site Title
     path: "/"                         # Optional: specific path to check
 
     # These fields will be auto-updated by the script:
@@ -591,8 +621,11 @@ sites:
 ## Replacement Logic
 
 1. **Redirect Resolution**: Follow HTTP 3xx redirects
-2. **JS/Meta Redirect Resolution**: Parse HTML body for JavaScript (`location.replace()`, `window.location.href`, `location.href`) and `<meta http-equiv="refresh">` redirects and follow them as part of the same redirect chain
-3. **Parked Domain Detection**: Check response body against `skip_text` phrases before following client-side redirects — if matched, the domain is considered parked/expired and heuristic search is triggered. Individual phrases can be excluded per-site using `skip_text_allow` in `watchers.yml` (exact match)
+2. **JS/Meta Redirect Resolution**: Parse HTML body for JavaScript (`location.replace()`, `window.location.href`,
+   `location.href`) and `<meta http-equiv="refresh">` redirects and follow them as part of the same redirect chain
+3. **Parked Domain Detection**: Check response body against `skip_text` phrases before following client-side redirects
+   — if matched, the domain is considered parked/expired and heuristic search is triggered. Individual phrases can be
+   excluded per-site using `skip_text_allow` in `watchers.yml` (exact match)
 4. **Heuristic Search**: Try numbered domain patterns
 5. **Content Verification**: Check `probe_text` and `path`
 6. **Filter Updates**: Replace old domains with new ones
@@ -705,7 +738,8 @@ npm test              # All tests must pass
 
 ### ESM Support
 
-The project uses Jest with ESM support. Tests use `jest.unstable_mockModule` for mocking Node.js core modules like `dns` and `child_process`. All test files are configured to run with `--experimental-vm-modules` flag.
+The project uses Jest with ESM support. Tests use `jest.unstable_mockModule` for mocking Node.js core modules like `dns`
+and `child_process`. All test files are configured to run with `--experimental-vm-modules` flag.
 
 ## Troubleshooting
 
