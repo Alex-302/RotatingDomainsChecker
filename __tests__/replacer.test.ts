@@ -26,7 +26,6 @@ import type { Config, ReplacementPair } from '../src/types.js';
 // ============================================================================
 // 1. Helper functions — Pattern matching
 // ============================================================================
-
 describe('1.1 matchesNumericPattern', () => {
   test('example001.com → true (domain[N].tld)', () => {
     expect(matchesNumericPattern('example001.com')).toBe(true);
@@ -180,7 +179,6 @@ describe('1.5 Regression: greedy regex [a-z0-9-]+ → [a-z-]+', () => {
 // ============================================================================
 // 2. Filter line processing
 // ============================================================================
-
 describe('2.1 processLine — Cosmetic rules (comma-separated domains before ##)', () => {
   const hostMap = new Map([['old.com', 'new.com']]);
   const emptyInitialMap = new Map<string, string>();
@@ -447,7 +445,6 @@ describe('2.11 findTargetFiles', () => {
 // ============================================================================
 // 3. Additional domains from force_search_ahead
 // ============================================================================
-
 describe('3.1 processLine — additional domains in cosmetic rules', () => {
   const hostMap = new Map([['old.com', 'new432.com']]);
   const emptyInitialMap = new Map<string, string>();
@@ -477,7 +474,7 @@ describe('3.1 processLine — additional domains in cosmetic rules', () => {
     expect(result[0]).toContain('new434.com');
     // new433.com should appear only once
     const domains = result[0].split('##')[0].split(',');
-    const count433 = domains.filter(d => d === 'new433.com').length;
+    const count433 = domains.filter((d: string) => d === 'new433.com').length;
     expect(count433).toBe(1);
   });
 });
@@ -559,7 +556,6 @@ describe('3.4 processDomainList — additional domains appending', () => {
 // ============================================================================
 // Edge cases from section 12
 // ============================================================================
-
 describe('Edge cases and regressions', () => {
   test('www prefix: www.example373.com normalizes to example373.com', () => {
     expect(normalizeDomain('www.example373.com')).toBe('example373.com');
@@ -667,7 +663,6 @@ describe('Edge cases and regressions', () => {
 // ============================================================================
 // 3.5 hostMap first-wins: primary replacement is not overwritten by additional
 // ============================================================================
-
 describe('3.5 processDomainList — hostMap first-wins with same oldHost for primary+additional', () => {
   // Simulates force_search_ahead scenario:
   //   replacements = [
@@ -700,7 +695,7 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
   test('mixed cosmetic: nopattern.com should appear only once (not duplicated)', () => {
     const result = processLine('other.com,example001.com,extra.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
     const domains = result[0].split('##')[0].split(',');
-    const count = domains.filter(d => d === 'nopattern.com').length;
+    const count = domains.filter((d: string) => d === 'nopattern.com').length;
     expect(count).toBe(1);
   });
 
@@ -749,7 +744,6 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
 // ============================================================================
 // 4. FilterReplacer.applyReplacements — originalMirrors filtering
 // ============================================================================
-
 describe('4.1 originalMirrors: entry point resolution detection', () => {
   // Mock config pointing to TestFilters (empty or minimal filter files for testing)
   const mockConfig: Config = {
@@ -1103,7 +1097,6 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
 // ============================================================================
 // 5. Line-ending preservation
 // ============================================================================
-
 describe('5.1 applyReplacements preserves original line endings', () => {
   let tmpDir: string;
 
@@ -1198,6 +1191,440 @@ describe('5.1 applyReplacements preserves original line endings', () => {
     expect(written).not.toContain('\r\n');
     // Domain must be replaced
     expect(written).toContain('example502.com');
+    expect(written).not.toContain('example501.com');
+  });
+});
+
+// ============================================================================
+// 2.13 processLine — Exception markers (#@# family)
+// ============================================================================
+describe('2.13 processLine — Exception markers (#@# family)', () => {
+  const hostMap = new Map([['old.com', 'new.com']]);
+  const emptyMap = new Map<string, string>();
+  const emptyPriority = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+
+  test('#@# exception: domain replacement works', () => {
+    expect(processLine('old.com#@#.selector', hostMap, emptyMap, emptyPriority))
+      .toEqual(['new.com#@#.selector']);
+  });
+
+  test('#@## exception (regression): hostMap replacement works', () => {
+    const hMap = new Map([['example001.com', 'example002.com']]);
+    expect(processLine('example001.com#@##smartbanner.ios', hMap, emptyMap, emptyPriority))
+      .toEqual(['example002.com#@##smartbanner.ios']);
+  });
+
+  test('#@$# exception: domain replacement works', () => {
+    expect(processLine('old.com#@$#body { background: #fff !important; }', hostMap, emptyMap, emptyPriority))
+      .toEqual(['new.com#@$#body { background: #fff !important; }']);
+  });
+
+  test('#@?# exception: domain replacement works', () => {
+    expect(processLine('old.com#@?#.mb-6:contains(gesponsord)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['new.com#@?#.mb-6:contains(gesponsord)']);
+  });
+
+  test('#@$?# exception: domain replacement works', () => {
+    expect(processLine('old.com#@$?#.selector { remove: true; }', hostMap, emptyMap, emptyPriority))
+      .toEqual(['new.com#@$?#.selector { remove: true; }']);
+  });
+
+  test('#@%# exception: domain replacement works', () => {
+    expect(processLine('old.com#@%#//scriptlet(\'remove-class\', \'no_scroll\')', hostMap, emptyMap, emptyPriority))
+      .toEqual(['new.com#@%#//scriptlet(\'remove-class\', \'no_scroll\')']);
+  });
+
+  test('exception marker with list: a.com,old.com,b.com#@#.selector → replaced', () => {
+    expect(processLine('a.com,old.com,b.com#@#.selector', hostMap, emptyMap, emptyPriority))
+      .toEqual(['a.com,new.com,b.com#@#.selector']);
+  });
+
+  test('no replacement when domain not in hostMap', () => {
+    expect(processLine('nopattern.com#@#.selector', hostMap, emptyMap, emptyPriority))
+      .toEqual(['nopattern.com#@#.selector']);
+  });
+});
+
+// ============================================================================
+// 2.14 processLine — Dollar-based cosmetic markers ($$ / $@$)
+// ============================================================================
+describe('2.14 processLine — Dollar-based cosmetic markers ($$ / $@$)', () => {
+  const emptyMap = new Map<string, string>();
+  const emptyPriority = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+
+  test('$$ marker: domain replacement works', () => {
+    const hostMap = new Map([['example126tv.com', 'example127tv.com']]);
+    expect(processLine('example126tv.com$$script:contains(duyuruModal)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['example127tv.com$$script:contains(duyuruModal)']);
+  });
+
+  test('$@$ marker: domain replacement works', () => {
+    const hostMap = new Map([['example126tv.com', 'example127tv.com']]);
+    expect(processLine('example126tv.com$@$script:contains(ad)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['example127tv.com$@$script:contains(ad)']);
+  });
+
+  test('$$ marker: no change when domain not in hostMap', () => {
+    const hostMap = new Map([['other.com', 'new.com']]);
+    expect(processLine('nopattern.com$$script:contains(ad)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['nopattern.com$$script:contains(ad)']);
+  });
+
+  test('$$ with list: a.com,example126tv.com$$script → replaced', () => {
+    const hostMap = new Map([['example126tv.com', 'example127tv.com']]);
+    expect(processLine('a.com,example126tv.com$$script:contains(duyuruModal)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['a.com,example127tv.com$$script:contains(duyuruModal)']);
+  });
+
+  test('$$ does NOT interfere with $domain= parameters', () => {
+    const hostMap = new Map([['old.com', 'new.com']]);
+    // $$ inside param value prevents the $param= parser from reaching $domain=
+    // (known limitation: regex /\\$([^$]+)$/ captures only after the LAST $)
+    expect(processLine('||example.com^$domain=old.com,from=test$$value', hostMap, emptyMap, emptyPriority))
+      .toEqual(['||example.com^$domain=old.com,from=test$$value']);
+  });
+});
+
+// ============================================================================
+// 2.15 processLine — uBO forms (##^, #@#^, ##+js, #@#+js)
+// ============================================================================
+describe('2.15 processLine — uBO forms (##^, #@#^, ##+js, #@#+js)', () => {
+  const emptyMap = new Map<string, string>();
+  const emptyPriority = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+
+  test('##^ uBO form: domain replacement works', () => {
+    const hostMap = new Map([['www.91example.com', 'www.92example.com']]);
+    expect(processLine('www.91example.com##^script:has-text(runCount)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['www.92example.com##^script:has-text(runCount)']);
+  });
+
+  test('#@#^ uBO form: domain replacement works', () => {
+    const hostMap = new Map([['www.91example.com', 'www.92example.com']]);
+    expect(processLine('www.91example.com#@#^script:has-text(runCount)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['www.92example.com#@#^script:has-text(runCount)']);
+  });
+
+  test('##+js uBO form: domain replacement works', () => {
+    const hostMap = new Map([['example001.com', 'example002.com']]);
+    expect(processLine('example001.com##+js(acs, jQuery, cookie)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['example002.com##+js(acs, jQuery, cookie)']);
+  });
+
+  test('#@#+js uBO form: domain replacement works', () => {
+    const hostMap = new Map([['example001.com', 'example002.com']]);
+    expect(processLine('example001.com#@#+js(acs, jQuery, cookie)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['example002.com#@#+js(acs, jQuery, cookie)']);
+  });
+
+  test('uBO forms: no change when domain not in hostMap', () => {
+    const hostMap = new Map([['other.com', 'new.com']]);
+    expect(processLine('nopattern.com##^script:has-text(test)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['nopattern.com##^script:has-text(test)']);
+    expect(processLine('nopattern.com#@#^script:has-text(test)', hostMap, emptyMap, emptyPriority))
+      .toEqual(['nopattern.com#@#^script:has-text(test)']);
+  });
+});
+
+// ============================================================================
+// 2.16 processLine — List-valued modifiers ($from=, $denyallow=, $to=)
+// ============================================================================
+describe('2.16 processLine — List-valued modifiers ($from=, $denyallow=, $to=)', () => {
+  const emptyMap = new Map<string, string>();
+  const emptyPriority = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+
+  test('$from= with domain list: list-valued replacement works', () => {
+    const hostMap = new Map([['old1.com', 'new1.com']]);
+    expect(processLine('||example.com^$from=old1.com|nopattern.com', hostMap, emptyMap, emptyPriority))
+      .toEqual(['||example.com^$from=new1.com|nopattern.com']);
+  });
+
+  test('$denyallow= with domain list: list-valued replacement works', () => {
+    const hostMap = new Map([['old1.com', 'new1.com']]);
+    expect(processLine('||example.com^$denyallow=old1.com|nopattern.com', hostMap, emptyMap, emptyPriority))
+      .toEqual(['||example.com^$denyallow=new1.com|nopattern.com']);
+  });
+
+  test('$to= with domain list: list-valued replacement works', () => {
+    const hostMap = new Map([['old1.com', 'new1.com']]);
+    expect(processLine('||example.com^$to=old1.com|nopattern.com', hostMap, emptyMap, emptyPriority))
+      .toEqual(['||example.com^$to=new1.com|nopattern.com']);
+  });
+
+  test('single domain in $from=: simple replacement', () => {
+    const hostMap = new Map([['old1.com', 'new1.com']]);
+    expect(processLine('||example.com^$from=old1.com', hostMap, emptyMap, emptyPriority))
+      .toEqual(['||example.com^$from=new1.com']);
+  });
+
+  test('modifiers: regexp values are NOT replaced', () => {
+    const hostMap = new Map([['old1.com', 'new1.com']]);
+    expect(processLine('||example.com^$from=/regexp/', hostMap, emptyMap, emptyPriority))
+      .toEqual(['||example.com^$from=/regexp/']);
+  });
+
+  test('modifiers: no change when domain not in hostMap', () => {
+    const hostMap = new Map([['other.com', 'new.com']]);
+    expect(processLine('||example.com^$from=nopattern.com', hostMap, emptyMap, emptyPriority))
+      .toEqual(['||example.com^$from=nopattern.com']);
+  });
+});
+
+// ============================================================================
+// 2.17 processLine — Wrapper syntax [$domain=...]
+// ============================================================================
+describe('2.17 processLine — Wrapper syntax [$domain=...]', () => {
+  const emptyMap = new Map<string, string>();
+  const emptyPriority = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+
+  test('[$domain=...]#%# wrapper: domain replacement works', () => {
+    const hostMap = new Map([['example001.com', 'example002.com']]);
+    expect(processLine('[$domain=example001.com|nopattern.com]#%#//scriptlet(\'set-constant\', \'ads\', \'false\')', hostMap, emptyMap, emptyPriority))
+      .toEqual(['[$domain=example002.com|nopattern.com]#%#//scriptlet(\'set-constant\', \'ads\', \'false\')']);
+  });
+
+  test('[$domain=...]#@# wrapper: exception marker in wrapper', () => {
+    const hostMap = new Map([['testsite.com', 'newtestsite.com']]);
+    expect(processLine('[$domain=testsite.com]#@#.selector', hostMap, emptyMap, emptyPriority))
+      .toEqual(['[$domain=newtestsite.com]#@#.selector']);
+  });
+
+  test('[$domain=...]### wrapper: cosmetic rule', () => {
+    const hostMap = new Map([['example001.com', 'example002.com']]);
+    expect(processLine('[$domain=example001.com|nopattern.com]###banner', hostMap, emptyMap, emptyPriority))
+      .toEqual(['[$domain=example002.com|nopattern.com]###banner']);
+  });
+
+  test('[$domain=...] wrapper: single domain replacement', () => {
+    const hostMap = new Map([['old.com', 'new.com']]);
+    expect(processLine('[$domain=old.com]##.ads', hostMap, emptyMap, emptyPriority))
+      .toEqual(['[$domain=new.com]##.ads']);
+  });
+
+  test('[$domain=...] wrapper: no change when domain not in hostMap', () => {
+    const hostMap = new Map([['other.com', 'new.com']]);
+    expect(processLine('[$domain=nopattern.com]#%#//scriptlet(\'x\')', hostMap, emptyMap, emptyPriority))
+      .toEqual(['[$domain=nopattern.com]#%#//scriptlet(\'x\')']);
+  });
+
+  test('[$domain=/regexp/] wrapper: regexp is NOT replaced', () => {
+    const hostMap = new Map([['other.com', 'new.com']]);
+    expect(processLine('[$domain=/example\\d+\\.com/]#%#//scriptlet(\'x\')', hostMap, emptyMap, emptyPriority))
+      .toEqual(['[$domain=/example\\d+\\.com/]#%#//scriptlet(\'x\')']);
+  });
+});
+
+// ============================================================================
+// 2.18 shouldSkipLine — Wildcard with exception/uBO markers
+// ============================================================================
+describe('2.18 shouldSkipLine — Wildcard with exception/uBO markers', () => {
+  test('wildcard with #@# exception marker → NOT skipped', () => {
+    expect(shouldSkipLine('nopattern.com,example.*#@#.tracker')).toBe(false);
+  });
+
+  test('wildcard with #@$# exception marker → NOT skipped', () => {
+    expect(shouldSkipLine('example.*#@$#body')).toBe(false);
+  });
+
+  test('wildcard with $$ dollar marker → NOT skipped', () => {
+    expect(shouldSkipLine('example.*$$script:contains(ad)')).toBe(false);
+  });
+
+  test('wildcard with $@$ dollar marker → NOT skipped', () => {
+    expect(shouldSkipLine('example.*$@$script:contains(ad)')).toBe(false);
+  });
+
+  test('wildcard with ##^ uBO form → NOT skipped', () => {
+    expect(shouldSkipLine('example.*##^script:has-text(test)')).toBe(false);
+  });
+
+  test('wildcard with #@#^ uBO form → NOT skipped', () => {
+    expect(shouldSkipLine('example.*#@#^script:has-text(test)')).toBe(false);
+  });
+
+  test('wildcard with ##+js uBO form → NOT skipped', () => {
+    expect(shouldSkipLine('example.*##+js(acs)')).toBe(false);
+  });
+
+  test('wildcard with [$domain=...] wrapper → NOT skipped', () => {
+    expect(shouldSkipLine('[$domain=example.*]#%#//scriptlet(\'x\')')).toBe(false);
+  });
+
+  test('wildcard without cosmetic/params → still skipped (no regression)', () => {
+    expect(shouldSkipLine('||example*.com/*.gif')).toBe(true);
+  });
+});
+
+// ============================================================================
+// 2.19 processLine — Wildcard domains preserved in mix
+// ============================================================================
+describe('2.19 processLine — Wildcard domains preserved in mix', () => {
+  const emptyMap = new Map<string, string>();
+  const emptyPriority = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+
+  test('single wildcard domain: example.*##.ad → unchanged', () => {
+    const hostMap = new Map([['example.*', 'new.com']]);
+    expect(processLine('example.*##.ad', hostMap, emptyMap, emptyPriority))
+      .toEqual(['example.*##.ad']);
+  });
+
+  test('mixed list with wildcard: full domains replaced, wildcard stays', () => {
+    const hostMap = new Map([['nopattern.com', 'newpattern.com'], ['testsite.com', 'newtestsite.com']]);
+    expect(processLine('nopattern.com,example.*,testsite.com##.banner', hostMap, emptyMap, emptyPriority))
+      .toEqual(['newpattern.com,example.*,newtestsite.com##.banner']);
+  });
+
+  test('mixed list with wildcard and exception marker', () => {
+    const hostMap = new Map([['nopattern.com', 'newpattern.com']]);
+    expect(processLine('nopattern.com,example.*#@#.tracker', hostMap, emptyMap, emptyPriority))
+      .toEqual(['newpattern.com,example.*#@#.tracker']);
+  });
+
+  test('full domain in wildcard form stays unchanged (domain has *)', () => {
+    const hostMap = new Map([['example.*', 'new.com']]);
+    expect(processLine('example.*##.ad', hostMap, emptyMap, emptyPriority))
+      .toEqual(['example.*##.ad']);
+  });
+
+  test('wildcard domain in single cosmetic rule → unchanged even in hostMap', () => {
+    const hostMap = new Map([['example.*', 'example001.com']]);
+    expect(processLine('example.*##.ad', hostMap, emptyMap, emptyPriority))
+      .toEqual(['example.*##.ad']);
+  });
+});
+
+// ============================================================================
+// 6. Integration test — Mixed marker families (full applyReplacements flow)
+// ============================================================================
+describe('6. applyReplacements — Mixed marker families integration', () => {
+  let tmpDir: string;
+
+  function makeConfig(repoPath: string): Config {
+    return {
+      http: { timeout: 5000, retries: 1, heuristicTimeout: 3000, userAgent: 'test' },
+      processing: { parallel: 1, redirectDepth: 5 },
+      dnsPreCheck: { enabled: false, timeout: 1000, retryOnce: false },
+      contentProbe: { enabled: false },
+      antibot: { detectCodes: [], detectUrlPattern: '' },
+      thresholds: { failedDaysWarning: 3 },
+      heuristic: { enabled: false, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      logging: { saveToFile: false, incremental: false, filePath: '' },
+      git: { mode: 'debug', branch: 'master', prBranchPrefix: 'test-' },
+      filtersdir: {
+        repoPath,
+        filterDirPattern: '*Filter',
+        filePattern: '*.txt',
+      },
+      filtersdir_test: {
+        repoPath,
+        filterDirPattern: '*Filter',
+        filePattern: '*.txt',
+      },
+    };
+  }
+
+  beforeEach(async () => {
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rdc-integration-'));
+    await fsp.mkdir(path.join(tmpDir, 'MixedFilter'));
+  });
+
+  afterEach(async () => {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test('mixed marker families: all families processed correctly end-to-end', async () => {
+    const filterFile = path.join(tmpDir, 'MixedFilter', 'mixed.txt');
+
+    // Create a filter file with ALL marker families in one file
+    const content = [
+      // --- Network rules (||domain^) ---
+      '||example501.com^',
+      '||example502.com/subpath^',
+      // --- Basic cosmetic (##) ---
+      'example501.com##.ad-banner',
+      'example501.com,example502.com##.sidebar-ads',
+      // --- Exception markers (#@# family) ---
+      'example501.com#@#.no-ads',
+      'example501.com#@##smartbanner.ios',
+      'example501.com#@$#body { background: #fff !important; }',
+      'example501.com#@?#.mb-6:contains(gesponsord)',
+      'example501.com#@$?#.selector { remove: true; }',
+      'example501.com#@%#//scriptlet(\'remove-class\', \'no_scroll\')',
+      // --- Dollar-based cosmetic ($$ / $@$) ---
+      'example501.com$$script:contains(duyuruModal)',
+      'example501.com$@$script:contains(ad)',
+      // --- uBO forms (##^, #@#^, ##+js, #@#+js) ---
+      'example501.com##^script:has-text(runCount)',
+      'example501.com#@#^script:has-text(runCount)',
+      'example501.com##+js(acs, jQuery, cookie)',
+      'example501.com#@#+js(acs, jQuery, cookie)',
+      // --- List-valued modifiers ($domain=, $from=, $denyallow=, $to=) ---
+      '||other.com^$domain=example501.com|nopattern.com',
+      '||other.com^$from=example501.com|testsite.com',
+      '||other.com^$denyallow=example501.com|mirror.com',
+      '||other.com^$to=example501.com',
+      // --- Wrapper syntax ([$domain=...]) ---
+      '[$domain=example501.com|nopattern.com]#%#//scriptlet(\'set-constant\', \'ads\', \'false\')',
+      '[$domain=example501.com]#@#.selector',
+      '[$domain=example501.com]###banner',
+    ].join('\n');
+    await fsp.writeFile(filterFile, content, 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [{
+      siteName: 'TestSite',
+      oldHost: 'example501.com',
+      newHost: 'example502.com',
+      startedHost: 'example501.com',
+      checkDurationMs: 100,
+    }];
+
+    await replacer.applyReplacements(replacements, false);
+
+    const written = await fsp.readFile(filterFile, 'utf-8');
+
+    // Verify replacements happened in each marker family
+    // Network rules
+    expect(written).toContain('||example502.com^');
+    expect(written).toContain('||example502.com/subpath^');
+
+    // Basic cosmetic (##)
+    expect(written).toContain('example502.com##.ad-banner');
+    // Note: example501.com,example502.com##.sidebar-ads → deduplication removes duplicate
+    expect(written).toContain('example502.com##.sidebar-ads');
+
+    // Exception markers (#@# family)
+    expect(written).toContain('example502.com#@#.no-ads');
+    expect(written).toContain('example502.com#@##smartbanner.ios');
+    expect(written).toContain('example502.com#@$#body { background: #fff !important; }');
+    expect(written).toContain('example502.com#@?#.mb-6:contains(gesponsord)');
+    expect(written).toContain('example502.com#@$?#.selector { remove: true; }');
+    expect(written).toContain('example502.com#@%#//scriptlet(\'remove-class\', \'no_scroll\')');
+
+    // Dollar-based cosmetic ($$ / $@$)
+    expect(written).toContain('example502.com$$script:contains(duyuruModal)');
+    expect(written).toContain('example502.com$@$script:contains(ad)');
+
+    // uBO forms (##^, #@#^, ##+js, #@#+js)
+    expect(written).toContain('example502.com##^script:has-text(runCount)');
+    expect(written).toContain('example502.com#@#^script:has-text(runCount)');
+    expect(written).toContain('example502.com##+js(acs, jQuery, cookie)');
+    expect(written).toContain('example502.com#@#+js(acs, jQuery, cookie)');
+
+    // List-valued modifiers
+    expect(written).toContain('||other.com^$domain=example502.com|nopattern.com');
+    expect(written).toContain('||other.com^$from=example502.com|testsite.com');
+    expect(written).toContain('||other.com^$denyallow=example502.com|mirror.com');
+    expect(written).toContain('||other.com^$to=example502.com');
+
+    // Wrapper syntax
+    expect(written).toContain('[$domain=example502.com|nopattern.com]#%#//scriptlet(\'set-constant\', \'ads\', \'false\')');
+    expect(written).toContain('[$domain=example502.com]#@#.selector');
+    expect(written).toContain('[$domain=example502.com]###banner');
+
+    // Verify no old domains remain (except in wrapper where nopattern.com is expected)
     expect(written).not.toContain('example501.com');
   });
 });

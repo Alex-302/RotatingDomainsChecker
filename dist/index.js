@@ -17626,23 +17626,55 @@ async function findTargetFiles(root, dirPattern, filePattern) {
     await walk(root);
     return results;
 }
+// ============================================================================
+// Shared marker constants for ad blocker syntax detection
+// ============================================================================
+/**
+ * Base cosmetic markers (order matters: longer markers first)
+ *
+ * These are the separators that split domain-list from selector body.
+ * Domain replacement happens ONLY in the left part (before the marker).
+ */
+const COSMETIC_MARKERS = [
+    "#@$?#", "#@$#", "#@?#", "#@%#", "#@#",
+    "#$?#", "#$#", "#?#", "#%#", "##",
+];
+const DOLLAR_MARKERS = ["$@$", "$$"];
+/**
+ * uBO body forms
+ *
+ * In AdGuard and uBO syntax, after a base marker like `##` or `#@#`, there can be
+ * special body forms that modify rule behavior:
+ *
+ * - `^` prefix → HTML filtering shorthand (e.g., `##^script:has-text(...)`, `#@#^script:has-text(...)`)
+ * - `+js(` prefix → scriptlet shorthand (e.g., `##+js(acs, ...)`, `#@#+js(acs, ...)`)
+ *
+ * These are NOT separate markers in {@link COSMETIC_MARKERS}. The replacement logic
+ * only processes the domain list (left part), so the body form after the marker
+ * (`^...` or `+js(...)`) remains unchanged.
+ *
+ * Example:
+ *   Input:  `old.com##^script:has-text(ads)`
+ *   Marker: `##` (found at position 7)
+ *   Left:   `old.com` → replaced with `new.com`
+ *   Right:  `^script:has-text(ads)` → unchanged
+ *   Output: `new.com##^script:has-text(ads)`
+ *
+ */
 function shouldSkipLine(line) {
     const t = line.trim();
     if (t.length === 0)
         return true;
     if (t.startsWith("!"))
-        return true; // comments
+        return true;
     if (t.startsWith("/") && t.endsWith("/"))
-        return true; // regex
-    // Skip wildcard in URL patterns, but allow:
-    // - cosmetic rules (##, #$#, #?#, #$?#, #%#)
-    // - URL rules with parameters ($domain=, $denyallow=, etc.)
+        return true;
     if (t.includes("*")) {
-        const hasCosmetic = t.includes("##") || t.includes("#$#") || t.includes("#?#") || t.includes("#$?#") || t.includes("#%#");
+        const hasCosmetic = [...COSMETIC_MARKERS, ...DOLLAR_MARKERS].some(m => t.includes(m));
+        const hasWrapper = t.startsWith("[");
         const hasParams = t.includes("$");
-        if (!hasCosmetic && !hasParams) {
+        if (!hasCosmetic && !hasWrapper && !hasParams)
             return true;
-        }
     }
     return false;
 }
@@ -17716,93 +17748,102 @@ function removePredictedMirrors(domains, priorityMap) {
 function processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap = new Map()) {
     if (shouldSkipLine(line))
         return [line];
-    // Cosmetic rules: find marker (##, #$#, #?#, #$?#, #%#)
-    let idx = -1;
-    for (const sep of ["#$?#", "#$#", "#?#", "#%#", "##"]) {
-        const pos = line.indexOf(sep);
-        if (pos > 0 && (idx === -1 || pos < idx)) {
-            idx = pos;
-        }
-    }
-    if (idx > 0) {
-        const left = line.slice(0, idx);
-        const right = line.slice(idx);
-        const parts = left.split(",").map(s => s.trim());
-        // Process domain list with unified logic (includes additional domains appending)
-        const { processed, changed } = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
-        // Return updated line if domains changed OR if predicted mirrors were removed
-        if (changed || processed.length !== parts.length) {
-            return [`${processed.join(",")}${right}`];
+    // 1. Wrapper syntax: [$domain=...]
+    const wm = line.match(/^\[([^\]]+)\](.*)/);
+    if (wm) {
+        const wc = wm[1], rest = wm[2];
+        const eq = wc.indexOf("=");
+        if (eq > 0) {
+            const pn = wc.slice(0, eq), pv = wc.slice(eq + 1);
+            if (pv.startsWith("/"))
+                return [line];
+            if (pv.includes("|")) {
+                const d = pv.split("|").map(s => s.trim());
+                const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                if (r.changed || r.processed.length !== d.length)
+                    return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
+            }
+            else {
+                const r = replaceDomain(pv, hostMap, initialToLastKnownMap);
+                if (r !== pv)
+                    return ["[" + pn + "=" + r + "]" + rest];
+            }
         }
         return [line];
     }
-    // URL rules and parameters
+    // 2. Hash-based cosmetic markers using shared constant
+    let idx = -1;
+    for (const sep of COSMETIC_MARKERS) {
+        const pos = line.indexOf(sep);
+        if (pos > 0 && (idx === -1 || pos < idx))
+            idx = pos;
+    }
+    if (idx > 0) {
+        const left = line.slice(0, idx), right = line.slice(idx);
+        const parts = left.split(",").map(s => s.trim());
+        const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+        if (r.changed || r.processed.length !== parts.length)
+            return [r.processed.join(",") + right];
+        return [line];
+    }
+    // 3. Dollar-based cosmetic markers ($$ / $@$)
+    for (const sep of DOLLAR_MARKERS) {
+        const pos = line.indexOf(sep);
+        if (pos > 0) {
+            if (!line.slice(0, pos).match(/\$\w+=/)) {
+                const left = line.slice(0, pos), right = line.slice(pos);
+                const parts = left.split(",").map(s => s.trim());
+                const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                if (r.changed || r.processed.length !== parts.length)
+                    return [r.processed.join(",") + right];
+                return [line];
+            }
+        }
+    }
+    // 4. URL rules and $param= parsing
     let out = line;
     const extraLines = [];
-    // Replace ||oldHost^ patterns and duplicate for additional domains
-    for (const [oldHost, newHost] of hostMap.entries()) {
-        if (oldHost === newHost)
+    for (const [oh, nh] of hostMap.entries()) {
+        if (oh === nh)
             continue;
-        const tokenRe = new RegExp(`\\|\\|${escapeRegExp(oldHost)}\\^`, "g");
-        if (tokenRe.test(out)) {
-            tokenRe.lastIndex = 0; // Reset after .test() to avoid skipping first match
-            out = out.replace(tokenRe, `||${newHost}^`);
-            // Add extra lines for additional domains
-            const extras = additionalDomainsMap.get(normalizeDomain(newHost));
-            if (extras) {
-                for (const extra of extras) {
-                    extraLines.push(out.replace(new RegExp(`\\|\\|${escapeRegExp(newHost)}\\^`, 'g'), `||${extra}^`));
-                }
-            }
+        const re = new RegExp("\\|\\|" + escapeRegExp(oh) + "\\^", "g");
+        if (re.test(out)) {
+            re.lastIndex = 0;
+            out = out.replace(re, "||" + nh + "^");
+            const ex = additionalDomainsMap.get(normalizeDomain(nh));
+            if (ex)
+                for (const e of ex)
+                    extraLines.push(out.replace(new RegExp("\\|\\|" + escapeRegExp(nh) + "\\^", "g"), "||" + e + "^"));
         }
     }
-    // Replace domains in URL parameters ($param=domain1|domain2)
-    const paramMatch = out.match(/\$([^$]+)$/);
-    if (paramMatch) {
-        const params = paramMatch[1];
-        let updatedParams = params;
-        // Find all param=value pairs
-        const paramPairs = params.split(",");
-        const newPairs = [];
-        for (const pair of paramPairs) {
-            const eqIdx = pair.indexOf("=");
-            if (eqIdx === -1) {
-                newPairs.push(pair);
+    const pm = out.match(/\$([^$]+)$/);
+    if (pm) {
+        const params = pm[1];
+        const pairs = params.split(",");
+        const np = [];
+        for (const pair of pairs) {
+            const eq = pair.indexOf("=");
+            if (eq === -1) {
+                np.push(pair);
                 continue;
             }
-            const paramName = pair.slice(0, eqIdx);
-            const paramValue = pair.slice(eqIdx + 1);
-            // Check if value contains domain list (separated by |)
-            if (paramValue.includes("|")) {
-                const domains = paramValue.split("|").map(d => d.trim());
-                // Process domain list with unified logic (includes additional domains appending)
-                const { processed, changed } = processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
-                // Update if domains changed OR if predicted mirrors were removed
-                if (changed || processed.length !== domains.length) {
-                    newPairs.push(`${paramName}=${processed.join("|")}`);
-                }
-                else {
-                    newPairs.push(pair);
-                }
+            const pn = pair.slice(0, eq), pv = pair.slice(eq + 1);
+            if (pv.includes("|")) {
+                const d = pv.split("|").map(s => s.trim());
+                const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                np.push(r.changed || r.processed.length !== d.length
+                    ? pn + "=" + r.processed.join("|") : pair);
             }
             else {
-                // Handle single domain in parameter
-                const replacedDomain = replaceDomain(paramValue, hostMap, initialToLastKnownMap);
-                if (replacedDomain !== paramValue) {
-                    newPairs.push(`${paramName}=${replacedDomain}`);
-                }
-                else {
-                    newPairs.push(pair);
-                }
+                const r = replaceDomain(pv, hostMap, initialToLastKnownMap);
+                np.push(r !== pv ? pn + "=" + r : pair);
             }
         }
-        updatedParams = newPairs.join(",");
-        if (updatedParams !== params) {
-            out = out.replace(`$${params}`, `$${updatedParams}`);
-        }
+        const upd = np.join(",");
+        if (upd !== params)
+            out = out.replace("$" + params, "$" + upd);
     }
-    const result = [out, ...extraLines];
-    return result;
+    return [out, ...extraLines];
 }
 // Exports for testing
 
