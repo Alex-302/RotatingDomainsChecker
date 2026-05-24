@@ -1243,29 +1243,195 @@ describe('8. force_search_ahead scenarios', () => {
     expect(callCount).toBeGreaterThan(3);
   });
 
+  test('8.5 force_search_ahead: Phase 1 success but host unchanged → still generates candidates', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'testsite1.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      // Phase 1: succeeds but host unchanged
+      if (host === 'testsite1.com') {
+        return Promise.resolve(makeSuccessResult('testsite1.com'));
+      }
+      // Phase 2: Heuristic finds new working domains
+      if (host === 'testsite2.com') return Promise.resolve(makeSuccessResult('testsite2.com'));
+      if (host === 'testsite3.com') return Promise.resolve(makeSuccessResult('testsite3.com'));
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Phase 1 returned testsite1.com (no host change)
+    // Heuristic should still run due to force_search_ahead and collect additional domains
+    expect(results[0].newHost).toBe('testsite1.com');
+    expect(results[0].additionalWorkingDomains).toEqual(
+      expect.arrayContaining(['testsite2.com', 'testsite3.com'])
+    );
+  });
+
+  test('8.6 force_search_ahead: collects final working domains from all redirects', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'testsite1.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    let callCount = 0;
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      callCount++;
+      // Phase 1: testsite1.com is alive (no redirect)
+      if (callCount === 1) {
+        return Promise.resolve(makeSuccessResult('testsite1.com'));
+      }
+      // Phase 2 candidates:
+      // testsite2.com → alive (responds as itself)
+      if (url.includes('testsite2.com')) {
+        return Promise.resolve(makeSuccessResult('testsite2.com'));
+      }
+      // testsite3.com → REDIRECTS to different.com (200)
+      if (url.includes('testsite3.com')) {
+        return Promise.resolve(makeSuccessResult('different.com'));
+      }
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Primary domain is testsite1.com (alive, Phase 1)
+    expect(results[0].newHost).toBe('testsite1.com');
+
+    // Collect ALL final working domains, including through redirects
+    const additional = results[0].additionalWorkingDomains || [];
+
+    // testsite2.com → alive → collected
+    expect(additional).toContain('testsite2.com');
+    // testsite3.com → redirects to different.com (200) → different.com is collected
+    expect(additional).toContain('different.com');
+  });
+
+  test('8.6b force_search_ahead: if many candidates redirect to current primary, collect candidate hosts uniquely', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 4, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'testsite1013.pro',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'Test Site': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'testsite1013.pro') {
+        await new Promise(resolve => setTimeout(resolve, 15));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      if (host === 'testsite1014.pro') {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      if (host === 'testsite1015.pro') {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        return makeSuccessResult('www.testsite1013.pro');
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results[0].newHost).toBe('www.testsite1013.pro');
+    expect(results[0].additionalWorkingDomains).toEqual(
+      expect.arrayContaining(['testsite1013.pro', 'testsite1014.pro', 'testsite1015.pro'])
+    );
+    expect(results[0].additionalWorkingDomains).not.toContain('www.testsite1013.pro');
+  });
+
+  test('8.7 force_search_ahead + non-pattern initial_domain → falls back to last_known_mirror for candidates', async () => {
+    // Reproduces bug: initial_domain is a redirect shortener (no numeric pattern),
+    // so generateCandidates returns [] for it. Must fall back to last_known_mirror.
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      initial_domain: 'https://ksln.link/redirect',  // no numeric pattern
+      last_known_mirror: 'example18.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'testsite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      // Phase 1: initial_domain shortener redirects to example18.com
+      if (host === 'ksln.link') return Promise.resolve(makeSuccessResult('example18.com'));
+      // Phase 2: heuristic candidates generated from last_known_mirror (example18.com)
+      if (host === 'example18.com') return Promise.resolve(makeSuccessResult('example18.com'));
+      if (host === 'example19.com') return Promise.resolve(makeSuccessResult('example19.com'));
+      if (host === 'example20.com') return Promise.resolve(makeSuccessResult('example20.com'));
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    // Primary domain found in Phase 1
+    expect(results[0].newHost).toBe('example18.com');
+
+    // Heuristic should have run from last_known_mirror fallback and collected additional domains
+    const additional = results[0].additionalWorkingDomains || [];
+    expect(additional).toContain('example19.com');
+    expect(additional).toContain('example20.com');
+  });
+
   test('8.8 force_search_ahead: Phase 1 alias redirects to shared final host → current alias retained', async () => {
     // Regression test for TODO_force_search_ahead_current_alias_loss.md
-    // Scenario: last_known_mirror (dizipal2065.com pattern) redirects to dizipal2072.com.
-    // Heuristic finds neighbors (dizipal2066, 2067, 2069, 2070, 2071) that all redirect to dizipal2072.com.
-    // Expected: the current alias (dizipal2065.com) must appear in the collected domains.
+    // Scenario: last_known_mirror redirects to a shared final host.
+    // Heuristic finds neighbors that all redirect to the same final host.
+    // Expected: the current alias must appear in the collected domains.
     const config = makeConfig({
       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
       heuristic: { enabled: true, maxAttempts: 6, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
     const site = makeSite({
-      last_known_mirror: 'dizipal2065.com',
+      last_known_mirror: 'testsite65.com',
       force_search_ahead: true,
     });
-    const watchers = makeWatchers({ 'dizipal': site });
+    const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
-    // All domains redirect to dizipal2072.com (the shared final host)
+    // All domains redirect to testsite72.com (the shared final host)
     jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
       const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
-      if (/^dizipal20(6[5-9]|7[0-2])\.com$/.test(host)) {
-        return makeSuccessResult('dizipal2072.com', {
-          finalUrl: 'https://dizipal2072.com/',
+      if (/^testsite(6[5-9]|7[0-2])\.com$/.test(host)) {
+        return makeSuccessResult('testsite72.com', {
+          finalUrl: 'https://testsite72.com/',
         });
       }
       return makeFailResult('Not found');
@@ -1277,61 +1443,17 @@ describe('8. force_search_ahead scenarios', () => {
     // The primary newHost is the canonical (smallest natural-sorted) working domain
     expect(results[0].hostChanged).toBe(true);
 
-    // The current working alias dizipal2065.com must NOT be lost:
-    // it should either be the newHost, or in additionalWorkingDomains
+    // The current working alias testsite65.com must NOT be lost
     const allWorkingDomains = [
       results[0].newHost,
       ...(results[0].additionalWorkingDomains || [])
     ];
 
-    expect(allWorkingDomains).toContain('dizipal2065.com');
+    expect(allWorkingDomains).toContain('testsite65.com');
     // Also should include at least one neighbor
-    expect(allWorkingDomains.some(d => /^dizipal20(6[6-9]|7[01])\.com$/.test(d))).toBe(true);
+    expect(allWorkingDomains.some(d => /^testsite(6[6-9]|7[01])\.com$/.test(d))).toBe(true);
     // And the final host
-    expect(allWorkingDomains).toContain('dizipal2072.com');
-  });
-
-  test('8.9 force_search_ahead: Phase 1 success with redirect → pre-populate includes both alias and final host', async () => {
-    // When Phase 1 checks a working alias that redirects to a different final host,
-    // the pre-populated set should include both the alias AND the final host
-    // so that neither is lost from the working domain collection.
-    const config = makeConfig({
-      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
-      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [] },
-    });
-    const site = makeSite({
-      last_known_mirror: 'example066.com',
-      force_search_ahead: true,
-    });
-    const watchers = makeWatchers({ 'testsite': site });
-    const logger = makeLogger();
-    const resolver = new HttpResolver(config);
-
-    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
-      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
-      // Phase 1: example066.com redirects to example070.com
-      if (host === 'example066.com') {
-        return makeSuccessResult('example070.com');
-      }
-      // Phase 2 candidates: example067.com, example068.com, example069.com
-      if (host === 'example067.com') return makeSuccessResult('example070.com');
-      if (host === 'example068.com') return makeSuccessResult('example070.com');
-      return makeFailResult('Not found');
-    });
-
-    const processor = new BatchProcessor(config, watchers, logger, resolver);
-    const results = await processor.processAll();
-
-    // All working domains: the alias, neighbors, and the final host
-    const allWorkingDomains = [
-      results[0].newHost,
-      ...(results[0].additionalWorkingDomains || [])
-    ];
-
-    // The current alias example066.com MUST be in the working set
-    expect(allWorkingDomains).toContain('example066.com');
-    // The final host should also be there
-    expect(allWorkingDomains).toContain('example070.com');
+    expect(allWorkingDomains).toContain('testsite72.com');
   });
 });
 
@@ -1911,7 +2033,7 @@ describe('10. probe_text filtering in heuristic search', () => {
     });
     const site = makeSite({
       last_known_mirror: 'example219tv.com',
-      probe_text: ['const BASE_URL  = "https://example'],
+      probe_text: ['const BASE_URL  = "https://example"'],
     });
     const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();

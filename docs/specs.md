@@ -599,6 +599,16 @@ If `force_search_ahead: false`, after the first found working candidate, further
 
 If `force_search_ahead: true`, search continues and all found working domains enter `additionalWorkingDomains`.
 
+When Phase 1 succeeds with a redirect (the starting domain redirects to a different final host), the starting
+alias is also included in the collected domains. This ensures the current `last_known_mirror` is not lost from
+filter rules even when it redirects to a shared final host:
+
+```text
+Phase 1: example949.com → HTTP 301 → example955.com (alias retained)
+Phase 2: example950.com → HTTP 301 → example955.com (alias collected)
+Result: [example949.com, example950.com, example955.com]
+```
+
 Does not change success/failure selection rules. It changes only the strategy after first success: whether to continue
 collecting additional working mirrors.
 
