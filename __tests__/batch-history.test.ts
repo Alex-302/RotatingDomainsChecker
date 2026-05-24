@@ -91,10 +91,10 @@ describe('Domain History Management', () => {
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
-    
+
     // Update to new pattern domain
     (processor as any).updateDomainHistory(site, 'example16.com', 'example15.com');
-    
+
     // Pattern → Pattern: history should be deleted (not needed)
     expect(site.heuristic_history).toBeUndefined();
   });
@@ -114,9 +114,9 @@ describe('Domain History Management', () => {
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
-    
+
     (processor as any).updateDomainHistory(site, 'example18.com', 'example17.com');
-    
+
     // Pattern → Pattern: history should be deleted
     expect(site.heuristic_history).toBeUndefined();
   });
@@ -136,10 +136,10 @@ describe('Domain History Management', () => {
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
-    
+
     // Re-add same pattern
     (processor as any).updateDomainHistory(site, 'example15.com', 'example15.com');
-    
+
     // Pattern → Pattern: history should be deleted
     expect(site.heuristic_history).toBeUndefined();
   });
@@ -159,13 +159,14 @@ describe('Domain History Management', () => {
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
-    
+
     // Switch to non-pattern domain (link shortener)
     (processor as any).updateDomainHistory(site, 'example16-com.l.ink', 'example15.com');
-    
+
     // Should save current pattern (example15.com) to history before switching
     expect(site.heuristic_history).toEqual(['example15.com']);
     expect(site.pattern_changed).toBe(true);
+    expect(site.non_pattern_mirror).toBe('example16-com.l.ink');
   });
 
   test('updateDomainHistory deletes history for pattern-matching domain', () => {
@@ -182,10 +183,10 @@ describe('Domain History Management', () => {
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
-    
+
     // Update to new pattern domain
     (processor as any).updateDomainHistory(site, 'example15.com', 'example14.com');
-    
+
     // Pattern → Pattern: history should be deleted
     expect(site.heuristic_history).toBeUndefined();
   });
@@ -193,7 +194,7 @@ describe('Domain History Management', () => {
   test('matchesNumericPattern detects pattern-matching domains', () => {
     const watchers: Watchers = { sites: {} };
     const processor = new BatchProcessor(config, watchers, logger, resolver);
-    
+
     // Pattern-matching domains
     expect((processor as any).matchesNumericPattern('example15.com')).toBe(true);
     expect((processor as any).matchesNumericPattern('sample13.com')).toBe(true);
@@ -221,10 +222,10 @@ describe('Domain History Management', () => {
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['testsite'];
-    
+
     // Switch to non-pattern domain
     (processor as any).updateDomainHistory(site, 'example.com', 'testsite55.com');
-    
+
     // Should save pattern domain to history before switching
     expect(site.heuristic_history).toEqual(['testsite55.com']);
     expect(site.pattern_changed).toBe(true);
@@ -246,10 +247,10 @@ describe('Domain History Management', () => {
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['testsite'];
-    
+
     // Switch to another non-pattern domain
     (processor as any).updateDomainHistory(site, 'another-example.com', 'testsite55.com');
-    
+
     // History should remain unchanged (no pattern to save)
     expect(site.heuristic_history).toEqual(['testsite55.com']);
     expect(site.pattern_changed).toBe(true);
@@ -261,6 +262,7 @@ describe('Domain History Management', () => {
         'test-site': {
           last_known_mirror: 'testsite-new-domain.com',
           pattern_changed: true,
+          non_pattern_mirror: 'nonpattern.com',
           heuristic_history: ['testsite88.com'],
           last_seen: '2026-02-15 10:00',
           failed_since: '',
@@ -271,13 +273,14 @@ describe('Domain History Management', () => {
 
     const processor = new BatchProcessor(config, watchers, logger, resolver);
     const site = watchers.sites['test-site'];
-    
+
     // Return to pattern domain
     (processor as any).updateDomainHistory(site, 'testsite99.com', 'testsite-new-domain.com');
-    
-    // Flags and history should be cleared when returning to pattern
+
+    // Flags, history, and non_pattern_mirror should be cleared when returning to pattern
     expect(site.heuristic_history).toBeUndefined();
     expect(site.pattern_changed).toBeUndefined();
+    expect(site.non_pattern_mirror).toBeUndefined();
   });
 });
 
@@ -383,6 +386,7 @@ describe('Scheme Change Scenario', () => {
 
     expect(site.heuristic_history).toEqual(['example12.com']);
     expect(site.pattern_changed).toBe(true);
+    expect(site.non_pattern_mirror).toBe('nonpattern.com');
   });
 
   test('updateDomainHistory preserves history when already on non-pattern (no new history entry)', () => {
@@ -392,6 +396,7 @@ describe('Scheme Change Scenario', () => {
         'testsite': {
           last_known_mirror: 'example.com',
           pattern_changed: true,
+          non_pattern_mirror: 'example.com',
           heuristic_history: ['testsite55.com'],
           last_seen: '2026-02-15 10:00',
           failed_since: '',
@@ -408,6 +413,7 @@ describe('Scheme Change Scenario', () => {
 
     expect(site.heuristic_history).toEqual(['testsite55.com']);
     expect(site.pattern_changed).toBe(true);
+    expect(site.non_pattern_mirror).toBe('another-example.com');
   });
 
   test('checkSingleSite triggers immediate heuristic when pattern→non-pattern and finds new pattern domain', async () => {
@@ -434,7 +440,7 @@ describe('Scheme Change Scenario', () => {
     // 1. example12.com → redirects to nonpattern.com (non-pattern)
     // 2. heuristic candidates: example13.com succeeds (pattern)
     const mockResolve = jest.spyOn(resolver, 'resolve');
-    
+
     // First call: example12.com → nonpattern.com
     mockResolve.mockResolvedValueOnce({
       success: true,
@@ -476,8 +482,7 @@ describe('Scheme Change Scenario', () => {
     // Verify site state: no pattern_changed flag (back on pattern)
     expect(site.heuristic_history).toBeUndefined();
     expect(site.pattern_changed).toBeUndefined();
-
-    mockResolve.mockRestore();
+    expect(site.non_pattern_mirror).toBeUndefined();
   });
 
   test('checkSingleSite triggers immediate heuristic when pattern→non-pattern but finds no pattern domain', async () => {
@@ -504,7 +509,7 @@ describe('Scheme Change Scenario', () => {
     // 1. example22.com → redirects to nonpattern.com (non-pattern)
     // 2. heuristic candidates: all fail
     const mockResolve = jest.spyOn(resolver, 'resolve');
-    
+
     // First call: example22.com → nonpattern.com
     mockResolve.mockResolvedValueOnce({
       success: true,
@@ -544,11 +549,12 @@ describe('Scheme Change Scenario', () => {
     expect(result.shouldUpdate).toBe(false); // Should NOT update filters
     expect(result.historyUpdated).toBe(true);
 
-    // Verify site state: pattern_changed flag set, history saved
+    // Verify site state: pattern_changed flag set, history saved, non_pattern_mirror set
+    // CRITICAL: last_known_mirror should NOT be updated - it stays on the last pattern domain
+    expect(site.last_known_mirror).toBe('example22.com'); // unchanged!
     expect(site.heuristic_history).toEqual(['example22.com']);
     expect(site.pattern_changed).toBe(true);
-
-    mockResolve.mockRestore();
+    expect(site.non_pattern_mirror).toBe('nonpattern.com');
   });
 
   test('checkSingleSite triggers immediate heuristic when pattern→non-pattern and finds another non-pattern domain', async () => {
@@ -575,7 +581,7 @@ describe('Scheme Change Scenario', () => {
     // 1. example15.com → redirects to example.com (non-pattern)
     // 2. heuristic candidates: example16.com → example16-com.l.ink (non-pattern)
     const mockResolve = jest.spyOn(resolver, 'resolve');
-    
+
     // First call: example15.com → example.com
     mockResolve.mockResolvedValueOnce({
       success: true,
@@ -630,9 +636,12 @@ describe('Scheme Change Scenario', () => {
     expect(result.shouldUpdate).toBe(false); // Should NOT update filters
     expect(result.historyUpdated).toBe(true);
 
-    // Verify site state: pattern_changed flag set, history saved
+    // Verify site state: pattern_changed flag set, history saved, non_pattern_mirror set
+    // IMPORTANT: last_known_mirror should NOT be updated - it stays on the last pattern domain
+    expect(site.last_known_mirror).toBe('example15.com'); // unchanged!
     expect(site.heuristic_history).toEqual(['example15.com']);
     expect(site.pattern_changed).toBe(true);
+    expect(site.non_pattern_mirror).toBe('example.com');
 
     mockResolve.mockRestore();
   });

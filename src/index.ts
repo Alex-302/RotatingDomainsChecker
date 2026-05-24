@@ -323,17 +323,25 @@ export async function main() {
       }
     } else if (isHeuristicNonPattern) {
       // Heuristic found a non-pattern domain (e.g. hepbetspor12.cfd → patronspor.is).
-      // History and flags already set in batch.ts. Update last_known_mirror and counters,
-      // but do NOT touch filter files — the old pattern domain stays until a new pattern is found.
+      // History and flags already set in batch.ts. Store the non-pattern domain separately
+      // but do NOT overwrite last_known_mirror - filter files continue to use the last pattern domain.
       summary.updated++;
-      site.last_known_mirror = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+      const nonPatternCanonical = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+
+      // updateDomainHistory already called in batch.ts, so non_pattern_mirror is already set
+      // Just verify it matches what we computed
+      if (site.non_pattern_mirror !== nonPatternCanonical) {
+        site.non_pattern_mirror = nonPatternCanonical;
+      }
+
       site.last_seen = nowDateOnly;
       delete site.failed_days;
       delete site.failed_since;
       delete site.potentially_dead;
       summary.warnings.push(
-        `${result.siteName}: Pattern domain redirected to non-pattern (${result.oldHost} → ${result.newHost}) - filter not updated, waiting for new pattern domain`
+        `${result.siteName}: Pattern domain redirected to non-pattern (${result.oldHost} → ${nonPatternCanonical}) - filter not updated, waiting for new pattern domain`
       );
+      // NOTE: last_known_mirror is NOT updated - it stays on the last pattern domain
     } else if (isAntibotAccepted && result.shouldUpdate) {
       // Antibot accepted: compute effective new host first to check if anything actually changed
       const effectiveNewHostAntibot = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);

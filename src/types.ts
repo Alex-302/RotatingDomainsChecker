@@ -67,6 +67,8 @@ export interface Config {
 export interface WatcherSite {
   initial_domain?: string;
   last_known_mirror: string;
+  /** Current non-pattern mirror when pattern_changed is true (does not replace last_known_mirror) */
+  non_pattern_mirror?: string;
   /** Treat bare initial_domain as discovery-only entrypoint and do not replace it in filters */
   replace_initial_domain?: boolean;
   path?: string;

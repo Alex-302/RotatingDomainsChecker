@@ -257,9 +257,9 @@ sites:
     potentially_dead: false             # Marked as potentially dead after many failures
 
     # Advanced auto-generated fields (currently NOT implemented consistently; shown here only as future/runtime TODO)
-    # pattern_changed: false            # TODO/runtime gap: non-pattern transition state is not finalized yet
-    # heuristic_history: []             # TODO/runtime gap: behavior is not finalized and may differ from docs
-    # non_pattern_mirror: ""            # TODO/runtime gap: documented, but not implemented as a real runtime field yet
+    # pattern_changed: false            # Set when current domain is non-pattern (deleted when pattern found)
+    # heuristic_history: []             # Last pattern domain before switching to non-pattern
+    # non_pattern_mirror: ""            # Current non-pattern mirror when pattern_changed is true
 ```
 
 </details>
