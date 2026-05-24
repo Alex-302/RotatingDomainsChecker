@@ -105,22 +105,21 @@ export class BatchProcessor {
     const token = this.tokenizeDomain(newDomain);
 
     if (token.isPattern) {
-      // Pattern domain - reset flags (delete from config)
+      // Pattern domain - reset flags and non_pattern_mirror
       delete site.pattern_changed;
+      delete site.non_pattern_mirror;
 
       // Pattern → Pattern: DO NOT create history (just rotation)
-      // History is only needed when switching FROM pattern TO non-pattern
-      // So we delete any existing history when staying on pattern domains
       delete site.heuristic_history;
     } else {
-      // Non-pattern domain - set flag
+      // Non-pattern domain - set flag and store non-pattern mirror
       // IMPORTANT: Save OLD last_known_mirror (pattern domain) to history BEFORE overwriting
       if (oldLastKnownMirror && this.matchesNumericPattern(oldLastKnownMirror)) {
-        // Store only the last pattern domain before switching to non-pattern
         site.heuristic_history = [oldLastKnownMirror];
       }
 
       site.pattern_changed = true;
+      site.non_pattern_mirror = newDomain;
     }
   }
 
