@@ -458,13 +458,19 @@ Result in filter: example949.com
 
 **With `force_search_ahead: true` (current domain alive):**
 
+- Phase 1 check succeeds, but heuristic search still continues
+- All neighboring candidates are checked
+- All working final domains are collected and added to filter rules
+- **The current `last_known_mirror` is always retained**: if it redirects to a different host
+  (e.g. `example949.com → example955.com`), both the alias and the final host appear in collected domains
+
 ```text
-✅ example949.com → HTTP 200 (Phase 1 success, collected)
+✅ example949.com → HTTP 301 → example955.com (Phase 1 success, alias + final collected)
 ✅ example950.com → HTTP 200 → collected
-✅ example951.com → HTTP 301 → example952.com (200) → example952.com collected
+✅ example951.com → HTTP 301 → example955.com (200) → example955.com collected
 ❌ example953.com → DNS FAILED → skipped
 ...
-Result in filter: example949.com,example950.com,example952.com
+Result in filter: example949.com,example950.com,example951.com,example955.com
 ```
 
 **With `force_search_ahead: true` (current domain dead / antibot):**
@@ -484,7 +490,6 @@ Result in filter: example949.com,example950.com,example951.com
 ```
 
 **Redirect patterns as indicators:**
-
 When many domains redirect to a single domain, this **may indicate** that the final domain is a real working mirror,
 not just an antibot placeholder:
 
