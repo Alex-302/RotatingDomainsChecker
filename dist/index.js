@@ -16151,12 +16151,27 @@ class BatchProcessor {
                     const r = results[i];
                     if (r && r.result.success && site.force_search_ahead) {
                         foundSites.add(i);
-                        foundDomainsPerSite.set(i, [{
+                        const domains = [{
                                 domain: r.newHost, // final working domain after redirects
                                 result: r.result,
                                 candidateUrl: r.startedHost,
-                            }]);
-                        this.logger.info(name, `force_search_ahead: Phase 1 working domain ${r.newHost} collected`);
+                            }];
+                        // If the starting alias redirected to a different final host, also include the alias
+                        // This ensures the current working alias is not lost from the collected domains
+                        if (r.hostChanged && r.startedHost) {
+                            const startedHostNormalized = r.startedHost.toLowerCase().replace(/^www\./, '');
+                            const newHostNormalized = r.newHost.toLowerCase();
+                            if (startedHostNormalized !== newHostNormalized) {
+                                domains.unshift({
+                                    domain: r.startedHost, // the starting alias (e.g., last_known_mirror)
+                                    result: r.result,
+                                    candidateUrl: r.startedHost,
+                                });
+                                this.logger.info(name, `force_search_ahead: Phase 1 alias ${r.startedHost} collected (redirects to ${r.newHost})`);
+                            }
+                        }
+                        foundDomainsPerSite.set(i, domains);
+                        this.logger.info(name, `force_search_ahead: Phase 1 working domain(s) collected: ${domains.map(d => d.domain).join(', ')}`);
                     }
                 }
                 const activePromises = new Map();
