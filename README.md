@@ -166,7 +166,7 @@ Core settings for HTTP requests, processing, and git operations.
 ```yaml
 # Git operations settings
 git:
-  mode: "debug"           # "prod" = direct commits, "debug" = create PR
+  mode: "debug"            # "prod" = direct commits, "debug" = create PR
   branch: "master"
   prBranchPrefix: "domain-rotate"
 
