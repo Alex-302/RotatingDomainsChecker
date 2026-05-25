@@ -71,7 +71,7 @@ sites:
   example001.com:
     initial_domain: example001.com
     last_known_mirror: example020.com
-    last_seen: "2024-01-15"
+    success_since: "2024-01-15"
     failed_since: ""
     failed_days: 0
 `;
@@ -91,7 +91,7 @@ sites:
   example001.com:
     initial_domain: example001.com
     last_known_mirror: example020.com
-    last_seen: "2024-01-15"
+    success_since: "2024-01-15"
     failed_since: ""
     failed_days: 0
 `;
@@ -111,7 +111,7 @@ sites:
   site1:
     initial_domain: site1.com
     last_known_mirror: site1new.com
-    last_seen: "2024-01-15"
+    success_since: "2024-01-15"
     failed_since: ""
     failed_days: 0
     probe_text:
@@ -121,12 +121,12 @@ sites:
     writeFileSync(watchersPath, watchersContent, 'utf-8');
 
     const watchers = loadWatchers(watchersPath);
-    watchers.sites['site1'].last_seen = '2024-02-01 12:00';
+    watchers.sites['site1'].success_since = '2024-02-01 12:00';
     saveWatchers(watchers, watchersPath);
 
     const reloaded = loadWatchers(watchersPath);
     expect(reloaded.sites['site1'].initial_domain).toBe('site1.com');
-    expect(reloaded.sites['site1'].last_seen).toBe('2024-02-01 12:00');
+    expect(reloaded.sites['site1'].success_since).toBe('2024-02-01 12:00');
     expect(reloaded.sites['site1'].probe_text).toEqual(['keyword']);
   });
 
@@ -136,7 +136,7 @@ sites:
     initial_domain: gateway.example
     replace_initial_domain: false
     last_known_mirror: mirror085.example
-    last_seen: "2024-01-15"
+    success_since: "2024-01-15"
 `;
     const watchersPath = join(tempDir, 'watchers.yml');
     writeFileSync(watchersPath, watchersContent, 'utf-8');
@@ -150,5 +150,54 @@ sites:
     const reloaded = loadWatchers(watchersPath);
     expect(reloaded.sites['site1'].replace_initial_domain).toBe(false);
     expect(reloaded.sites['site1'].last_known_mirror).toBe('mirror086.example');
+  });
+
+  test('loadWatchers migrates legacy last_seen → success_since', () => {
+    const watchersContent = `sites:
+  example001.com:
+    initial_domain: example001.com
+    last_known_mirror: example020.com
+    last_seen: "2024-01-15"
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    const watchers = loadWatchers(watchersPath);
+    expect(watchers.sites['example001.com'].success_since).toBe('2024-01-15');
+    expect(watchers.sites['example001.com'].last_seen).toBeUndefined();
+  });
+
+  test('loadWatchers prefers explicit success_since over legacy last_seen', () => {
+    const watchersContent = `sites:
+  example001.com:
+    initial_domain: example001.com
+    last_known_mirror: example020.com
+    last_seen: "2024-01-15"
+    success_since: "2024-03-10 09:30"
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    const watchers = loadWatchers(watchersPath);
+    expect(watchers.sites['example001.com'].success_since).toBe('2024-03-10 09:30');
+    expect(watchers.sites['example001.com'].last_seen).toBeUndefined();
+  });
+
+  test('saveWatchers never writes legacy last_seen back', () => {
+    const watchersContent = `sites:
+  site1:
+    initial_domain: site1.com
+    last_known_mirror: site1new.com
+    last_seen: "2024-01-15"
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    const watchers = loadWatchers(watchersPath);
+    saveWatchers(watchers, watchersPath);
+
+    const savedContent = readFileSync(watchersPath, 'utf-8');
+    expect(savedContent).not.toContain('last_seen');
+    expect(savedContent).toContain('success_since');
   });
 });

@@ -825,7 +825,6 @@ export class BatchProcessor {
 
     this.logger.info(siteName, "Starting check...");
 
-    // Optimization: if last_seen is recent (< 2 days), try last_known_mirror first
     let urlToCheck: string | undefined;
     let triedRecentLastKnownMirror = false;
     const fallbackInitialUrl = site.initial_domain ? this.appendSitePath(site.initial_domain, site.path) : undefined;
@@ -850,8 +849,9 @@ export class BatchProcessor {
       return this.processSite(siteName, site, 0, true);
     };
 
-    if (!skipRecentMirror && site.last_seen) {
-      const daysSinceLastSeen = this.calculateDaysSince(site.last_seen);
+    // Optimization: if success_since is recent (< 2 days), try last_known_mirror first
+    if (!skipRecentMirror && site.success_since) {
+      const daysSinceLastSeen = this.calculateDaysSince(site.success_since);
       if (daysSinceLastSeen < 2 && site.last_known_mirror) {
         // Recent success - try last_known_mirror first
         urlToCheck = this.appendSitePath(site.last_known_mirror, site.path);

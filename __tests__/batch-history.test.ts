@@ -82,7 +82,7 @@ describe('Domain History Management', () => {
         'test-site': {
           last_known_mirror: 'example15.com',
           heuristic_history: ['example13.com'],
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -105,7 +105,7 @@ describe('Domain History Management', () => {
         'test-site': {
           last_known_mirror: 'example17.com',
           heuristic_history: ['example17.com'],
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -127,7 +127,7 @@ describe('Domain History Management', () => {
         'test-site': {
           last_known_mirror: 'example15.com',
           heuristic_history: ['example15.com'],
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -150,7 +150,7 @@ describe('Domain History Management', () => {
         'test-site': {
           last_known_mirror: 'example15.com',  // Current pattern domain
           heuristic_history: ['example15.com'],
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -174,7 +174,7 @@ describe('Domain History Management', () => {
       sites: {
         'test-site': {
           last_known_mirror: 'example14.com',
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -213,7 +213,7 @@ describe('Domain History Management', () => {
         'testsite': {
           last_known_mirror: 'testsite55.com',  // Pattern domain
           // No heuristic_history yet
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -238,7 +238,7 @@ describe('Domain History Management', () => {
           last_known_mirror: 'example.com',  // Non-pattern domain
           pattern_changed: true,
           heuristic_history: ['testsite55.com'],  // Pattern saved from previous switch
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -264,7 +264,7 @@ describe('Domain History Management', () => {
           pattern_changed: true,
           non_pattern_mirror: 'nonpattern.com',
           heuristic_history: ['testsite88.com'],
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -302,7 +302,7 @@ describe('Scheme Change Scenario', () => {
         'example': {
           last_known_mirror: 'example16-com.l.ink', // Non-pattern domain
           heuristic_history: ['example16.com'], // Pattern domain in history
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -326,7 +326,7 @@ describe('Scheme Change Scenario', () => {
       sites: {
         'sample': {
           last_known_mirror: 'sample2.com',
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -350,7 +350,7 @@ describe('Scheme Change Scenario', () => {
           last_known_mirror: 'sample5.com',
           heuristic_history: ['sample5.com'],
           pattern_changed: true,
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -372,7 +372,7 @@ describe('Scheme Change Scenario', () => {
       sites: {
         'example': {
           last_known_mirror: 'example12.com',
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -398,7 +398,7 @@ describe('Scheme Change Scenario', () => {
           pattern_changed: true,
           non_pattern_mirror: 'example.com',
           heuristic_history: ['testsite55.com'],
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -423,7 +423,7 @@ describe('Scheme Change Scenario', () => {
       sites: {
         'example': {
           last_known_mirror: 'example12.com',
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -492,7 +492,7 @@ describe('Scheme Change Scenario', () => {
       sites: {
         'example23.com': {
           last_known_mirror: 'example22.com',
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },
@@ -564,7 +564,7 @@ describe('Scheme Change Scenario', () => {
       sites: {
         'example': {
           last_known_mirror: 'example15.com',
-          last_seen: '2026-02-15 10:00',
+          success_since: '2026-02-15 10:00',
           failed_since: '',
           failed_days: 0,
         },

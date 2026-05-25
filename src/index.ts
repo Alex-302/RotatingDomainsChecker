@@ -12,7 +12,7 @@ import type { Summary } from "./types.js";
 import { appendFileSync } from "fs";
 
 // Version
-const VERSION = "1.1.40";
+const VERSION = "1.1.50";
 
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
@@ -46,6 +46,44 @@ export function selectFirstByOrder(newHost: string, additionalDomains?: string[]
   const all = [newHost, ...additionalDomains];
   all.sort(naturalCompare);
   return all[0];
+}
+
+function normalizeDomainForPatternCheck(domain: string): string {
+  return domain.replace(/^www\./, '').toLowerCase();
+}
+
+function matchesNumericPattern(domain: string): boolean {
+  return /^[\w-]*\d+[\w-]*\.[a-z]{2,}$/.test(normalizeDomainForPatternCheck(domain));
+}
+
+export function selectPatternAwareWorkingSet(newHost: string, additionalDomains?: string[]): {
+  canonicalHost: string;
+  additionalPatternDomains: string[];
+  ignoredNonPatternDomains: string[];
+} {
+  const allUniqueDomains = [...new Set([newHost, ...(additionalDomains || [])])];
+  const patternDomains = allUniqueDomains.filter(matchesNumericPattern).sort(naturalCompare);
+
+  if (patternDomains.length === 0) {
+    const canonicalHost = selectFirstByOrder(newHost, additionalDomains);
+    const ignoredNonPatternDomains = allUniqueDomains
+      .filter(domain => domain !== canonicalHost)
+      .sort(naturalCompare);
+
+    return {
+      canonicalHost,
+      additionalPatternDomains: [],
+      ignoredNonPatternDomains,
+    };
+  }
+
+  return {
+    canonicalHost: patternDomains[0],
+    additionalPatternDomains: patternDomains.slice(1),
+    ignoredNonPatternDomains: allUniqueDomains
+      .filter(domain => !matchesNumericPattern(domain))
+      .sort(naturalCompare),
+  };
 }
 
 function extractHostname(value?: string): string | null {
@@ -140,15 +178,8 @@ function formatDateTime(date: Date): string {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-function formatDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`; // Date only to reduce git diff noise for last_seen
-}
-
-function calculateDaysSince(dateStr: string): number {
-  if (!dateStr) return 0;
+export function calculateDaysSince(dateStr: string): number {
+  if (!dateStr || dateStr.trim() === '') return 0;
   try {
     const past = new Date(dateStr.replace(" ", "T"));
     const now = new Date();
@@ -157,6 +188,17 @@ function calculateDaysSince(dateStr: string): number {
     return diffDays;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * Updates site.success_since only when the value would actually change.
+ * Suppresses watcher-state churn: repeated identical success runs no longer rewrite
+ * the timestamp and therefore no longer produce spurious diffs in watchers.yml.
+ */
+function updateSuccessSince(site: { success_since?: string }, newValue: string): void {
+  if (site.success_since !== newValue) {
+    site.success_since = newValue;
   }
 }
 
@@ -208,10 +250,12 @@ export async function main() {
   // Save original last_known_mirror values BEFORE processing
   // Used later to detect if newHost was already known (not a real change)
   const originalLastKnownMirrors = new Map<string, string>();
+  const originalNonPatternMirrors = new Map<string, string | undefined>();
   for (const [siteName, site] of Object.entries(watchers.sites)) {
     if (site.last_known_mirror) {
       originalLastKnownMirrors.set(siteName, site.last_known_mirror);
     }
+    originalNonPatternMirrors.set(siteName, site.non_pattern_mirror);
   }
 
   // Use filtersPath for target directory
@@ -252,7 +296,13 @@ export async function main() {
 
   const now = new Date();
   const nowFormatted = formatDateTime(now);
-  const nowDateOnly = formatDate(now);
+
+  // Snapshot per-site failure state BEFORE processing so we can detect exit-from-failure
+  // transitions and suppress success_since churn on identical repeated runs.
+  const hadFailureBeforeThisRun = new Map<string, boolean>();
+  for (const [siteName, site] of Object.entries(watchers.sites)) {
+    hadFailureBeforeThisRun.set(siteName, Boolean(site.failed_since));
+  }
 
   for (const result of results) {
     const site = watchers.sites[result.siteName];
@@ -309,12 +359,21 @@ export async function main() {
         site.failed_since = nowFormatted;
         site.failed_days = 0;
       } else {
-        // Subsequent failure - calculate days since first failure
-        site.failed_days = calculateDaysSince(site.failed_since);
+        // Subsequent failure - calculate days since first failure.
+        // Day-bucket suppression: only rewrite failed_days if the integer day count
+        // actually changed. Within the same day bucket, repeated failures must not
+        // produce a diff in watchers.yml.
+        const newDays = calculateDaysSince(site.failed_since);
+        if (site.failed_days !== newDays) {
+          site.failed_days = newDays;
+        }
       }
 
       // Mark as potentially dead if no working domain found
       site.potentially_dead = true;
+      // State transition: success → failed. Remove success_since to keep failed state clean.
+      // When site recovers, success_since will be set again in success branches.
+      delete site.success_since;
 
       if ((site.failed_days || 0) >= config.thresholds.failedDaysWarning) {
         summary.warnings.push(
@@ -327,6 +386,7 @@ export async function main() {
       // but do NOT overwrite last_known_mirror - filter files continue to use the last pattern domain.
       summary.updated++;
       const nonPatternCanonical = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+      const oldNonPatternMirror = originalNonPatternMirrors.get(result.siteName);
 
       // updateDomainHistory already called in batch.ts, so non_pattern_mirror is already set
       // Just verify it matches what we computed
@@ -334,7 +394,11 @@ export async function main() {
         site.non_pattern_mirror = nonPatternCanonical;
       }
 
-      site.last_seen = nowDateOnly;
+      // Update success_since only on real state transition: entry into non-pattern phase,
+      // change of the active non-pattern mirror, or failure → success recovery.
+      if (oldNonPatternMirror !== nonPatternCanonical || hadFailureBeforeThisRun.get(result.siteName)) {
+        updateSuccessSince(site, nowFormatted);
+      }
       delete site.failed_days;
       delete site.failed_since;
       delete site.potentially_dead;
@@ -344,7 +408,8 @@ export async function main() {
       // NOTE: last_known_mirror is NOT updated - it stays on the last pattern domain
     } else if (isAntibotAccepted && result.shouldUpdate) {
       // Antibot accepted: compute effective new host first to check if anything actually changed
-      const effectiveNewHostAntibot = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+      const workingSetAntibot = selectPatternAwareWorkingSet(result.newHost, result.additionalWorkingDomains);
+      const effectiveNewHostAntibot = workingSetAntibot.canonicalHost;
       const antibotActuallyChanged = effectiveNewHostAntibot !== site.last_known_mirror;
 
       if (antibotActuallyChanged) {
@@ -374,7 +439,6 @@ export async function main() {
           ? site.heuristic_history[site.heuristic_history.length - 1]
           : undefined;
 
-        const allWorkingDomainsAntibot = [result.newHost, ...(result.additionalWorkingDomains || [])];
         const oldLastKnownMirrorAntibot = site.last_known_mirror;
         const replacementSources = getReplacementSources(site, oldLastKnownMirrorAntibot);
         addReplacementEntries(
@@ -385,27 +449,43 @@ export async function main() {
           result.startedHost || "",
           result.checkDurationMs,
           patternChangedDomain,
-          allWorkingDomainsAntibot,
+          workingSetAntibot.additionalPatternDomains,
         );
 
-        // Update watcher
+        // Update watcher on successful change
+        // Always save only the hostname (domain), regardless of initial_domain format
         site.last_known_mirror = effectiveNewHostAntibot;
-        if (result.hostChanged && !result.historyUpdated) {
-          processor.updateDomainHistory(site, effectiveNewHostAntibot, oldLastKnownMirrorAntibot);
+        // State transition: update success_since ONLY when the effective new host is
+        // genuinely different from the previously stored mirror. This suppresses
+        // churn in force_search_ahead scenarios where hostChanged=true comes from a
+        // redirect alias (Phase 1) but selectFirstByOrder picks back the same
+        // last_known_mirror — e.g., last_known=example001.com (alias→003),
+        // collected [001, 002, 003], effectiveNewHost = min = 001 (unchanged).
+        // Without this guard, repeated identical runs would rewrite the timestamp
+        // and produce spurious diffs in watchers.yml on every invocation.
+        if (effectiveNewHostAntibot !== oldLastKnownMirrorAntibot) {
+          updateSuccessSince(site, nowFormatted);
         }
+        delete site.failed_days; // Reset on success
+        delete site.failed_since;
+        delete site.potentially_dead; // Remove flag on success
       } else {
         summary.unchanged++;
       }
 
-      // Always update last_seen and reset failure flags on any antibot-accepted success
-      site.last_seen = nowDateOnly;
+      // Update success_since: always for host change (state transition), otherwise only
+      // when exiting a prior failure state. On repeated identical runs we suppress churn.
+      if (antibotActuallyChanged || hadFailureBeforeThisRun.get(result.siteName)) {
+        updateSuccessSince(site, nowFormatted);
+      }
       delete site.failed_days;
       delete site.failed_since;
       delete site.potentially_dead;
     } else if (result.shouldUpdate) {
       // Only update filters if check was successful
       if (result.result.success) {
-        const hasAdditionalWorkingDomains = Boolean(result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0);
+        const workingSet = selectPatternAwareWorkingSet(result.newHost, result.additionalWorkingDomains);
+        const hasAdditionalWorkingDomains = workingSet.additionalPatternDomains.length > 0;
         // Count as updated only if domain actually changed
         if (result.hostChanged || hasAdditionalWorkingDomains) {
           summary.updated++;
@@ -418,10 +498,9 @@ export async function main() {
           ? site.heuristic_history[site.heuristic_history.length - 1]
           : undefined;
 
-        // Compute effective newHost with selectFirstByOrder BEFORE building replacements
-        const effectiveNewHost = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+        // Compute effective newHost with pattern-aware selection BEFORE building replacements
+        const effectiveNewHost = workingSet.canonicalHost;
 
-        const allWorkingDomains = [result.newHost, ...(result.additionalWorkingDomains || [])];
         const oldLastKnownMirror = site.last_known_mirror;
         const replacementSources = getReplacementSources(site, oldLastKnownMirror);
         addReplacementEntries(
@@ -432,13 +511,23 @@ export async function main() {
           result.startedHost || "",
           result.checkDurationMs,
           patternChangedDomain,
-          allWorkingDomains,
+          workingSet.additionalPatternDomains,
         );
 
         // Update watcher on successful change
         // Always save only the hostname (domain), regardless of initial_domain format
         site.last_known_mirror = effectiveNewHost;
-        site.last_seen = nowDateOnly;
+        // State transition: update success_since ONLY when the effective new host is
+        // genuinely different from the previously stored mirror. This suppresses
+        // churn in force_search_ahead scenarios where hostChanged=true comes from a
+        // redirect alias (Phase 1) but selectFirstByOrder picks back the same
+        // last_known_mirror — e.g., last_known=example001.com (alias→003),
+        // collected [001, 002, 003], effectiveNewHost = min = 001 (unchanged).
+        // Without this guard, repeated identical runs would rewrite the timestamp
+        // and produce spurious diffs in watchers.yml on every invocation.
+        if (effectiveNewHost !== oldLastKnownMirror) {
+          updateSuccessSince(site, nowFormatted);
+        }
         delete site.failed_days; // Reset on success
         delete site.failed_since;
         delete site.potentially_dead; // Remove flag on success
@@ -456,15 +545,32 @@ export async function main() {
         // Add to manual review list
         summary.warnings.push(`${result.siteName}: ${result.oldHost} → ${result.newHost}`);
 
-        // Update watcher with failed status
-        site.failed_since = nowFormatted;
-        site.failed_days = calculateDaysSince(site.failed_since);
+        // Update watcher with failed status.
+        // Pattern change requiring manual review does NOT reset the failure timeline:
+        // if the site was already failing, preserve the original failed_since so
+        // failed_days reflects the continuous failure series, not the latest alert.
+        if (!site.failed_since) {
+          site.failed_since = nowFormatted;
+          site.failed_days = 0;
+        } else {
+          const newDays = calculateDaysSince(site.failed_since);
+          if (site.failed_days !== newDays) {
+            site.failed_days = newDays;
+          }
+        }
         site.potentially_dead = true;
+        // State transition: success → failed. Remove success_since to keep failed state clean.
+        delete site.success_since;
+
       }
     } else {
-      // Success but no change - update last_seen, reset failed_days
+      // Success but no change - reset failure flags; update success_since ONLY on
+      // failure→success transition. Otherwise suppress churn so repeated identical
+      // runs do not rewrite watchers.yml with a new timestamp.
       summary.unchanged++;
-      site.last_seen = nowDateOnly;
+      if (hadFailureBeforeThisRun.get(result.siteName)) {
+        updateSuccessSince(site, nowFormatted);
+      }
       delete site.failed_days;
       delete site.failed_since;
       delete site.potentially_dead; // Remove flag on success

@@ -1,6 +1,6 @@
 {
   "name": "rotating-domains-checker",
-  "version": "1.1.40",
+  "version": "1.1.50",
   "description": "GitHub Action for checking and updating rotating domains in ad blocking filters",
   "main": "dist/index.js",
   "type": "module",

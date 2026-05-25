@@ -252,7 +252,7 @@ describe('6.10 containsSkipText with skip_text_allow', () => {
 });
 
 // ============================================================================
-// 6.9b Integration: JS redirect chain (t.co → githack → final domain)
+// 6.9b Integration: JS redirect chain (shortlink.test → cdn-redirect.test → final domain)
 // ============================================================================
 
 describe('6.9b resolve() follows JS redirect chain (mocked)', () => {
@@ -345,7 +345,7 @@ describe('6.9b resolve() follows JS redirect chain (mocked)', () => {
 describe('6.10 extractJsRedirect', () => {
   const config = makeConfig();
   const resolver = new HttpResolver(config);
-  const base = 'https://t.co/abc123';
+  const base = 'https://shortlink.test/abc123';
 
   test('meta refresh with URL= → returns absolute URL', () => {
     const body = '<html><head><meta http-equiv="refresh" content="0;URL=https://example11.com/"></head></html>';
@@ -358,8 +358,8 @@ describe('6.10 extractJsRedirect', () => {
   });
 
   test('location.replace("url") → returns absolute URL', () => {
-    const body = '<script>location.replace("https://raw.githack.com/redirect.html")</script>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://raw.githack.com/redirect.html');
+    const body = '<script>location.replace("https://cdn-redirect.test/redirect.html")</script>';
+    expect(resolver.extractJsRedirect(body, base)).toBe('https://cdn-redirect.test/redirect.html');
   });
 
   test("location.replace('url') single quotes → returns absolute URL", () => {
@@ -404,9 +404,9 @@ describe('6.10 extractJsRedirect', () => {
   });
 
   test('minified JS with location.replace → returns URL', () => {
-    // Real-world t.co style: minified script
-    const body = '<script>(function(){location.replace("https://raw.githack.com/eniyiyayinci/redirect-cdn/main/inattv.html")})()</script>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://raw.githack.com/eniyiyayinci/redirect-cdn/main/inattv.html');
+    // Shortener-style minified script
+    const body = '<script>(function(){location.replace("https://cdn-redirect.test/assets/inattv.html")})()</script>';
+    expect(resolver.extractJsRedirect(body, base)).toBe('https://cdn-redirect.test/assets/inattv.html');
   });
 });
 

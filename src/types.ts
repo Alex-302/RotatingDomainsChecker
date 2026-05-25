@@ -88,7 +88,17 @@ export interface WatcherSite {
   /** Pattern change detection: true when current domain is non-pattern (deleted when pattern found) */
   pattern_changed?: boolean;
   // Auto-updated fields
-  last_seen: string;        // Format: YYYY-MM-DD HH:MM
+  /**
+   * Since when the current successful state has been active (format: YYYY-MM-DD HH:MM).
+   * Only updated on actual state transitions (domain change, exit from failure, new phase).
+   * Repeated identical success without state change does NOT rewrite this field.
+   * Backward compatible: legacy `last_seen` values are migrated to `success_since` on load.
+   */
+  success_since?: string;
+  /**
+   * @deprecated Legacy field — migrated to `success_since` by loadWatchers(). New code should use success_since.
+   */
+  last_seen?: string;
   failed_since?: string;    // Format: YYYY-MM-DD HH:MM (only when failed)
   failed_days?: number;     // Days since failed_since (only when failed)
   potentially_dead?: boolean; // true if last_known_mirror and heuristic failed to find working domain
