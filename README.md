@@ -3,7 +3,7 @@
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Rotating%20Domains%20Checker-blue?logo=github)](https://github.com/marketplace/actions/rotating-domains-checker)
 [![GitHub release](https://img.shields.io/github/v/release/Alex-302/RotatingDomainsChecker)](https://github.com/Alex-302/RotatingDomainsChecker/releases)
 
-AutomAutomates redirect checking for ad blocking filter lists. Tracks frequently changing domains and automatically
+Automates redirect checking for ad blocking filter lists. Tracks frequently changing domains and automatically
 updates filter rules. Available as both a standalone tool and a GitHub Action.
 
 ## Table of Contents
@@ -166,7 +166,7 @@ Core settings for HTTP requests, processing, and git operations.
 ```yaml
 # Git operations settings
 git:
-  mode: "debug"           # "prod" = direct commits, "debug" = create PR
+  mode: "debug"            # "prod" = direct commits, "debug" = create PR
   branch: "master"
   prBranchPrefix: "domain-rotate"
 
@@ -224,8 +224,10 @@ sites:
                                         # Set to false for stable gateway domains that should remain in filters
                                         # while only the previous last_known_mirror is replaced.
     last_known_mirror: "example.com"    # Last working mirror (auto-updated by script).
-                                        # With force_search_ahead, always set to the naturally
-                                        # smallest domain among all found working mirrors.
+                                        # With force_search_ahead, set to the naturally smallest
+                                        # live pattern domain among all found working mirrors.
+                                        # Non-pattern redirect targets seen alongside live pattern
+                                        # mirrors are ignored for canonical state and replacements.
 
     # Optional verification fields
     path: "e/ne2g6vqtnrkf"              # Path that must be present in the final redirect target.
@@ -251,15 +253,16 @@ sites:
     geoblock: ""                        # Country code for geo-blocking (e.g. "TR", "US"). Not used, just for information.
 
     # Auto-generated fields (updated by the script)
-    last_seen: "2026-01-21"             # Last successful check (date only)
-    failed_since: ""                    # Date when site first failed
-    failed_days: 0                      # Days since last failure
-    potentially_dead: false             # Marked as potentially dead after many failures
+    success_since: "2026-01-21 12:34"  # Since when current successful state has been active (YYYY-MM-DD HH:MM)
+    failed_since: ""                   # Present only in failed state: date when the current failure series began
+    failed_days: 0                      # Present only in failed state: days since first failure in current series
+    potentially_dead: false             # Present only in failed state: working mirror not found
 
-    # Advanced auto-generated fields (currently NOT implemented consistently; shown here only as future/runtime TODO)
-    # pattern_changed: false            # Set when current domain is non-pattern (deleted when pattern found)
-    # heuristic_history: []             # Last pattern domain before switching to non-pattern
-    # non_pattern_mirror: ""            # Current non-pattern mirror when pattern_changed is true
+    # Advanced auto-generated fields (managed by runtime during pattern ↔ non-pattern transitions)
+    pattern_changed: false              # Set when current domain is non-pattern (deleted when pattern found)
+    heuristic_history: []               # Last 5 working domains (chronological, oldest first); used as fallback
+    non_pattern_mirror: ""              # Current non-pattern mirror when pattern_changed is true;
+                                        # does NOT replace last_known_mirror (old pattern anchor stays for filters)
 ```
 
 </details>
@@ -413,11 +416,15 @@ might access directly.
 **How it works:**
 
 Heuristic candidate search is always triggered regardless of whether the current `last_known_mirror` is alive or dead.
-All final working domains (after following redirects) are collected into filter rules.
+All reachable pattern aliases and final pattern domains are collected into filter rules.
 
-`last_known_mirror` is always set to the **naturally smallest** domain among all collected working mirrors (e.g.
-`example9.live` wins over `example18.live`, `example18.live` wins over `example20.live`), ensuring deterministic
-selection even when parallel HTTP checks complete in arbitrary order.
+`last_known_mirror` is set to the **naturally smallest live pattern domain** among the collected working mirrors
+(e.g. `example9.live` wins over `example18.live`, `example18.live` wins over `example20.live`), ensuring
+deterministic selection even when parallel HTTP checks complete in arbitrary order.
+
+If the working set is mixed and contains both pattern domains and non-pattern redirect targets, the watcher stays in
+pattern mode: canonical selection and filter updates use only the pattern subset. The non-pattern domains do not
+replace `last_known_mirror` and are not appended to filter rules while pattern mirrors are still alive.
 
 If `initial_domain` is a redirect shortener or URL without a numeric pattern (e.g. `https://ksln.link/abc`), heuristic
 candidate generation automatically falls back to `last_known_mirror` to extract the pattern.
@@ -463,6 +470,10 @@ Result in filter: example949.com
 - All working final domains are collected and added to filter rules
 - **The current `last_known_mirror` is always retained**: if it redirects to a different host
   (e.g. `example949.com → example955.com`), both the alias and the final host appear in collected domains
+- If many working aliases share one final redirect target, the smallest reachable alias remains the canonical
+  `last_known_mirror`; the shared final host is still kept in filter rules as an additional working domain
+- If a redirect chain also reveals a non-pattern host while pattern mirrors are alive, that non-pattern host is
+  ignored for canonical state and filter updates
 
 ```text
 ✅ example949.com → HTTP 301 → example955.com (Phase 1 success, alias + final collected)
@@ -618,7 +629,7 @@ sites:
     path: "/"                         # Optional: specific path to check
 
     # These fields will be auto-updated by the script:
-    # last_seen: "2026-01-21"
+    # success_since: "2026-01-21 12:34"
     # failed_since: ""
     # failed_days: 0
 ```

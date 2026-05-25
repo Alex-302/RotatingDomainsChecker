@@ -15395,10 +15395,12 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
+  US: () => (/* binding */ calculateDaysSince),
   B_: () => (/* binding */ dnsPreflightCheck),
   iW: () => (/* binding */ main),
   p0: () => (/* binding */ src_naturalCompare),
-  aq: () => (/* binding */ selectFirstByOrder)
+  aq: () => (/* binding */ selectFirstByOrder),
+  gh: () => (/* binding */ selectPatternAwareWorkingSet)
 });
 
 ;// CONCATENATED MODULE: external "fs"
@@ -15415,20 +15417,31 @@ function loadConfig(configPath = "./config.yml") {
 function loadWatchers(watchersPath = "watchers.yml") {
     const content = (0,external_fs_namespaceObject.readFileSync)(watchersPath, "utf-8");
     const doc = (0,dist/* parseDocument */.Tp)(content);
-    return doc.toJS();
+    const watchers = doc.toJS();
+    // Backward compatibility: migrate legacy `last_seen` → `success_since`
+    if (watchers?.sites) {
+        for (const site of Object.values(watchers.sites)) {
+            if (site.last_seen !== undefined && site.success_since === undefined) {
+                site.success_since = site.last_seen;
+            }
+            delete site.last_seen;
+        }
+    }
+    return watchers;
 }
 function saveWatchers(watchers, watchersPath = "watchers.yml") {
     // Read existing file to preserve comments
     const existingContent = (0,external_fs_namespaceObject.readFileSync)(watchersPath, "utf-8");
     const doc = (0,dist/* parseDocument */.Tp)(existingContent);
-    // Update sites in the document
+    // Update sites in the document, dropping legacy `last_seen` if present
     if (doc.contents && typeof doc.contents === 'object') {
         const yamlMap = doc.contents;
         const sites = yamlMap.get('sites');
         if (sites && typeof sites === 'object') {
-            // Update each site
             Object.keys(watchers.sites).forEach(key => {
-                sites.set(key, watchers.sites[key]);
+                const siteData = { ...watchers.sites[key] };
+                delete siteData.last_seen; // never persist legacy field
+                sites.set(key, siteData);
             });
         }
     }
@@ -16419,7 +16432,6 @@ class BatchProcessor {
             this.logger.warn(siteName, `Geo-blocking: ${site.geoblock}`);
         }
         this.logger.info(siteName, "Starting check...");
-        // Optimization: if last_seen is recent (< 2 days), try last_known_mirror first
         let urlToCheck;
         let triedRecentLastKnownMirror = false;
         const fallbackInitialUrl = site.initial_domain ? this.appendSitePath(site.initial_domain, site.path) : undefined;
@@ -16445,8 +16457,9 @@ class BatchProcessor {
             this.logger.info(siteName, `Recent last_known_mirror failed (${reason}), retrying via initial_domain`);
             return this.processSite(siteName, site, 0, true);
         };
-        if (!skipRecentMirror && site.last_seen) {
-            const daysSinceLastSeen = this.calculateDaysSince(site.last_seen);
+        // Optimization: if success_since is recent (< 2 days), try last_known_mirror first
+        if (!skipRecentMirror && site.success_since) {
+            const daysSinceLastSeen = this.calculateDaysSince(site.success_since);
             if (daysSinceLastSeen < 2 && site.last_known_mirror) {
                 // Recent success - try last_known_mirror first
                 urlToCheck = this.appendSitePath(site.last_known_mirror, site.path);
@@ -17355,6 +17368,9 @@ function processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap,
             const extras = additionalDomainsMap.get(key);
             if (extras) {
                 for (const extra of extras) {
+                    if (matchesNumericPattern(d) && !matchesNumericPattern(extra)) {
+                        continue;
+                    }
                     const extraNorm = normalizeDomain(extra);
                     const existingIdx = existingNormalized.get(extraNorm);
                     if (existingIdx !== undefined) {
@@ -17479,6 +17495,9 @@ class FilterReplacer {
             else {
                 // Subsequent replacements are additional domains from force_search_ahead
                 const primary = seenPrimary.get(r.siteName);
+                if (matchesNumericPattern(primary) && !matchesNumericPattern(r.newHost)) {
+                    continue;
+                }
                 const key = normalizeDomain(primary);
                 if (!additionalDomainsMap.has(key)) {
                     additionalDomainsMap.set(key, []);
@@ -17495,6 +17514,10 @@ class FilterReplacer {
         for (const r of replacements) {
             if (!siteWorkingDomains.has(r.siteName)) {
                 siteWorkingDomains.set(r.siteName, new Set());
+            }
+            const primary = seenPrimary.get(r.siteName);
+            if (primary && matchesNumericPattern(primary) && !matchesNumericPattern(r.newHost)) {
+                continue;
             }
             siteWorkingDomains.get(r.siteName).add(r.newHost);
         }
@@ -17778,9 +17801,10 @@ function processLine(line, hostMap, initialToLastKnownMap, priorityMap, addition
                     return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
             }
             else {
-                const r = replaceDomain(pv, hostMap, initialToLastKnownMap);
-                if (r !== pv)
-                    return ["[" + pn + "=" + r + "]" + rest];
+                const r = processDomainList([pv], hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                if (r.changed || r.processed.length !== 1) {
+                    return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
+                }
             }
         }
         return [line];
@@ -18273,7 +18297,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 // Version
-const VERSION = "1.1.40";
+const VERSION = "1.1.50";
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
@@ -18310,6 +18334,34 @@ function selectFirstByOrder(newHost, additionalDomains) {
     const all = [newHost, ...additionalDomains];
     all.sort(src_naturalCompare);
     return all[0];
+}
+function normalizeDomainForPatternCheck(domain) {
+    return domain.replace(/^www\./, '').toLowerCase();
+}
+function src_matchesNumericPattern(domain) {
+    return /^[\w-]*\d+[\w-]*\.[a-z]{2,}$/.test(normalizeDomainForPatternCheck(domain));
+}
+function selectPatternAwareWorkingSet(newHost, additionalDomains) {
+    const allUniqueDomains = [...new Set([newHost, ...(additionalDomains || [])])];
+    const patternDomains = allUniqueDomains.filter(src_matchesNumericPattern).sort(src_naturalCompare);
+    if (patternDomains.length === 0) {
+        const canonicalHost = selectFirstByOrder(newHost, additionalDomains);
+        const ignoredNonPatternDomains = allUniqueDomains
+            .filter(domain => domain !== canonicalHost)
+            .sort(src_naturalCompare);
+        return {
+            canonicalHost,
+            additionalPatternDomains: [],
+            ignoredNonPatternDomains,
+        };
+    }
+    return {
+        canonicalHost: patternDomains[0],
+        additionalPatternDomains: patternDomains.slice(1),
+        ignoredNonPatternDomains: allUniqueDomains
+            .filter(domain => !src_matchesNumericPattern(domain))
+            .sort(src_naturalCompare),
+    };
 }
 function extractHostname(value) {
     if (!value)
@@ -18388,14 +18440,8 @@ function formatDateTime(date) {
     const minutes = String(date.getMinutes()).padStart(2, "0");
     return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
-function formatDate(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`; // Date only to reduce git diff noise for last_seen
-}
 function calculateDaysSince(dateStr) {
-    if (!dateStr)
+    if (!dateStr || dateStr.trim() === '')
         return 0;
     try {
         const past = new Date(dateStr.replace(" ", "T"));
@@ -18406,6 +18452,16 @@ function calculateDaysSince(dateStr) {
     }
     catch {
         return 0;
+    }
+}
+/**
+ * Updates site.success_since only when the value would actually change.
+ * Suppresses watcher-state churn: repeated identical success runs no longer rewrite
+ * the timestamp and therefore no longer produce spurious diffs in watchers.yml.
+ */
+function updateSuccessSince(site, newValue) {
+    if (site.success_since !== newValue) {
+        site.success_since = newValue;
     }
 }
 /**
@@ -18445,10 +18501,12 @@ async function main() {
     // Save original last_known_mirror values BEFORE processing
     // Used later to detect if newHost was already known (not a real change)
     const originalLastKnownMirrors = new Map();
+    const originalNonPatternMirrors = new Map();
     for (const [siteName, site] of Object.entries(watchers.sites)) {
         if (site.last_known_mirror) {
             originalLastKnownMirrors.set(siteName, site.last_known_mirror);
         }
+        originalNonPatternMirrors.set(siteName, site.non_pattern_mirror);
     }
     // Use filtersPath for target directory
     const targetPath = isTestMode && config.filtersdir_test
@@ -18483,7 +18541,12 @@ async function main() {
     };
     const now = new Date();
     const nowFormatted = formatDateTime(now);
-    const nowDateOnly = formatDate(now);
+    // Snapshot per-site failure state BEFORE processing so we can detect exit-from-failure
+    // transitions and suppress success_since churn on identical repeated runs.
+    const hadFailureBeforeThisRun = new Map();
+    for (const [siteName, site] of Object.entries(watchers.sites)) {
+        hadFailureBeforeThisRun.set(siteName, Boolean(site.failed_since));
+    }
     for (const result of results) {
         const site = watchers.sites[result.siteName];
         if (!site)
@@ -18538,11 +18601,20 @@ async function main() {
                 site.failed_days = 0;
             }
             else {
-                // Subsequent failure - calculate days since first failure
-                site.failed_days = calculateDaysSince(site.failed_since);
+                // Subsequent failure - calculate days since first failure.
+                // Day-bucket suppression: only rewrite failed_days if the integer day count
+                // actually changed. Within the same day bucket, repeated failures must not
+                // produce a diff in watchers.yml.
+                const newDays = calculateDaysSince(site.failed_since);
+                if (site.failed_days !== newDays) {
+                    site.failed_days = newDays;
+                }
             }
             // Mark as potentially dead if no working domain found
             site.potentially_dead = true;
+            // State transition: success → failed. Remove success_since to keep failed state clean.
+            // When site recovers, success_since will be set again in success branches.
+            delete site.success_since;
             if ((site.failed_days || 0) >= config.thresholds.failedDaysWarning) {
                 summary.warnings.push(`${result.siteName}: Failed for ${site.failed_days} days - consider removing from filters`);
             }
@@ -18553,12 +18625,17 @@ async function main() {
             // but do NOT overwrite last_known_mirror - filter files continue to use the last pattern domain.
             summary.updated++;
             const nonPatternCanonical = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+            const oldNonPatternMirror = originalNonPatternMirrors.get(result.siteName);
             // updateDomainHistory already called in batch.ts, so non_pattern_mirror is already set
             // Just verify it matches what we computed
             if (site.non_pattern_mirror !== nonPatternCanonical) {
                 site.non_pattern_mirror = nonPatternCanonical;
             }
-            site.last_seen = nowDateOnly;
+            // Update success_since only on real state transition: entry into non-pattern phase,
+            // change of the active non-pattern mirror, or failure → success recovery.
+            if (oldNonPatternMirror !== nonPatternCanonical || hadFailureBeforeThisRun.get(result.siteName)) {
+                updateSuccessSince(site, nowFormatted);
+            }
             delete site.failed_days;
             delete site.failed_since;
             delete site.potentially_dead;
@@ -18567,7 +18644,8 @@ async function main() {
         }
         else if (isAntibotAccepted && result.shouldUpdate) {
             // Antibot accepted: compute effective new host first to check if anything actually changed
-            const effectiveNewHostAntibot = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
+            const workingSetAntibot = selectPatternAwareWorkingSet(result.newHost, result.additionalWorkingDomains);
+            const effectiveNewHostAntibot = workingSetAntibot.canonicalHost;
             const antibotActuallyChanged = effectiveNewHostAntibot !== site.last_known_mirror;
             if (antibotActuallyChanged) {
                 summary.antibotAccepted++;
@@ -18589,21 +18667,35 @@ async function main() {
                 const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
                     ? site.heuristic_history[site.heuristic_history.length - 1]
                     : undefined;
-                const allWorkingDomainsAntibot = [result.newHost, ...(result.additionalWorkingDomains || [])];
                 const oldLastKnownMirrorAntibot = site.last_known_mirror;
                 const replacementSources = getReplacementSources(site, oldLastKnownMirrorAntibot);
-                addReplacementEntries(summary, result.siteName, replacementSources, effectiveNewHostAntibot, result.startedHost || "", result.checkDurationMs, patternChangedDomain, allWorkingDomainsAntibot);
-                // Update watcher
+                addReplacementEntries(summary, result.siteName, replacementSources, effectiveNewHostAntibot, result.startedHost || "", result.checkDurationMs, patternChangedDomain, workingSetAntibot.additionalPatternDomains);
+                // Update watcher on successful change
+                // Always save only the hostname (domain), regardless of initial_domain format
                 site.last_known_mirror = effectiveNewHostAntibot;
-                if (result.hostChanged && !result.historyUpdated) {
-                    processor.updateDomainHistory(site, effectiveNewHostAntibot, oldLastKnownMirrorAntibot);
+                // State transition: update success_since ONLY when the effective new host is
+                // genuinely different from the previously stored mirror. This suppresses
+                // churn in force_search_ahead scenarios where hostChanged=true comes from a
+                // redirect alias (Phase 1) but selectFirstByOrder picks back the same
+                // last_known_mirror — e.g., last_known=example001.com (alias→003),
+                // collected [001, 002, 003], effectiveNewHost = min = 001 (unchanged).
+                // Without this guard, repeated identical runs would rewrite the timestamp
+                // and produce spurious diffs in watchers.yml on every invocation.
+                if (effectiveNewHostAntibot !== oldLastKnownMirrorAntibot) {
+                    updateSuccessSince(site, nowFormatted);
                 }
+                delete site.failed_days; // Reset on success
+                delete site.failed_since;
+                delete site.potentially_dead; // Remove flag on success
             }
             else {
                 summary.unchanged++;
             }
-            // Always update last_seen and reset failure flags on any antibot-accepted success
-            site.last_seen = nowDateOnly;
+            // Update success_since: always for host change (state transition), otherwise only
+            // when exiting a prior failure state. On repeated identical runs we suppress churn.
+            if (antibotActuallyChanged || hadFailureBeforeThisRun.get(result.siteName)) {
+                updateSuccessSince(site, nowFormatted);
+            }
             delete site.failed_days;
             delete site.failed_since;
             delete site.potentially_dead;
@@ -18611,7 +18703,8 @@ async function main() {
         else if (result.shouldUpdate) {
             // Only update filters if check was successful
             if (result.result.success) {
-                const hasAdditionalWorkingDomains = Boolean(result.additionalWorkingDomains && result.additionalWorkingDomains.length > 0);
+                const workingSet = selectPatternAwareWorkingSet(result.newHost, result.additionalWorkingDomains);
+                const hasAdditionalWorkingDomains = workingSet.additionalPatternDomains.length > 0;
                 // Count as updated only if domain actually changed
                 if (result.hostChanged || hasAdditionalWorkingDomains) {
                     summary.updated++;
@@ -18623,16 +18716,25 @@ async function main() {
                 const patternChangedDomain = site.pattern_changed && site.heuristic_history && site.heuristic_history.length > 0
                     ? site.heuristic_history[site.heuristic_history.length - 1]
                     : undefined;
-                // Compute effective newHost with selectFirstByOrder BEFORE building replacements
-                const effectiveNewHost = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
-                const allWorkingDomains = [result.newHost, ...(result.additionalWorkingDomains || [])];
+                // Compute effective newHost with pattern-aware selection BEFORE building replacements
+                const effectiveNewHost = workingSet.canonicalHost;
                 const oldLastKnownMirror = site.last_known_mirror;
                 const replacementSources = getReplacementSources(site, oldLastKnownMirror);
-                addReplacementEntries(summary, result.siteName, replacementSources, effectiveNewHost, result.startedHost || "", result.checkDurationMs, patternChangedDomain, allWorkingDomains);
+                addReplacementEntries(summary, result.siteName, replacementSources, effectiveNewHost, result.startedHost || "", result.checkDurationMs, patternChangedDomain, workingSet.additionalPatternDomains);
                 // Update watcher on successful change
                 // Always save only the hostname (domain), regardless of initial_domain format
                 site.last_known_mirror = effectiveNewHost;
-                site.last_seen = nowDateOnly;
+                // State transition: update success_since ONLY when the effective new host is
+                // genuinely different from the previously stored mirror. This suppresses
+                // churn in force_search_ahead scenarios where hostChanged=true comes from a
+                // redirect alias (Phase 1) but selectFirstByOrder picks back the same
+                // last_known_mirror — e.g., last_known=example001.com (alias→003),
+                // collected [001, 002, 003], effectiveNewHost = min = 001 (unchanged).
+                // Without this guard, repeated identical runs would rewrite the timestamp
+                // and produce spurious diffs in watchers.yml on every invocation.
+                if (effectiveNewHost !== oldLastKnownMirror) {
+                    updateSuccessSince(site, nowFormatted);
+                }
                 delete site.failed_days; // Reset on success
                 delete site.failed_since;
                 delete site.potentially_dead; // Remove flag on success
@@ -18648,16 +18750,33 @@ async function main() {
                 logger.warn(result.siteName, `   Action: Manual review required`);
                 // Add to manual review list
                 summary.warnings.push(`${result.siteName}: ${result.oldHost} → ${result.newHost}`);
-                // Update watcher with failed status
-                site.failed_since = nowFormatted;
-                site.failed_days = calculateDaysSince(site.failed_since);
+                // Update watcher with failed status.
+                // Pattern change requiring manual review does NOT reset the failure timeline:
+                // if the site was already failing, preserve the original failed_since so
+                // failed_days reflects the continuous failure series, not the latest alert.
+                if (!site.failed_since) {
+                    site.failed_since = nowFormatted;
+                    site.failed_days = 0;
+                }
+                else {
+                    const newDays = calculateDaysSince(site.failed_since);
+                    if (site.failed_days !== newDays) {
+                        site.failed_days = newDays;
+                    }
+                }
                 site.potentially_dead = true;
+                // State transition: success → failed. Remove success_since to keep failed state clean.
+                delete site.success_since;
             }
         }
         else {
-            // Success but no change - update last_seen, reset failed_days
+            // Success but no change - reset failure flags; update success_since ONLY on
+            // failure→success transition. Otherwise suppress churn so repeated identical
+            // runs do not rewrite watchers.yml with a new timestamp.
             summary.unchanged++;
-            site.last_seen = nowDateOnly;
+            if (hadFailureBeforeThisRun.get(result.siteName)) {
+                updateSuccessSince(site, nowFormatted);
+            }
             delete site.failed_days;
             delete site.failed_since;
             delete site.potentially_dead; // Remove flag on success
@@ -18852,8 +18971,10 @@ if (!process.env.JEST_WORKER_ID) {
     });
 }
 
+var __webpack_exports__calculateDaysSince = __webpack_exports__.US;
 var __webpack_exports__dnsPreflightCheck = __webpack_exports__.B_;
 var __webpack_exports__main = __webpack_exports__.iW;
 var __webpack_exports__naturalCompare = __webpack_exports__.p0;
 var __webpack_exports__selectFirstByOrder = __webpack_exports__.aq;
-export { __webpack_exports__dnsPreflightCheck as dnsPreflightCheck, __webpack_exports__main as main, __webpack_exports__naturalCompare as naturalCompare, __webpack_exports__selectFirstByOrder as selectFirstByOrder };
+var __webpack_exports__selectPatternAwareWorkingSet = __webpack_exports__.gh;
+export { __webpack_exports__calculateDaysSince as calculateDaysSince, __webpack_exports__dnsPreflightCheck as dnsPreflightCheck, __webpack_exports__main as main, __webpack_exports__naturalCompare as naturalCompare, __webpack_exports__selectFirstByOrder as selectFirstByOrder, __webpack_exports__selectPatternAwareWorkingSet as selectPatternAwareWorkingSet };

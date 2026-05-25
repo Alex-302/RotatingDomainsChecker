@@ -82,7 +82,7 @@ beforeEach(() => {
 function makeSite(overrides: Partial<WatcherSite> = {}): WatcherSite {
   return {
     last_known_mirror: 'example001.com',
-    last_seen: '',
+    success_since: '',
     failed_since: '',
     failed_days: 0,
     ...overrides,
@@ -405,15 +405,15 @@ describe('4. shouldUpdate logic', () => {
 // ============================================================================
 // 4.7 calculateDaysSince (tested indirectly via processSite optimization)
 // ============================================================================
-describe('4.7 calculateDaysSince (via recent last_seen optimization)', () => {
-  test('last_seen recent (< 2 days) → tries last_known_mirror first', async () => {
+describe('4.7 calculateDaysSince (via recent success_since optimization)', () => {
+  test('success_since recent (< 2 days) → tries last_known_mirror first', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
     const now = new Date();
     const recentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const site = makeSite({
       initial_domain: 'initial.com',
       last_known_mirror: 'mirror.com',
-      last_seen: recentDate,
+      success_since: recentDate,
     });
     const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
@@ -434,22 +434,22 @@ describe('4.7 calculateDaysSince (via recent last_seen optimization)', () => {
     const now = new Date();
     const recentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const site = makeSite({
-      initial_domain: 'https://voe.sx/e/abc123',
-      last_known_mirror: 'ericeastweight_old.com',
+      initial_domain: 'https://shortvideo.example/e/abc123',
+      last_known_mirror: 'videoedge-old.example',
       path: 'e/abc123',
-      last_seen: recentDate,
+      success_since: recentDate,
     });
-    const watchers = makeWatchers({ 'woe.sx': site });
+    const watchers = makeWatchers({ 'shortvideo': site });
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
     const resolveSpy = jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
-      if (url === 'https://ericeastweight_old.com/e/abc123') {
+      if (url === 'https://videoedge-old.example/e/abc123') {
         return makeFailResult('Dead mirror');
       }
-      if (url === 'https://voe.sx/e/abc123') {
-        return makeSuccessResult('ericeastweight.com', {
-          finalUrl: 'https://ericeastweight.com/e/abc123',
+      if (url === 'https://shortvideo.example/e/abc123') {
+        return makeSuccessResult('videoedge.example', {
+          finalUrl: 'https://videoedge.example/e/abc123',
         });
       }
       return makeFailResult(`Unexpected URL: ${url}`);
@@ -459,23 +459,23 @@ describe('4.7 calculateDaysSince (via recent last_seen optimization)', () => {
     const results = await processor.processAll();
 
     expect(resolveSpy.mock.calls.map(call => call[0])).toEqual([
-      'https://ericeastweight_old.com/e/abc123',
-      'https://voe.sx/e/abc123',
+      'https://videoedge-old.example/e/abc123',
+      'https://shortvideo.example/e/abc123',
     ]);
     expect(results[0].result.success).toBe(true);
-    expect(results[0].newHost).toBe('ericeastweight.com');
-    expect(results[0].oldHost).toBe('ericeastweight_old.com');
-    expect(results[0].startedHost).toBe('voe.sx');
+    expect(results[0].newHost).toBe('videoedge.example');
+    expect(results[0].oldHost).toBe('videoedge-old.example');
+    expect(results[0].startedHost).toBe('shortvideo.example');
     expect(results[0].hostChanged).toBe(true);
     expect(results[0].shouldUpdate).toBe(true);
   });
 
-  test('last_seen old (> 2 days) → uses initial_domain', async () => {
+  test('success_since old (> 2 days) → uses initial_domain', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
     const site = makeSite({
       initial_domain: 'initial.com',
       last_known_mirror: 'mirror.com',
-      last_seen: '2020-01-01 00:00',
+      success_since: '2020-01-01 00:00',
     });
     const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
@@ -490,12 +490,12 @@ describe('4.7 calculateDaysSince (via recent last_seen optimization)', () => {
     expect(firstCallUrl).toBe('initial.com');
   });
 
-  test('empty last_seen → uses initial_domain', async () => {
+  test('empty success_since → uses initial_domain', async () => {
     const config = makeConfig({ dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false } });
     const site = makeSite({
       initial_domain: 'initial.com',
       last_known_mirror: 'mirror.com',
-      last_seen: '',
+      success_since: '',
     });
     const watchers = makeWatchers({ 'testsite': site });
     const logger = makeLogger();
@@ -795,7 +795,7 @@ describe('Path mismatch handling', () => {
     const logger = makeLogger();
     const resolver = new HttpResolver(config);
 
-    // Mirror redirects to root (no path) — simulates ericeastweight.com → voe.sx/
+    // Mirror redirects to root (no path) — simulates videoedge.example → shortvideo.example/
     jest.spyOn(resolver, 'resolve').mockResolvedValue(
       makeSuccessResult('nopattern.com', { finalUrl: 'https://nopattern.com/' }) as never,
     );
@@ -1378,7 +1378,7 @@ describe('8. force_search_ahead scenarios', () => {
       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
     });
     const site = makeSite({
-      initial_domain: 'https://ksln.link/redirect',  // no numeric pattern
+      initial_domain: 'https://shortlink.example/redirect',  // no numeric pattern
       last_known_mirror: 'example18.com',
       force_search_ahead: true,
     });
@@ -1389,7 +1389,7 @@ describe('8. force_search_ahead scenarios', () => {
     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
       const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
       // Phase 1: initial_domain shortener redirects to example18.com
-      if (host === 'ksln.link') return Promise.resolve(makeSuccessResult('example18.com'));
+      if (host === 'shortlink.example') return Promise.resolve(makeSuccessResult('example18.com'));
       // Phase 2: heuristic candidates generated from last_known_mirror (example18.com)
       if (host === 'example18.com') return Promise.resolve(makeSuccessResult('example18.com'));
       if (host === 'example19.com') return Promise.resolve(makeSuccessResult('example19.com'));

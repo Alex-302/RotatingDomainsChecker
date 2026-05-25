@@ -189,6 +189,9 @@ function processDomainList(
       const extras = additionalDomainsMap.get(key);
       if (extras) {
         for (const extra of extras) {
+          if (matchesNumericPattern(d) && !matchesNumericPattern(extra)) {
+            continue;
+          }
           const extraNorm = normalizeDomain(extra);
           const existingIdx = existingNormalized.get(extraNorm);
           if (existingIdx !== undefined) {
@@ -327,6 +330,9 @@ export class FilterReplacer {
       } else {
         // Subsequent replacements are additional domains from force_search_ahead
         const primary = seenPrimary.get(r.siteName)!;
+        if (matchesNumericPattern(primary) && !matchesNumericPattern(r.newHost)) {
+          continue;
+        }
         const key = normalizeDomain(primary);
         if (!additionalDomainsMap.has(key)) {
           additionalDomainsMap.set(key, []);
@@ -344,6 +350,10 @@ export class FilterReplacer {
     for (const r of replacements) {
       if (!siteWorkingDomains.has(r.siteName)) {
         siteWorkingDomains.set(r.siteName, new Set());
+      }
+      const primary = seenPrimary.get(r.siteName);
+      if (primary && matchesNumericPattern(primary) && !matchesNumericPattern(r.newHost)) {
+        continue;
       }
       siteWorkingDomains.get(r.siteName)!.add(r.newHost);
     }
@@ -655,8 +665,10 @@ function processLine(
         if (r.changed || r.processed.length !== d.length)
           return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
       } else {
-        const r = replaceDomain(pv, hostMap, initialToLastKnownMap);
-        if (r !== pv) return ["[" + pn + "=" + r + "]" + rest];
+        const r = processDomainList([pv], hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+        if (r.changed || r.processed.length !== 1) {
+          return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
+        }
       }
     }
     return [line];

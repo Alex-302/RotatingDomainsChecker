@@ -677,26 +677,26 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
   const emptyPriorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
   const additionalDomainsMap = new Map([['example118.com', ['nopattern.com']]]);
 
-  test('single-site cosmetic: example001.com##.ads → example118.com,nopattern.com##.ads', () => {
+  test('single-site cosmetic: non-pattern extra is ignored for pattern watcher', () => {
     const result = processLine('example001.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
-    expect(result).toEqual(['example118.com,nopattern.com##.ads']);
+    expect(result).toEqual(['example118.com##.ads']);
   });
 
-  test('mixed cosmetic: other.com,example001.com,extra.com##.ads → both domains added', () => {
+  test('mixed cosmetic: keeps unrelated domains but does not append non-pattern extra', () => {
     const result = processLine('other.com,example001.com,extra.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
     expect(result[0]).toContain('example118.com');
-    expect(result[0]).toContain('nopattern.com');
+    expect(result[0]).not.toContain('nopattern.com');
     expect(result[0]).toContain('other.com');
     expect(result[0]).toContain('extra.com');
     // example001.com must not remain
     expect(result[0]).not.toContain('example001.com');
   });
 
-  test('mixed cosmetic: nopattern.com should appear only once (not duplicated)', () => {
+  test('mixed cosmetic: non-pattern extra is excluded entirely', () => {
     const result = processLine('other.com,example001.com,extra.com##.ads', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
     const domains = result[0].split('##')[0].split(',');
     const count = domains.filter((d: string) => d === 'nopattern.com').length;
-    expect(count).toBe(1);
+    expect(count).toBe(0);
   });
 
   test('processDomainList: additional appended when primary key matches', () => {
@@ -705,7 +705,7 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
       hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap
     );
     expect(processed).toContain('example118.com');
-    expect(processed).toContain('nopattern.com');
+    expect(processed).not.toContain('nopattern.com');
     expect(processed).toContain('other.com');
     expect(processed).toContain('extra.com');
     expect(processed).not.toContain('example001.com');
@@ -805,13 +805,13 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
 
   test('initial_domain redirects to SAME domain as last_known_mirror → NO change detected', async () => {
     // Scenario: watcher has last_known_mirror = 'example027.com'
-    // initial_domain (t.co) redirects to example027.com
+    // initial_domain (shortlink.test) redirects to example027.com
     // This should NOT be counted as a change
     const replacements: ReplacementPair[] = [{
       siteName: 'TestSite',
-      oldHost: 't.co',           // initial_domain
+      oldHost: 'shortlink.test', // initial_domain
       newHost: 'example027.com', // resolved domain
-      startedHost: 't.co',
+      startedHost: 'shortlink.test',
       checkDurationMs: 1000,
     }];
 
@@ -842,13 +842,13 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
 
   test('initial_domain redirects to NEW domain (different from last_known_mirror) → change detected', async () => {
     // Scenario: watcher has last_known_mirror = 'example027.com'
-    // initial_domain (t.co) redirects to example028.com (NEW domain)
+    // initial_domain (shortlink.test) redirects to example028.com (NEW domain)
     // This SHOULD be counted as a change
     const replacements: ReplacementPair[] = [{
       siteName: 'TestSite',
-      oldHost: 't.co',           // initial_domain
+      oldHost: 'shortlink.test', // initial_domain
       newHost: 'example028.com', // NEW resolved domain
-      startedHost: 't.co',
+      startedHost: 'shortlink.test',
       checkDurationMs: 1000,
     }];
 
@@ -880,9 +880,9 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
     // When originalMirrors is not provided, all fromHost !== newHost are shown
     const replacements: ReplacementPair[] = [{
       siteName: 'TestSite',
-      oldHost: 't.co',
+      oldHost: 'shortlink.test',
       newHost: 'example027.com',
-      startedHost: 't.co',
+      startedHost: 'shortlink.test',
       checkDurationMs: 1000,
     }];
 
@@ -905,25 +905,25 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
 
   test('shortener hostname as oldHost would corrupt filter — guard in index.ts must prevent this', async () => {
     // REGRESSION TEST for critical bug (fixed in index.ts):
-    // If initial_domain = "https://t.co/somepath", code previously extracted "t.co" as the
-    // hostname and added it to replacements as oldHost. This caused ALL ||t.co^ rules in
+    // If initial_domain = "https://shortlink.test/somepath", code previously extracted "shortlink.test" as the
+    // hostname and added it to replacements as oldHost. This caused ALL ||shortlink.test^ rules in
     // filter files to be replaced with the watcher's current mirror domain — corrupting filters.
     //
     // The fix in index.ts: skip adding initial_domain replacement when initial_domain has a
     // path component (i.e. it's a redirect shortener URL, not a plain domain like "example.com").
     //
     // This test verifies that IF such a replacement were passed to FilterReplacer (which should
-    // never happen after the fix), it WOULD replace ||t.co^ in the filter — proving the upstream
+    // never happen after the fix), it WOULD replace ||shortlink.test^ in the filter — proving the upstream
     // guard is essential.
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rdc-shortener-test-'));
     const filterSubDir = path.join(tmpDir, 'TestFilter');
     await fsp.mkdir(filterSubDir, { recursive: true });
 
-    // Filter file that has legitimate t.co blocking rules
+    // Filter file that has legitimate shortlink.test blocking rules
     const filterContent = [
-      '||t.co^$important',
+      '||shortlink.test^$important',
       '||example029.com^',
-      '@@||t.co^$domain=twitter.com',
+      '@@||shortlink.test^$domain=social.example',
     ].join('\n');
     await fsp.writeFile(path.join(filterSubDir, 'filter.txt'), filterContent, 'utf8');
 
@@ -936,9 +936,9 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
     // Simulate the WRONG behavior: shortener hostname as oldHost
     const badReplacements: ReplacementPair[] = [{
       siteName: 'SomeWatcher',
-      oldHost: 't.co',            // extracted from "https://t.co/somepath" — WRONG!
+      oldHost: 'shortlink.test',  // extracted from "https://shortlink.test/somepath" — WRONG!
       newHost: 'example029.com',  // last_known_mirror of the watcher
-      startedHost: 't.co',
+      startedHost: 'shortlink.test',
       checkDurationMs: 100,
     }];
 
@@ -947,10 +947,10 @@ describe('4.1 originalMirrors: entry point resolution detection', () => {
 
     const result = await fsp.readFile(path.join(filterSubDir, 'filter.txt'), 'utf8');
 
-    // This confirms what the bug WOULD cause: t.co rules get corrupted
+    // This confirms what the bug WOULD cause: shortlink.test rules get corrupted
     // (The fix in index.ts ensures this replacement is never created in the first place)
     expect(result).toContain('||example029.com^');
-    expect(result).not.toContain('||t.co^$important');
+    expect(result).not.toContain('||shortlink.test^$important');
 
     await fsp.rm(tmpDir, { recursive: true, force: true });
   });
@@ -1400,6 +1400,54 @@ describe('2.17 processLine — Wrapper syntax [$domain=...]', () => {
       .toEqual(['[$domain=new.com]##.ads']);
   });
 
+  test('[$domain=...] wrapper: single predicted mirror is processed like ordinary $domain=', () => {
+    const hostMap = new Map([['example2050.com', 'example2062.com']]);
+    const priorityMap = new Map([
+      ['example2062.com', {
+        initial: null,
+        lastKnown: 'example2062.com',
+        oldHost: 'example2050.com',
+        workingDomains: new Set([
+          'example2062.com',
+          'example2063.com',
+          'example2064.com',
+          'example2065.com',
+          'example2066.com',
+          'example2067.com',
+          'example2069.com',
+          'example2070.com',
+          'example2071.com',
+          'example2072.com',
+          'example2073.com',
+        ]),
+      }],
+    ]) as Map<string, { initial: string | null; lastKnown: string; oldHost: string; workingDomains?: Set<string> }>;
+    const additionalDomainsMap = new Map([
+      ['example2062.com', [
+        'example2063.com',
+        'example2064.com',
+        'example2065.com',
+        'example2066.com',
+        'example2067.com',
+        'example2069.com',
+        'example2070.com',
+        'example2071.com',
+        'example2072.com',
+        'example2073.com',
+      ]],
+    ]);
+
+    expect(processLine(
+      '[$domain=example2045.com]##.header-banner',
+      hostMap,
+      emptyMap,
+      priorityMap as Map<string, { initial: string | null; lastKnown: string; oldHost: string }>,
+      additionalDomainsMap,
+    )).toEqual([
+      '[$domain=example2062.com|example2063.com|example2064.com|example2065.com|example2066.com|example2067.com|example2069.com|example2070.com|example2071.com|example2072.com|example2073.com]##.header-banner',
+    ]);
+  });
+
   test('[$domain=...] wrapper: no change when domain not in hostMap', () => {
     const hostMap = new Map([['other.com', 'new.com']]);
     expect(processLine('[$domain=nopattern.com]#%#//scriptlet(\'x\')', hostMap, emptyMap, emptyPriority))
@@ -1626,5 +1674,38 @@ describe('6. applyReplacements — Mixed marker families integration', () => {
 
     // Verify no old domains remain (except in wrapper where nopattern.com is expected)
     expect(written).not.toContain('example501.com');
+  });
+
+  test('mixed primary+additional replacements ignore non-pattern additions for pattern watcher', async () => {
+    const filterFile = path.join(tmpDir, 'MixedFilter', 'pattern-only.txt');
+    await fsp.writeFile(filterFile, 'example001.com##.ads\n[$domain=example001.com]###banner\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      {
+        siteName: 'PatternWatcher',
+        oldHost: 'example001.com',
+        newHost: 'example118.com',
+        startedHost: 'example001.com',
+        checkDurationMs: 100,
+      },
+      {
+        siteName: 'PatternWatcher',
+        oldHost: 'example001.com',
+        newHost: 'nopattern.com',
+        startedHost: 'example001.com',
+        checkDurationMs: 100,
+      },
+    ];
+
+    await replacer.applyReplacements(replacements, false);
+
+    const written = await fsp.readFile(filterFile, 'utf-8');
+    expect(written).toContain('example118.com##.ads');
+    expect(written).toContain('[$domain=example118.com]###banner');
+    expect(written).not.toContain('nopattern.com');
   });
 });
