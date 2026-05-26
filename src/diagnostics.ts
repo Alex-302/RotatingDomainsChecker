@@ -24,46 +24,51 @@ class ConnectionDiagnostics {
 
   start() {
     if (this.stopped) return;
-    
+
     // Subscribe to undici:client:connectError
-    const sub1 = diagnosticsChannel.subscribe("undici:client:connectError", (message: any) => {
+    const sub1 = diagnosticsChannel.subscribe("undici:client:connectError", (message: unknown) => {
+      const msg = message as { error?: { message?: string } };
       if (!this.stopped && this.logger) {
-        this.logger.logGlobal(LogLevel.DEBUG, `CONNECTION Connection error: ${message.error?.message || "unknown"}`);
+        this.logger.logGlobal(LogLevel.DEBUG, `CONNECTION Connection error: ${msg.error?.message || "unknown"}`);
       }
     });
     this.subscriptions.push(sub1);
 
     // Subscribe to undici:client:connected
-    const sub2 = diagnosticsChannel.subscribe("undici:client:connected", (message: any) => {
+    const sub2 = diagnosticsChannel.subscribe("undici:client:connected", (message: unknown) => {
+      const msg = message as { origin?: string };
       if (!this.stopped) {
-        const origin = message.origin || "unknown";
+        const origin = msg.origin || "unknown";
         this.updatePoolStats(origin, { connected: 1 });
       }
     });
     this.subscriptions.push(sub2);
 
     // Subscribe to undici:client:disconnected
-    const sub3 = diagnosticsChannel.subscribe("undici:client:disconnected", (message: any) => {
+    const sub3 = diagnosticsChannel.subscribe("undici:client:disconnected", (message: unknown) => {
+      const msg = message as { origin?: string };
       if (!this.stopped) {
-        const origin = message.origin || "unknown";
+        const origin = msg.origin || "unknown";
         this.updatePoolStats(origin, { connected: -1 });
       }
     });
     this.subscriptions.push(sub3);
 
     // Subscribe to undici:request:create
-    const sub4 = diagnosticsChannel.subscribe("undici:request:create", (message: any) => {
+    const sub4 = diagnosticsChannel.subscribe("undici:request:create", (message: unknown) => {
+      const msg = message as { origin?: string };
       if (!this.stopped) {
-        const origin = message.origin || "unknown";
+        const origin = msg.origin || "unknown";
         this.updatePoolStats(origin, { running: 1 });
       }
     });
     this.subscriptions.push(sub4);
 
     // Subscribe to undici:request:trailers
-    const sub5 = diagnosticsChannel.subscribe("undici:request:trailers", (message: any) => {
+    const sub5 = diagnosticsChannel.subscribe("undici:request:trailers", (message: unknown) => {
+      const msg = message as { origin?: string };
       if (!this.stopped) {
-        const origin = message.origin || "unknown";
+        const origin = msg.origin || "unknown";
         this.updatePoolStats(origin, { running: -1 });
       }
     });
@@ -79,13 +84,13 @@ class ConnectionDiagnostics {
 
   stop() {
     this.stopped = true;
-    
+
     // Clear monitor interval
     if (this.monitorInterval) {
       clearInterval(this.monitorInterval);
       this.monitorInterval = null;
     }
-    
+
     // Unsubscribe from all channels
     this.subscriptions.forEach(sub => {
       if (sub && typeof sub.unsubscribe === 'function') {
@@ -93,7 +98,7 @@ class ConnectionDiagnostics {
       }
     });
     this.subscriptions = [];
-    
+
     // Print final stats
     this.printStats();
   }

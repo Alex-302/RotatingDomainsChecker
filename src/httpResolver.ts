@@ -286,9 +286,9 @@ export class HttpResolver {
         lastError = err instanceof Error ? err : new Error(String(err));
 
         // Extract deeper details (undici often throws Error('fetch failed') with cause)
-        const rawErr: any = err;
-        const cause: any = rawErr && typeof rawErr === 'object' ? (rawErr.cause ?? undefined) : undefined;
-        const rawCode = rawErr?.code ?? cause?.code;
+        const rawErr = err as Record<string, unknown>;
+        const cause = (rawErr && typeof rawErr === 'object' ? (rawErr.cause as Record<string, unknown> | undefined) : undefined);
+        const rawCode = (rawErr?.code as string | number | undefined) ?? (cause?.code as string | number | undefined);
         const code: string | undefined = typeof rawCode === 'string' ? rawCode : (typeof rawCode === 'number' ? String(rawCode) : undefined);
         const syscall: string | undefined = (rawErr?.syscall as string | undefined) ?? (cause?.syscall as string | undefined);
         const address: string | undefined = (rawErr?.address as string | undefined) ?? (cause?.address as string | undefined);
