@@ -739,6 +739,35 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
     expect(processed).toContain('example1015.pro');
     expect(processed).not.toContain('example1016.pro');
   });
+
+  test('processDomainList: reachable redirecting heuristic alias survives predicted-mirror cleanup', () => {
+    const unchangedHostMap = new Map([['example218.com', 'example218.com']]);
+    const emptyInitialMap = new Map<string, string>();
+    const priorityMap = new Map([
+      ['example218.com', {
+        initial: null,
+        lastKnown: 'example218.com',
+        oldHost: 'example218.com',
+        workingDomains: new Set(['example218.com', 'example219.com', 'example220.com']),
+      }],
+    ]) as Map<string, { initial: string | null; lastKnown: string; oldHost: string; workingDomains?: Set<string> }>;
+    const additionalDomainsMap = new Map([
+      ['example218.com', ['example219.com', 'example220.com']],
+    ]);
+
+    const { processed } = processDomainList(
+      ['example218.com', 'example219.com', 'example220.com', 'example221.com'],
+      unchangedHostMap,
+      emptyInitialMap,
+      priorityMap as Map<string, { initial: string | null; lastKnown: string; oldHost: string }>,
+      additionalDomainsMap,
+    );
+
+    expect(processed).toContain('example218.com');
+    expect(processed).toContain('example219.com');
+    expect(processed).toContain('example220.com');
+    expect(processed).not.toContain('example221.com');
+  });
 });
 
 // ============================================================================
