@@ -16270,18 +16270,20 @@ class BatchProcessor {
                                     foundDomainsPerSite.set(task.siteIndex, []);
                                 }
                                 const currentDomains = foundDomainsPerSite.get(task.siteIndex);
-                                const knownPrimary = results[task.siteIndex]?.newHost;
-                                const alreadyKnownFinal = currentDomains.some(entry => entry.domain === newHost);
-                                const collectedDomain = candidateHost !== newHost && ((knownPrimary && newHost === knownPrimary) || alreadyKnownFinal)
-                                    ? candidateHost
-                                    : newHost;
-                                if (!currentDomains.some(entry => entry.domain === collectedDomain)) {
-                                    currentDomains.push({
-                                        domain: collectedDomain,
-                                        result,
-                                        candidateUrl: task.candidateUrl,
-                                    });
-                                    this.logger.info(task.siteName, `force_search_ahead: collected working domain ${collectedDomain} from ${task.candidateUrl} (final: ${newHost})`);
+                                const candidateIsPattern = this.matchesNumericPattern(candidateHost);
+                                const finalIsPattern = this.matchesNumericPattern(newHost);
+                                const collectedDomains = candidateHost !== newHost && candidateIsPattern && finalIsPattern
+                                    ? [newHost, candidateHost]
+                                    : [newHost];
+                                for (const collectedDomain of collectedDomains) {
+                                    if (!currentDomains.some(entry => entry.domain === collectedDomain)) {
+                                        currentDomains.push({
+                                            domain: collectedDomain,
+                                            result,
+                                            candidateUrl: task.candidateUrl,
+                                        });
+                                        this.logger.info(task.siteName, `force_search_ahead: collected working domain ${collectedDomain} from ${task.candidateUrl} (final: ${newHost})`);
+                                    }
                                 }
                             }
                             // Mark site as found (first success or non-force_search_ahead)

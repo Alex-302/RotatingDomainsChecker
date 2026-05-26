@@ -418,6 +418,10 @@ might access directly.
 Heuristic candidate search is always triggered regardless of whether the current `last_known_mirror` is alive or dead.
 All reachable pattern aliases and final pattern domains are collected into filter rules.
 
+If a heuristic candidate redirects from one pattern alias to another pattern final host, both domains are retained in
+the working set. This retention is order-independent: changing only the completion order of parallel checks must not
+make a reachable alias disappear from filter updates.
+
 `last_known_mirror` is set to the **naturally smallest live pattern domain** among the collected working mirrors
 (e.g. `example9.live` wins over `example18.live`, `example18.live` wins over `example20.live`), ensuring
 deterministic selection even when parallel HTTP checks complete in arbitrary order.

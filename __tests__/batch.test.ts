@@ -1455,6 +1455,96 @@ describe('8. force_search_ahead scenarios', () => {
     // And the final host
     expect(allWorkingDomains).toContain('testsite72.com');
   });
+
+  test('8.9 force_search_ahead: heuristic redirecting alias is retained when alias resolves before shared final host', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      processing: { parallel: 2, heuristicParallel: 3, redirectDepth: 5 },
+    });
+    const site = makeSite({
+      last_known_mirror: 'example218.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'Example TV': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'example218.com') {
+        return makeSuccessResult('example218.com');
+      }
+      if (host === 'example219.com') {
+        await new Promise(resolve => setTimeout(resolve, 5));
+        return makeSuccessResult('example220.com');
+      }
+      if (host === 'example220.com') {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        return makeSuccessResult('example220.com');
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    const allWorkingDomains = [
+      results[0].newHost,
+      ...(results[0].additionalWorkingDomains || []),
+    ];
+
+    expect(allWorkingDomains).toEqual(expect.arrayContaining([
+      'example218.com',
+      'example219.com',
+      'example220.com',
+    ]));
+  });
+
+  test('8.10 force_search_ahead: heuristic redirecting alias is retained when shared final host resolves before alias', async () => {
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 3, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      processing: { parallel: 2, heuristicParallel: 3, redirectDepth: 5 },
+    });
+    const site = makeSite({
+      last_known_mirror: 'example218.com',
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'Example TV': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation(async (url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+      if (host === 'example218.com') {
+        return makeSuccessResult('example218.com');
+      }
+      if (host === 'example219.com') {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        return makeSuccessResult('example220.com');
+      }
+      if (host === 'example220.com') {
+        await new Promise(resolve => setTimeout(resolve, 5));
+        return makeSuccessResult('example220.com');
+      }
+      return makeFailResult('Not found');
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    const allWorkingDomains = [
+      results[0].newHost,
+      ...(results[0].additionalWorkingDomains || []),
+    ];
+
+    expect(allWorkingDomains).toEqual(expect.arrayContaining([
+      'example218.com',
+      'example219.com',
+      'example220.com',
+    ]));
+  });
 });
 
 // ============================================================================
