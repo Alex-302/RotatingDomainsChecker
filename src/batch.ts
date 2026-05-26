@@ -3,25 +3,7 @@ import { HttpResolver } from './httpResolver.js';
 import { ContentProbe } from './probe.js';
 import { Logger, LogLevel } from './logger.js';
 import { resolveHostname } from './dnsResolver.js';
-
-function naturalCompare(a: string, b: string): number {
-  const re = /(\d+)|(\D+)/g;
-  const chunksA = a.match(re) ?? [a];
-  const chunksB = b.match(re) ?? [b];
-  for (let i = 0; i < Math.max(chunksA.length, chunksB.length); i++) {
-    const ca = chunksA[i] ?? '';
-    const cb = chunksB[i] ?? '';
-    const na = parseInt(ca, 10);
-    const nb = parseInt(cb, 10);
-    if (!isNaN(na) && !isNaN(nb)) {
-      if (na !== nb) return na - nb;
-    } else {
-      if (ca < cb) return -1;
-      if (ca > cb) return 1;
-    }
-  }
-  return 0;
-}
+import { naturalCompare, calculateDaysSince } from './utils.js';
 
 export class BatchProcessor {
   private probe: ContentProbe;
@@ -140,19 +122,6 @@ export class BatchProcessor {
     return url;
   }
 
-  private calculateDaysSince(dateStr: string): number {
-    if (!dateStr || dateStr.trim() === '') return 0;
-    try {
-      const past = new Date(dateStr.replace(" ", "T"));
-      const now = new Date();
-      const diffTime = Math.abs(now.getTime() - past.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays;
-    } catch {
-      return 0;
-    }
-  }
-
   /**
    * Check if a URL resolves via DNS
    * @param url - URL to check
@@ -169,8 +138,9 @@ export class BatchProcessor {
     try {
       await resolveHostname(hostname, timeout);
       return true;
-    } catch (err: any) {
-      if (retryOnce && err.code === "EAI_AGAIN") {
+    } catch (err: unknown) {
+      const errorCode = (err as NodeJS.ErrnoException)?.code;
+      if (retryOnce && errorCode === "EAI_AGAIN") {
         try {
           await resolveHostname(hostname, 2500);
           return true;
@@ -814,7 +784,7 @@ export class BatchProcessor {
     return results.filter(Boolean);
   }
 
-  private async processSite(siteName: string, site: any, queuedMs = 0, skipRecentMirror = false): Promise<CheckResult> {
+  private async processSite(siteName: string, site: WatcherSite, queuedMs = 0, skipRecentMirror = false): Promise<CheckResult> {
     const siteStartTime = Date.now();
     if (queuedMs > 0) {
       this.logger.debug(siteName, `Queued for ${queuedMs}ms before start`);
@@ -853,7 +823,7 @@ export class BatchProcessor {
 
     // Optimization: if success_since is recent (< 2 days), try last_known_mirror first
     if (!skipRecentMirror && site.success_since) {
-      const daysSinceLastSeen = this.calculateDaysSince(site.success_since);
+      const daysSinceLastSeen = calculateDaysSince(site.success_since);
       if (daysSinceLastSeen < 2 && site.last_known_mirror) {
         // Recent success - try last_known_mirror first
         urlToCheck = this.appendSitePath(site.last_known_mirror, site.path);

@@ -15395,10 +15395,10 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
-  US: () => (/* binding */ calculateDaysSince),
+  US: () => (/* reexport */ calculateDaysSince),
   B_: () => (/* binding */ dnsPreflightCheck),
   iW: () => (/* binding */ main),
-  p0: () => (/* binding */ src_naturalCompare),
+  p0: () => (/* reexport */ naturalCompare),
   aq: () => (/* binding */ selectFirstByOrder),
   gh: () => (/* binding */ selectPatternAwareWorkingSet)
 });
@@ -15690,10 +15690,14 @@ async function resolveHostname(hostname, timeoutMs) {
     ]);
 }
 
-;// CONCATENATED MODULE: ./src/batch.ts
-
-
-
+;// CONCATENATED MODULE: ./src/utils.ts
+/**
+ * Shared utility functions for Rotating Domains Checker
+ */
+/**
+ * Natural comparison for domain names - compares numeric chunks as numbers.
+ * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
+ */
 function naturalCompare(a, b) {
     const re = /(\d+)|(\D+)/g;
     const chunksA = a.match(re) ?? [a];
@@ -15716,6 +15720,31 @@ function naturalCompare(a, b) {
     }
     return 0;
 }
+/**
+ * Calculate days elapsed since a given date string.
+ * Parses both "YYYY-MM-DD" and "YYYY-MM-DD HH:MM" formats.
+ * Returns 0 for empty/whitespace-only strings or parse errors.
+ */
+function calculateDaysSince(dateStr) {
+    if (!dateStr || dateStr.trim() === '')
+        return 0;
+    try {
+        const parsedDate = new Date(dateStr.replace(" ", "T"));
+        const now = new Date();
+        const diffMs = Math.abs(now.getTime() - parsedDate.getTime());
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        return diffDays;
+    }
+    catch {
+        return 0;
+    }
+}
+
+;// CONCATENATED MODULE: ./src/batch.ts
+
+
+
+
 class BatchProcessor {
     config;
     watchers;
@@ -15823,20 +15852,6 @@ class BatchProcessor {
         catch { /* ignore */ }
         return url;
     }
-    calculateDaysSince(dateStr) {
-        if (!dateStr || dateStr.trim() === '')
-            return 0;
-        try {
-            const past = new Date(dateStr.replace(" ", "T"));
-            const now = new Date();
-            const diffTime = Math.abs(now.getTime() - past.getTime());
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            return diffDays;
-        }
-        catch {
-            return 0;
-        }
-    }
     /**
      * Check if a URL resolves via DNS
      * @param url - URL to check
@@ -15855,7 +15870,8 @@ class BatchProcessor {
             return true;
         }
         catch (err) {
-            if (retryOnce && err.code === "EAI_AGAIN") {
+            const errorCode = err?.code;
+            if (retryOnce && errorCode === "EAI_AGAIN") {
                 try {
                     await resolveHostname(hostname, 2500);
                     return true;
@@ -16461,7 +16477,7 @@ class BatchProcessor {
         };
         // Optimization: if success_since is recent (< 2 days), try last_known_mirror first
         if (!skipRecentMirror && site.success_since) {
-            const daysSinceLastSeen = this.calculateDaysSince(site.success_since);
+            const daysSinceLastSeen = calculateDaysSince(site.success_since);
             if (daysSinceLastSeen < 2 && site.last_known_mirror) {
                 // Recent success - try last_known_mirror first
                 urlToCheck = this.appendSitePath(site.last_known_mirror, site.path);
@@ -17020,7 +17036,7 @@ class HttpResolver {
                 lastError = err instanceof Error ? err : new Error(String(err));
                 // Extract deeper details (undici often throws Error('fetch failed') with cause)
                 const rawErr = err;
-                const cause = rawErr && typeof rawErr === 'object' ? (rawErr.cause ?? undefined) : undefined;
+                const cause = (rawErr && typeof rawErr === 'object' ? rawErr.cause : undefined);
                 const rawCode = rawErr?.code ?? cause?.code;
                 const code = typeof rawCode === 'string' ? rawCode : (typeof rawCode === 'number' ? String(rawCode) : undefined);
                 const syscall = rawErr?.syscall ?? cause?.syscall;
@@ -18189,39 +18205,44 @@ class ConnectionDiagnostics {
             return;
         // Subscribe to undici:client:connectError
         const sub1 = external_node_diagnostics_channel_default().subscribe("undici:client:connectError", (message) => {
+            const msg = message;
             if (!this.stopped && this.logger) {
-                this.logger.logGlobal(LogLevel.DEBUG, `CONNECTION Connection error: ${message.error?.message || "unknown"}`);
+                this.logger.logGlobal(LogLevel.DEBUG, `CONNECTION Connection error: ${msg.error?.message || "unknown"}`);
             }
         });
         this.subscriptions.push(sub1);
         // Subscribe to undici:client:connected
         const sub2 = external_node_diagnostics_channel_default().subscribe("undici:client:connected", (message) => {
+            const msg = message;
             if (!this.stopped) {
-                const origin = message.origin || "unknown";
+                const origin = msg.origin || "unknown";
                 this.updatePoolStats(origin, { connected: 1 });
             }
         });
         this.subscriptions.push(sub2);
         // Subscribe to undici:client:disconnected
         const sub3 = external_node_diagnostics_channel_default().subscribe("undici:client:disconnected", (message) => {
+            const msg = message;
             if (!this.stopped) {
-                const origin = message.origin || "unknown";
+                const origin = msg.origin || "unknown";
                 this.updatePoolStats(origin, { connected: -1 });
             }
         });
         this.subscriptions.push(sub3);
         // Subscribe to undici:request:create
         const sub4 = external_node_diagnostics_channel_default().subscribe("undici:request:create", (message) => {
+            const msg = message;
             if (!this.stopped) {
-                const origin = message.origin || "unknown";
+                const origin = msg.origin || "unknown";
                 this.updatePoolStats(origin, { running: 1 });
             }
         });
         this.subscriptions.push(sub4);
         // Subscribe to undici:request:trailers
         const sub5 = external_node_diagnostics_channel_default().subscribe("undici:request:trailers", (message) => {
+            const msg = message;
             if (!this.stopped) {
-                const origin = message.origin || "unknown";
+                const origin = msg.origin || "unknown";
                 this.updatePoolStats(origin, { running: -1 });
             }
         });
@@ -18298,34 +18319,11 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 
 
 
+
+// Re-export for backward compatibility (tests import from index.ts)
+
 // Version
-const VERSION = "1.1.50";
-/**
- * Natural comparison for domain names - compares numeric chunks as numbers.
- * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
- */
-function src_naturalCompare(a, b) {
-    const re = /(\d+)|(\D+)/g;
-    const chunksA = a.match(re) ?? [a];
-    const chunksB = b.match(re) ?? [b];
-    for (let i = 0; i < Math.max(chunksA.length, chunksB.length); i++) {
-        const ca = chunksA[i] ?? '';
-        const cb = chunksB[i] ?? '';
-        const na = parseInt(ca, 10);
-        const nb = parseInt(cb, 10);
-        if (!isNaN(na) && !isNaN(nb)) {
-            if (na !== nb)
-                return na - nb;
-        }
-        else {
-            if (ca < cb)
-                return -1;
-            if (ca > cb)
-                return 1;
-        }
-    }
-    return 0;
-}
+const VERSION = "1.1.51`";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
@@ -18334,7 +18332,7 @@ function selectFirstByOrder(newHost, additionalDomains) {
     if (!additionalDomains || additionalDomains.length === 0)
         return newHost;
     const all = [newHost, ...additionalDomains];
-    all.sort(src_naturalCompare);
+    all.sort(naturalCompare);
     return all[0];
 }
 function normalizeDomainForPatternCheck(domain) {
@@ -18345,12 +18343,12 @@ function src_matchesNumericPattern(domain) {
 }
 function selectPatternAwareWorkingSet(newHost, additionalDomains) {
     const allUniqueDomains = [...new Set([newHost, ...(additionalDomains || [])])];
-    const patternDomains = allUniqueDomains.filter(src_matchesNumericPattern).sort(src_naturalCompare);
+    const patternDomains = allUniqueDomains.filter(src_matchesNumericPattern).sort(naturalCompare);
     if (patternDomains.length === 0) {
         const canonicalHost = selectFirstByOrder(newHost, additionalDomains);
         const ignoredNonPatternDomains = allUniqueDomains
             .filter(domain => domain !== canonicalHost)
-            .sort(src_naturalCompare);
+            .sort(naturalCompare);
         return {
             canonicalHost,
             additionalPatternDomains: [],
@@ -18362,7 +18360,7 @@ function selectPatternAwareWorkingSet(newHost, additionalDomains) {
         additionalPatternDomains: patternDomains.slice(1),
         ignoredNonPatternDomains: allUniqueDomains
             .filter(domain => !src_matchesNumericPattern(domain))
-            .sort(src_naturalCompare),
+            .sort(naturalCompare),
     };
 }
 function extractHostname(value) {
@@ -18441,20 +18439,6 @@ function formatDateTime(date) {
     const hours = String(date.getHours()).padStart(2, "0");
     const minutes = String(date.getMinutes()).padStart(2, "0");
     return `${year}-${month}-${day} ${hours}:${minutes}`;
-}
-function calculateDaysSince(dateStr) {
-    if (!dateStr || dateStr.trim() === '')
-        return 0;
-    try {
-        const past = new Date(dateStr.replace(" ", "T"));
-        const now = new Date();
-        const diffTime = Math.abs(now.getTime() - past.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays;
-    }
-    catch {
-        return 0;
-    }
 }
 /**
  * Updates site.success_since only when the value would actually change.
@@ -18607,7 +18591,7 @@ async function main() {
                 // Day-bucket suppression: only rewrite failed_days if the integer day count
                 // actually changed. Within the same day bucket, repeated failures must not
                 // produce a diff in watchers.yml.
-                const newDays = calculateDaysSince(site.failed_since);
+                const newDays = calculateDaysSince(site.failed_since ?? '');
                 if (site.failed_days !== newDays) {
                     site.failed_days = newDays;
                 }
@@ -18761,7 +18745,7 @@ async function main() {
                     site.failed_days = 0;
                 }
                 else {
-                    const newDays = calculateDaysSince(site.failed_since);
+                    const newDays = calculateDaysSince(site.failed_since ?? '');
                     if (site.failed_days !== newDays) {
                         site.failed_days = newDays;
                     }
