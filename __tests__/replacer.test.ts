@@ -1738,3 +1738,177 @@ describe('6. applyReplacements — Mixed marker families integration', () => {
     expect(written).not.toContain('nopattern.com');
   });
 });
+
+// ============================================================================
+// 6. Streaming applyReplacements — edge cases
+// ============================================================================
+describe('6.1 applyReplacements with streaming (edge cases)', () => {
+  let tmpDir: string;
+
+  function makeConfig(repoPath: string): Config {
+    return {
+      http: { timeout: 5000, retries: 1, heuristicTimeout: 3000, userAgent: 'test' },
+      processing: { parallel: 1, redirectDepth: 5 },
+      dnsPreCheck: { enabled: false, timeout: 1000, retryOnce: false },
+      contentProbe: { enabled: false },
+      antibot: { detectCodes: [], detectUrlPattern: '' },
+      thresholds: { failedDaysWarning: 3 },
+      heuristic: { enabled: false, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      logging: { saveToFile: false, incremental: false, filePath: '' },
+      git: { mode: 'debug', branch: 'master', prBranchPrefix: 'test-' },
+      filtersdir: {
+        repoPath,
+        filterDirPattern: '*Filter',
+        filePattern: '*.txt',
+      },
+      filtersdir_test: {
+        repoPath,
+        filterDirPattern: '*Filter',
+        filePattern: '*.txt',
+      },
+    };
+  }
+
+  beforeEach(async () => {
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rdc-test-'));
+    await fsp.mkdir(path.join(tmpDir, 'SomeFilter'));
+  });
+
+  afterEach(async () => {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test('empty file is not corrupted or rewritten', async () => {
+    const filterFile = path.join(tmpDir, 'SomeFilter', 'filter.txt');
+    await fsp.writeFile(filterFile, '', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [{
+      siteName: 'TestSite',
+      oldHost: 'example501.com',
+      newHost: 'example502.com',
+      startedHost: 'example501.com',
+      checkDurationMs: 100,
+    }];
+
+    await replacer.applyReplacements(replacements, false);
+
+    const written = await fsp.readFile(filterFile, 'utf-8');
+    // Empty file should remain empty (no matches, no changes)
+    expect(written).toBe('');
+  });
+
+  test('multiline replacement (||domain^ with additional domains) preserves line order', async () => {
+    const filterFile = path.join(tmpDir, 'SomeFilter', 'filter.txt');
+    // File with ||old.com^ that should expand to multiple lines via additional domains
+    const content = '||example501.com^\n||nopattern.com^\n';
+    await fsp.writeFile(filterFile, content, 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    // Additional domains are passed as separate ReplacementPair entries for the same siteName
+    // (first = primary, subsequent = additional from force_search_ahead)
+    const replacements: ReplacementPair[] = [
+      {
+        siteName: 'TestSite',
+        oldHost: 'example501.com',
+        newHost: 'example502.com',
+        startedHost: 'example501.com',
+        checkDurationMs: 100,
+      },
+      {
+        siteName: 'TestSite',
+        oldHost: 'example501.com',
+        newHost: 'example503.com',
+        startedHost: 'example501.com',
+        checkDurationMs: 100,
+      },
+      {
+        siteName: 'TestSite',
+        oldHost: 'example501.com',
+        newHost: 'example504.com',
+        startedHost: 'example501.com',
+        checkDurationMs: 100,
+      },
+    ];
+
+    await replacer.applyReplacements(replacements, false);
+
+    const written = await fsp.readFile(filterFile, 'utf-8');
+    // All expanded lines should be present
+    expect(written).toContain('||example502.com^');
+    expect(written).toContain('||example503.com^');
+    expect(written).toContain('||example504.com^');
+    // Original unrelated line should be preserved
+    expect(written).toContain('||nopattern.com^');
+    // Old domain should not appear
+    expect(written).not.toContain('example501.com');
+  });
+
+  test('multiline replacement preserves CRLF line endings', async () => {
+    const filterFile = path.join(tmpDir, 'SomeFilter', 'filter.txt');
+    const crlfContent = '||example501.com^\r\n||nopattern.com^\r\n';
+    await fsp.writeFile(filterFile, crlfContent, 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      {
+        siteName: 'TestSite',
+        oldHost: 'example501.com',
+        newHost: 'example502.com',
+        startedHost: 'example501.com',
+        checkDurationMs: 100,
+      },
+      {
+        siteName: 'TestSite',
+        oldHost: 'example501.com',
+        newHost: 'example503.com',
+        startedHost: 'example501.com',
+        checkDurationMs: 100,
+      },
+    ];
+
+    await replacer.applyReplacements(replacements, false);
+
+    const written = await fsp.readFile(filterFile, 'utf-8');
+    // CRLF must be preserved across expanded lines
+    expect(written).toContain('\r\n');
+    const bareNewlines = written.split('\n').slice(0, -1).filter(line => !line.endsWith('\r'));
+    expect(bareNewlines).toHaveLength(0);
+    // Expanded domains should be present
+    expect(written).toContain('example502.com');
+    expect(written).toContain('example503.com');
+  });
+
+  test('file with only unchanged lines is not rewritten', async () => {
+    const filterFile = path.join(tmpDir, 'SomeFilter', 'filter.txt');
+    const content = '||nopattern.com^\n||other.com^\n';
+    await fsp.writeFile(filterFile, content, 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [{
+      siteName: 'TestSite',
+      oldHost: 'example501.com',
+      newHost: 'example502.com',
+      startedHost: 'example501.com',
+      checkDurationMs: 100,
+    }];
+
+    await replacer.applyReplacements(replacements, false);
+
+    const written = await fsp.readFile(filterFile, 'utf-8');
+    // File should be unchanged (no matches for example501.com)
+    expect(written).toBe(content);
+  });
+});

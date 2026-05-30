@@ -1,14 +1,14 @@
-import { readFileSync, writeFileSync } from "fs";
+import { promises as fs } from "fs";
 import { parse, parseDocument, stringify } from "yaml";
 import type { Config, Watchers } from "./types.js";
 
-export function loadConfig(configPath = "./config.yml"): Config {
-  const content = readFileSync(configPath, "utf-8");
+export async function loadConfig(configPath = "./config.yml"): Promise<Config> {
+  const content = await fs.readFile(configPath, "utf-8");
   return parse(content) as Config;
 }
 
-export function loadWatchers(watchersPath = "watchers.yml"): Watchers {
-  const content = readFileSync(watchersPath, "utf-8");
+export async function loadWatchers(watchersPath = "watchers.yml"): Promise<Watchers> {
+  const content = await fs.readFile(watchersPath, "utf-8");
   const doc = parseDocument(content);
   const watchers = doc.toJS() as Watchers;
 
@@ -25,9 +25,9 @@ export function loadWatchers(watchersPath = "watchers.yml"): Watchers {
   return watchers;
 }
 
-export function saveWatchers(watchers: Watchers, watchersPath = "watchers.yml"): void {
+export async function saveWatchers(watchers: Watchers, watchersPath = "watchers.yml"): Promise<void> {
   // Read existing file to preserve comments
-  const existingContent = readFileSync(watchersPath, "utf-8");
+  const existingContent = await fs.readFile(watchersPath, "utf-8");
   const doc = parseDocument(existingContent);
 
   // Update sites in the document, dropping legacy `last_seen` if present
@@ -44,5 +44,5 @@ export function saveWatchers(watchers: Watchers, watchersPath = "watchers.yml"):
   }
 
   const content = stringify(doc);
-  writeFileSync(watchersPath, content, "utf-8");
+  await fs.writeFile(watchersPath, content, "utf-8");
 }

@@ -12,7 +12,6 @@ import { join } from 'path';
 // ============================================================================
 
 
-
 describe('11.1 naturalCompare - natural sorting for domain names', () => {
   test('same strings → returns 0', () => {
     expect(naturalCompare('example.com', 'example.com')).toBe(0);
@@ -190,7 +189,7 @@ describe('11.3 success_since — legacy migration & state semantic', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test('load → save → load: legacy last_seen migrates and is never repersisted', () => {
+  test('load → save → load: legacy last_seen migrates and is never repersisted', async () => {
     const watchersContent = `sites:
   site-a:
     initial_domain: example001.com
@@ -200,20 +199,20 @@ describe('11.3 success_since — legacy migration & state semantic', () => {
     const path = join(tempDir, 'watchers-a.yml');
     writeFileSync(path, watchersContent, 'utf-8');
 
-    const first = loadWatchers(path);
+    const first = await loadWatchers(path);
     expect(first.sites['site-a'].success_since).toBe('2024-01-15');
     expect(first.sites['site-a'].last_seen).toBeUndefined();
 
     // Persist and reload — legacy field must never return
-    saveWatchers(first, path);
-    const second = loadWatchers(path);
+    await saveWatchers(first, path);
+    const second = await loadWatchers(path);
     expect(second.sites['site-a'].success_since).toBe('2024-01-15');
     expect(second.sites['site-a'].last_seen).toBeUndefined();
     expect(readFileSync(path, 'utf-8')).not.toContain('last_seen');
     expect(readFileSync(path, 'utf-8')).toContain('success_since');
   });
 
-  test('explicit success_since wins over legacy last_seen when both present', () => {
+  test('explicit success_since wins over legacy last_seen when both present', async () => {
     const watchersContent = `sites:
   site-b:
     last_known_mirror: example020.com
@@ -223,7 +222,7 @@ describe('11.3 success_since — legacy migration & state semantic', () => {
     const path = join(tempDir, 'watchers-b.yml');
     writeFileSync(path, watchersContent, 'utf-8');
 
-    const loaded = loadWatchers(path);
+    const loaded = await loadWatchers(path);
     expect(loaded.sites['site-b'].success_since).toBe('2024-06-01 08:00');
     expect(loaded.sites['site-b'].last_seen).toBeUndefined();
   });

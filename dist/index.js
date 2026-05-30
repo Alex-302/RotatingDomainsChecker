@@ -15410,12 +15410,12 @@ var dist = __nccwpck_require__(8815);
 ;// CONCATENATED MODULE: ./src/config.ts
 
 
-function loadConfig(configPath = "./config.yml") {
-    const content = (0,external_fs_namespaceObject.readFileSync)(configPath, "utf-8");
+async function loadConfig(configPath = "./config.yml") {
+    const content = await external_fs_namespaceObject.promises.readFile(configPath, "utf-8");
     return (0,dist/* parse */.qg)(content);
 }
-function loadWatchers(watchersPath = "watchers.yml") {
-    const content = (0,external_fs_namespaceObject.readFileSync)(watchersPath, "utf-8");
+async function loadWatchers(watchersPath = "watchers.yml") {
+    const content = await external_fs_namespaceObject.promises.readFile(watchersPath, "utf-8");
     const doc = (0,dist/* parseDocument */.Tp)(content);
     const watchers = doc.toJS();
     // Backward compatibility: migrate legacy `last_seen` → `success_since`
@@ -15429,9 +15429,9 @@ function loadWatchers(watchersPath = "watchers.yml") {
     }
     return watchers;
 }
-function saveWatchers(watchers, watchersPath = "watchers.yml") {
+async function saveWatchers(watchers, watchersPath = "watchers.yml") {
     // Read existing file to preserve comments
-    const existingContent = (0,external_fs_namespaceObject.readFileSync)(watchersPath, "utf-8");
+    const existingContent = await external_fs_namespaceObject.promises.readFile(watchersPath, "utf-8");
     const doc = (0,dist/* parseDocument */.Tp)(existingContent);
     // Update sites in the document, dropping legacy `last_seen` if present
     if (doc.contents && typeof doc.contents === 'object') {
@@ -15446,7 +15446,7 @@ function saveWatchers(watchers, watchersPath = "watchers.yml") {
         }
     }
     const content = (0,dist/* stringify */.As)(doc);
-    (0,external_fs_namespaceObject.writeFileSync)(watchersPath, content, "utf-8");
+    await external_fs_namespaceObject.promises.writeFile(watchersPath, content, "utf-8");
 }
 
 ;// CONCATENATED MODULE: ./src/probe.ts
@@ -17237,11 +17237,14 @@ class HttpResolver {
     }
 }
 
+;// CONCATENATED MODULE: external "readline/promises"
+const external_readline_promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("readline/promises");
 // EXTERNAL MODULE: ./node_modules/table/dist/src/index.js
 var src = __nccwpck_require__(4112);
 ;// CONCATENATED MODULE: ./src/replacer.ts
 // Domains replacement logic
 // Supports cosmetic rules, URL rules, and parameter lists
+
 
 
 
@@ -17566,33 +17569,47 @@ class FilterReplacer {
         let totalLineEdits = 0;
         const fileChanges = [];
         for (const file of files) {
-            let content;
+            let changed = false;
+            const lineChanges = [];
+            const outputLines = [];
+            let lineNum = 0;
+            let lineEnding = '\n';
             try {
-                content = await external_fs_namespaceObject.promises.readFile(file, "utf-8");
+                // Detect line ending from first chunk (preserve original format)
+                const detectFd = await external_fs_namespaceObject.promises.open(file, 'r');
+                const detectBuf = Buffer.alloc(4096);
+                const { bytesRead } = await detectFd.read(detectBuf, 0, 4096, 0);
+                await detectFd.close();
+                if (detectBuf.subarray(0, bytesRead).includes('\r\n')) {
+                    lineEnding = '\r\n';
+                }
+                const rl = (0,external_readline_promises_namespaceObject.createInterface)({
+                    input: (0,external_fs_namespaceObject.createReadStream)(file, 'utf-8'),
+                    crlfDelay: Infinity,
+                });
+                for await (const line of rl) {
+                    lineNum++;
+                    const updatedLines = processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                    // Check if line changed (first element differs) or extra lines were added
+                    if (updatedLines.length > 1 || updatedLines[0] !== line) {
+                        changed = true;
+                        totalLineEdits++;
+                        lineChanges.push({ line: lineNum, before: line, after: updatedLines.join(lineEnding) });
+                        outputLines.push(...updatedLines);
+                    }
+                    else {
+                        outputLines.push(line);
+                    }
+                }
             }
             catch (e) {
                 this._logger.info("replacer", `Skip unreadable file: ${file}`);
                 continue;
             }
-            const lineEnding = content.includes('\r\n') ? '\r\n' : '\n';
-            const lines = content.split(/\r?\n/);
-            let changed = false;
-            const lineChanges = [];
-            for (let i = lines.length - 1; i >= 0; i--) {
-                const original = lines[i];
-                const updatedLines = processLine(original, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
-                // Check if line changed (first element differs) or extra lines were added
-                if (updatedLines.length > 1 || updatedLines[0] !== original) {
-                    lines.splice(i, 1, ...updatedLines);
-                    changed = true;
-                    totalLineEdits++;
-                    lineChanges.push({ line: i + 1, before: original, after: updatedLines.join(lineEnding) });
-                }
-            }
             if (changed) {
                 modifiedFiles++;
                 if (!dryRun) {
-                    await external_fs_namespaceObject.promises.writeFile(file, lines.join(lineEnding), "utf-8");
+                    await external_fs_namespaceObject.promises.writeFile(file, outputLines.join(lineEnding), 'utf-8');
                 }
                 fileChanges.push({ file, changes: lineChanges });
             }
@@ -18323,7 +18340,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 // Re-export for backward compatibility (tests import from index.ts)
 
 // Version
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
@@ -18481,8 +18498,8 @@ async function main() {
     const dryRun = mode === 'prod_dry' || mode === 'test_dry';
     const isTestMode = mode === 'test_live' || mode === 'test_dry';
     // Load configuration using configPath
-    const config = loadConfig(configPath);
-    const watchers = loadWatchers();
+    const config = await loadConfig(configPath);
+    const watchers = await loadWatchers();
     const logger = new Logger(config);
     // Save original last_known_mirror values BEFORE processing
     // Used later to detect if newHost was already known (not a real change)
@@ -18888,7 +18905,7 @@ async function main() {
     logger.logRaw("");
     // Save updated watchers
     if (!dryRun) {
-        saveWatchers(watchers);
+        await saveWatchers(watchers);
         logger.logGlobal(LogLevel.INFO, "Watchers updated.\n");
     }
     // Force abort any remaining HTTP requests to prevent timeout logs
