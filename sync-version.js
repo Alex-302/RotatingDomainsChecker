@@ -28,7 +28,7 @@ export function extractVersionFromFile(filePath) {
 }
 
 /**
- * Validate release version against SemVer.
+ * Validate release version against SemVer
  * @param {string} version - Version to validate
  */
 export function validateVersion(version) {
