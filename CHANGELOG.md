@@ -2,6 +2,15 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.2.1] - 2026-05-30
+
+### Changed
+
+- Replaced full-file read with streaming in filter replacement (`readline/promises` + `createReadStream`).
+  Large filter files are processed incrementally, reducing peak memory per file.
+- Converted config I/O to async (`fs.promises`) for all three exports — `loadConfig`, `loadWatchers`, `saveWatchers`.
+  Config loading no longer blocks the event loop.
+
 ## [1.2.0] - 2026-05-28
 
 ### Added

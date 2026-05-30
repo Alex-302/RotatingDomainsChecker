@@ -173,7 +173,7 @@ describe('6.8 containsSkipText', () => {
 describe('6.9 containsSkipText with real config.yml', () => {
   test('skip_text exists in config.yml and all phrases work', async () => {
     const { loadConfig } = await import('../src/config.js');
-    const config = loadConfig();
+    const config = await loadConfig();
 
     expect(config.skip_text).toBeDefined();
     expect(Array.isArray(config.skip_text)).toBe(true);
@@ -191,7 +191,7 @@ describe('6.9 containsSkipText with real config.yml', () => {
 
   test('normal website content does not trigger skip_text', async () => {
     const { loadConfig } = await import('../src/config.js');
-    const config = loadConfig();
+    const config = await loadConfig();
     const resolver = new HttpResolver(config);
 
     const normalContent = '<html><body><h1>Welcome to our streaming site</h1><p>Watch movies online</p></body></html>';

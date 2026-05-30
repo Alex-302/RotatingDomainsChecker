@@ -16,7 +16,7 @@ import { naturalCompare, calculateDaysSince } from "./utils.js";
 export { naturalCompare, calculateDaysSince };
 
 // Version
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
@@ -211,8 +211,8 @@ export async function main() {
   const isTestMode = mode === 'test_live' || mode === 'test_dry';
 
   // Load configuration using configPath
-  const config = loadConfig(configPath);
-  const watchers = loadWatchers();
+  const config = await loadConfig(configPath);
+  const watchers = await loadWatchers();
   const logger = new Logger(config);
 
   // Save original last_known_mirror values BEFORE processing
@@ -676,7 +676,7 @@ export async function main() {
 
   // Save updated watchers
   if (!dryRun) {
-    saveWatchers(watchers);
+    await saveWatchers(watchers);
     logger.logGlobal(LogLevel.INFO, "Watchers updated.\n");
   }
 

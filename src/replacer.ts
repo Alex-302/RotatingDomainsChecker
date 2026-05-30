@@ -1,8 +1,9 @@
 // Domains replacement logic
 // Supports cosmetic rules, URL rules, and parameter lists
 
-import { promises as fs } from "fs";
+import { promises as fs, createReadStream } from "fs";
 import path from "path";
+import { createInterface } from "readline/promises";
 import type { Config, ReplacementPair } from "./types.js";
 import { Logger, LogLevel } from "./logger.js";
 import { table as renderTable, getBorderCharacters } from "table";
@@ -391,35 +392,49 @@ export class FilterReplacer {
     }> = [];
 
     for (const file of files) {
-      let content: string;
+      let changed = false;
+      const lineChanges: Array<{ line: number; before: string; after: string }> = [];
+      const outputLines: string[] = [];
+      let lineNum = 0;
+      let lineEnding: '\n' | '\r\n' = '\n';
+
       try {
-        content = await fs.readFile(file, "utf-8");
+        // Detect line ending from first chunk (preserve original format)
+        const detectFd = await fs.open(file, 'r');
+        const detectBuf = Buffer.alloc(4096);
+        const { bytesRead } = await detectFd.read(detectBuf, 0, 4096, 0);
+        await detectFd.close();
+        if (detectBuf.subarray(0, bytesRead).includes('\r\n')) {
+          lineEnding = '\r\n';
+        }
+
+        const rl = createInterface({
+          input: createReadStream(file, 'utf-8'),
+          crlfDelay: Infinity,
+        });
+
+        for await (const line of rl) {
+          lineNum++;
+          const updatedLines = processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+          // Check if line changed (first element differs) or extra lines were added
+          if (updatedLines.length > 1 || updatedLines[0] !== line) {
+            changed = true;
+            totalLineEdits++;
+            lineChanges.push({ line: lineNum, before: line, after: updatedLines.join(lineEnding) });
+            outputLines.push(...updatedLines);
+          } else {
+            outputLines.push(line);
+          }
+        }
       } catch (e) {
         this._logger.info("replacer", `Skip unreadable file: ${file}`);
         continue;
       }
 
-      const lineEnding = content.includes('\r\n') ? '\r\n' : '\n';
-      const lines = content.split(/\r?\n/);
-      let changed = false;
-      const lineChanges: Array<{ line: number; before: string; after: string }> = [];
-
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const original = lines[i];
-        const updatedLines = processLine(original, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
-        // Check if line changed (first element differs) or extra lines were added
-        if (updatedLines.length > 1 || updatedLines[0] !== original) {
-          lines.splice(i, 1, ...updatedLines);
-          changed = true;
-          totalLineEdits++;
-          lineChanges.push({ line: i + 1, before: original, after: updatedLines.join(lineEnding) });
-        }
-      }
-
       if (changed) {
         modifiedFiles++;
         if (!dryRun) {
-          await fs.writeFile(file, lines.join(lineEnding), "utf-8");
+          await fs.writeFile(file, outputLines.join(lineEnding), 'utf-8');
         }
         fileChanges.push({ file, changes: lineChanges });
       }
