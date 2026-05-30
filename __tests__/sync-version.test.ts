@@ -1,13 +1,18 @@
-import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import {
+  extractVersionFromFile,
+  updateJsonFile,
+  updatePackageLockVersion,
+  updateSourceVersion,
+  validateVersion,
+} from '../sync-version.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Import functions from sync-version.js
-// We'll need to refactor sync-version.js to export functions for testing
 
 describe('sync-version.js', () => {
   const testDir = path.join(__dirname, 'fixtures', 'sync-version-test');
@@ -16,7 +21,6 @@ describe('sync-version.js', () => {
   const lockPath = path.join(testDir, 'package-lock.json');
 
   beforeEach(() => {
-    // Create test directory structure
     if (!fs.existsSync(testDir)) {
       fs.mkdirSync(testDir, { recursive: true });
     }
@@ -26,14 +30,49 @@ describe('sync-version.js', () => {
   });
 
   afterEach(() => {
-    // Clean up test files
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
   });
 
-  describe('getVersionFromSource', () => {
-    test('extracts version from src/index.ts', () => {
+  describe('extractVersionFromFile', () => {
+    test('extracts version from package.json', () => {
+      const packageJson = {
+        name: 'test-package',
+        version: '1.2.3',
+      };
+      fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + '\n', 'utf8');
+
+      const version = extractVersionFromFile(packagePath);
+      expect(version).toBe('1.2.3');
+    });
+
+    test('returns null if version is missing', () => {
+      fs.writeFileSync(packagePath, JSON.stringify({ name: 'test-package' }, null, 2) + '\n', 'utf8');
+
+      const version = extractVersionFromFile(packagePath);
+      expect(version).toBeNull();
+    });
+
+    test('throws error if file does not exist', () => {
+      expect(() => extractVersionFromFile('/nonexistent/package.json')).toThrow();
+    });
+  });
+
+  describe('validateVersion', () => {
+    test('accepts valid SemVer strings', () => {
+      expect(() => validateVersion('2.0.0')).not.toThrow();
+      expect(() => validateVersion('2.0.0-beta.1+build.7')).not.toThrow();
+    });
+
+    test('rejects invalid SemVer strings', () => {
+      expect(() => validateVersion('1.1.51`')).toThrow('Invalid SemVer version: 1.1.51`');
+      expect(() => validateVersion('1.2')).toThrow('Invalid SemVer version: 1.2');
+    });
+  });
+
+  describe('updateSourceVersion', () => {
+    test('updates VERSION constant in src/index.ts', () => {
       const content = `#!/usr/bin/env node
 import { something } from "./something.js";
 
@@ -45,37 +84,30 @@ function main() {
 }`;
       fs.writeFileSync(indexPath, content, 'utf8');
 
-      const version = extractVersionFromFile(indexPath);
-      expect(version).toBe('1.2.3');
+      const updated = updateSourceVersion(indexPath, '1.3.0');
+
+      expect(updated).toBe(true);
+      expect(fs.readFileSync(indexPath, 'utf8')).toContain('const VERSION = "1.3.0";');
     });
 
-    test('returns null if VERSION not found', () => {
-      const content = `#!/usr/bin/env node
-import { something } from "./something.js";
+    test('does not update when source version is same', () => {
+      fs.writeFileSync(indexPath, 'const VERSION = "2.0.0";', 'utf8');
 
-function main() {
-  console.log("Hello");
-}`;
-      fs.writeFileSync(indexPath, content, 'utf8');
+      const updated = updateSourceVersion(indexPath, '2.0.0');
 
-      const version = extractVersionFromFile(indexPath);
-      expect(version).toBeNull();
+      expect(updated).toBe(false);
     });
 
-    test('handles different quote styles', () => {
-      const content = `const VERSION = '2.0.0';`;
-      fs.writeFileSync(indexPath, content, 'utf8');
+    test('throws if VERSION constant is missing', () => {
+      fs.writeFileSync(indexPath, 'console.log("missing version");', 'utf8');
 
-      const version = extractVersionFromFile(indexPath);
-      expect(version).toBe('2.0.0');
-    });
-
-    test('throws error if file does not exist', () => {
-      expect(() => extractVersionFromFile('/nonexistent/file.ts')).toThrow();
+      expect(() => updateSourceVersion(indexPath, '2.0.0')).toThrow(
+        'Could not find VERSION constant in source file'
+      );
     });
   });
 
-  describe('updatePackageJson', () => {
+  describe('updateJsonFile', () => {
     test('updates package.json when version differs', () => {
       const packageJson = {
         name: 'test-package',
@@ -121,7 +153,7 @@ function main() {
     });
   });
 
-  describe('updatePackageLock', () => {
+  describe('updatePackageLockVersion', () => {
     test('updates both root and packages[""] version', () => {
       const lockJson = {
         name: 'test-package',
@@ -178,93 +210,28 @@ function main() {
     });
   });
 
-  describe('integration test', () => {
-    test('syncs version from src/index.ts to package.json and package-lock.json', () => {
-      // Setup source file
-      const sourceContent = `const VERSION = "2.0.0";`;
-      fs.writeFileSync(indexPath, sourceContent, 'utf8');
-
-      // Setup package.json
-      const packageJson = { name: 'test', version: '1.0.0' };
-      fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + '\n', 'utf8');
-
-      // Setup package-lock.json
-      const lockJson = {
+  describe('integration', () => {
+    test('syncs version from package.json to src/index.ts and package-lock.json', () => {
+      fs.writeFileSync(indexPath, 'const VERSION = "1.0.0";', 'utf8');
+      fs.writeFileSync(packagePath, JSON.stringify({ name: 'test', version: '2.0.0' }, null, 2) + '\n', 'utf8');
+      fs.writeFileSync(lockPath, JSON.stringify({
         name: 'test',
         version: '1.0.0',
         packages: { '': { name: 'test', version: '1.0.0' } }
-      };
-      fs.writeFileSync(lockPath, JSON.stringify(lockJson, null, 2) + '\n', 'utf8');
+      }, null, 2) + '\n', 'utf8');
 
-      // Run sync
-      const version = extractVersionFromFile(indexPath);
-      const pkgUpdated = updateJsonFile(packagePath, version!, 'version');
+      const version = extractVersionFromFile(packagePath);
+      validateVersion(version!);
+      const sourceUpdated = updateSourceVersion(indexPath, version!);
       const lockUpdated = updatePackageLockVersion(lockPath, version!);
 
-      expect(pkgUpdated).toBe(true);
+      expect(sourceUpdated).toBe(true);
       expect(lockUpdated).toBe(true);
+      expect(fs.readFileSync(indexPath, 'utf8')).toContain('const VERSION = "2.0.0";');
 
-      // Verify results
-      const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
       const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-
-      expect(pkg.version).toBe('2.0.0');
       expect(lock.version).toBe('2.0.0');
       expect(lock.packages[''].version).toBe('2.0.0');
     });
   });
 });
-
-// Helper functions to test (these should be exported from refactored sync-version.js)
-function extractVersionFromFile(filePath: string): string | null {
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const match = content.match(/const VERSION = ["']([^"']+)["']/);
-    return match ? match[1] : null;
-  } catch (error) {
-    throw new Error(`Failed to read file: ${filePath}`);
-  }
-}
-
-function updateJsonFile(filePath: string, newVersion: string, versionKey: string): boolean {
-  try {
-    const json = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    
-    if (json[versionKey] === newVersion) {
-      return false;
-    }
-    
-    json[versionKey] = newVersion;
-    fs.writeFileSync(filePath, JSON.stringify(json, null, 2) + '\n', 'utf8');
-    return true;
-  } catch (error) {
-    throw new Error(`Failed to update JSON file: ${filePath}`);
-  }
-}
-
-function updatePackageLockVersion(filePath: string, newVersion: string): boolean {
-  try {
-    const json = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    let updated = false;
-    
-    if (json.version !== newVersion) {
-      json.version = newVersion;
-      updated = true;
-    }
-    
-    if (json.packages?.['']?.version !== newVersion) {
-      if (!json.packages) json.packages = {};
-      if (!json.packages['']) json.packages[''] = {};
-      json.packages[''].version = newVersion;
-      updated = true;
-    }
-    
-    if (updated) {
-      fs.writeFileSync(filePath, JSON.stringify(json, null, 2) + '\n', 'utf8');
-    }
-    
-    return updated;
-  } catch (error) {
-    throw new Error(`Failed to update package-lock.json: ${filePath}`);
-  }
-}

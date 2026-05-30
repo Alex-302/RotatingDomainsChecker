@@ -31,6 +31,7 @@ updates filter rules. Available as both a standalone tool and a GitHub Action.
 - [Logging](#logging)
 - [Project Structure](#project-structure)
 - [Local Usage](#local-usage)
+- [Versioning](#versioning)
 - [Troubleshooting](#troubleshooting)
 - [Cloudflare / Antibot Sites with Rotating Domains](#cloudflare--antibot-sites-with-rotating-domains)
 - [Requirements](#requirements)
@@ -661,12 +662,41 @@ sites:
 
 ```bash
 RotatingDomainsChecker/
-├── src/                 # TypeScript source code
-├── dist/                # Compiled JavaScript
-├── config.yml           # Configuration
-├── watchers.yml         # Sites to monitor
-├── logs/                # Log files
-└── action.yml           # GitHub Action metadata
+├── .github/              # GitHub Actions workflows
+├── .husky/               # Git hooks (commit-msg validation)
+├── scripts/              # Utility scripts
+├── src/                  # TypeScript source code
+│   ├── batch.ts          # Domain processing and heuristics
+│   ├── config.ts         # Configuration handling
+│   ├── diagnostics.ts    # Diagnostics utils
+│   ├── dnsResolver.ts    # DNS resolution
+│   ├── git.ts            # Git operations
+│   ├── httpResolver.ts   # HTTP request handling
+│   ├── index.ts          # Main entry point
+│   ├── logger.ts         # Logging
+│   ├── probe.ts          # Probe logic
+│   ├── replacer.ts       # Filter replacement logic
+│   ├── types.ts          # Shared types
+│   └── utils.ts          # Shared utilities
+├── dist/                 # Compiled JavaScript (ncc bundle)
+├── logs/                 # Log files (generated at runtime)
+├── config.yml            # Main script configuration
+├── watchers.yml          # Sites to monitor
+├── action.yml            # GitHub Action metadata
+├── package.json          # Dependencies and scripts
+├── package-lock.json     # Locked dependency versions
+├── CHANGELOG.md          # Release history
+├── LICENSE               # MIT License
+├── sync-version.js       # Version sync from package.json to src/index.ts
+├── sync-version.d.ts     # TypeScript declarations for sync-version.js
+├── tsconfig.json         # TypeScript configuration
+├── tsconfig.test.json    # TypeScript configuration (tests)
+├── eslint.config.js      # ESLint configuration
+├── jest.config.ts        # Jest configuration
+├── jest.setup.js         # Jest setup
+├── .prettierrc           # Prettier configuration
+├── .markdownlint.json    # Markdown lint rules
+└── .gitattributes        # Git attributes (line endings policy)
 ```
 
 ## Local Usage
@@ -685,6 +715,40 @@ npm run build
 # Run with test filter
 npm run test_live
 ```
+
+## Versioning
+
+This project uses SemVer-style release numbers with code-only bump rules.
+
+- `MAJOR`: breaking runtime behavior, config semantics, outputs, or workflow contract.
+- `MINOR`: important non-breaking code change, new capability, or material runtime behavior change.
+- `PATCH`: bug fix or small code correction without a contract break.
+
+Standard changelog wording for small non-bug code-only changes:
+
+- Use `Minor refinements` for small internal code reshaping, cleanup, or tiny behavioral polishing that does not fix a
+  bug, does not add a new feature, and does not change the public contract in a meaningful way.
+- Do not use `Minor fixes` for that case, because `fixes` implies bug resolution.
+
+Do not bump the version for docs-only edits, comment-only edits, lint-only changes, formatting-only changes, or other
+non-runtime maintenance.
+
+Release workflow:
+
+- `package.json` is the source of truth for the release version.
+- `npm run build` runs `npm run sync-version`, which copies that version into `src/index.ts` and
+  `package-lock.json`.
+- Use `npm run release:patch`, `npm run release:minor`, or `npm run release:major` only when a task/chat is being
+  finalized and marked complete.
+- Update `CHANGELOG.md` in the same finalization step.
+- Add changelog notes only for code changes; skip docs/comments/lint-only churn.
+- Keep each changelog item concise and readable, but allow more than one short sentence when needed to explain the
+  essence clearly.
+- Write changelog text as human-readable technical prose, not as a rigid template. State the problem/change essence
+  first, then briefly explain the user-visible impact or what changed in practice.
+- Prefer this layout when helpful: the first line states the fix/change summary, and the next line gives the practical
+  effect, scope, or user-facing detail.
+- Do not force punctuation patterns such as semicolon-separated clauses if the text reads worse that way.
 
 ## Testing
 
