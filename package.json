@@ -1,6 +1,6 @@
 {
   "name": "rotating-domains-checker",
-  "version": "1.1.51`",
+  "version": "1.2.0",
   "description": "GitHub Action for checking and updating rotating domains in ad blocking filters",
   "main": "dist/index.js",
   "type": "module",
@@ -18,7 +18,10 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "new:branch": "tsx scripts/new-branch.ts",
     "sync-version": "node sync-version.js",
-    "version-sync": "npm run sync-version && git add package.json",
+    "version-sync": "npm run sync-version",
+    "release:patch": "npm version patch --no-git-tag-version && npm run sync-version",
+    "release:minor": "npm version minor --no-git-tag-version && npm run sync-version",
+    "release:major": "npm version major --no-git-tag-version && npm run sync-version",
     "prepare": "husky"
   },
   "keywords": [

@@ -18323,7 +18323,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 // Re-export for backward compatibility (tests import from index.ts)
 
 // Version
-const VERSION = "1.1.51`";
+const VERSION = "1.2.0";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
