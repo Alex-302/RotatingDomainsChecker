@@ -2,6 +2,18 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.3.0] - 2026-05-31
+
+### Added
+
+- Early exit on JS redirect when `probe_text` matched on the current domain.
+  If a client-side JS redirect (`location.replace`, `window.location`, `location.href`) is detected
+  after `probe_text` is confirmed, the resolver stops following the chain and returns the current
+  domain as the working mirror. This prevents decoy redirects from leading to false failures.
+  Meta refresh redirects are always followed (server-like behavior).
+  When `force_search_ahead` is enabled, heuristic search continues after early exit to find
+  additional working domains.
+
 ## [1.2.1] - 2026-05-30
 
 ### Changed

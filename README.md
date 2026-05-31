@@ -644,13 +644,18 @@ sites:
 1. **Redirect Resolution**: Follow HTTP 3xx redirects
 2. **JS/Meta Redirect Resolution**: Parse HTML body for JavaScript (`location.replace()`, `window.location.href`,
    `location.href`) and `<meta http-equiv="refresh">` redirects and follow them as part of the same redirect chain
-3. **Parked Domain Detection**: Check response body against `skip_text` phrases before following client-side redirects
+3. **Early Exit on JS Redirect**: If `probe_text` is configured and matched on the current domain, and the next
+   redirect is a client-side JS redirect, stop following and treat the current domain as the working mirror. This
+   prevents JS redirects (often anti-cloning/decoy protection) from leading to dead ends. Meta refresh redirects are
+   always followed (server-like behavior). When `force_search_ahead` is enabled, heuristic search continues to find
+   additional working domains even after early exit
+4. **Parked Domain Detection**: Check response body against `skip_text` phrases before following client-side redirects
    — if matched, the domain is considered parked/expired and heuristic search is triggered. Individual phrases can be
    excluded per-site using `skip_text_allow` in `watchers.yml` (exact match)
-4. **Heuristic Search**: Try numbered domain patterns
-5. **Content Verification**: Check `probe_text` and `path`
-6. **Filter Updates**: Replace old domains with new ones
-7. **Git Operations**: Create commits or PRs
+5. **Heuristic Search**: Try numbered domain patterns
+6. **Content Verification**: Check `probe_text` and `path`
+7. **Filter Updates**: Replace old domains with new ones
+8. **Git Operations**: Create commits or PRs
 
 ## Logging
 

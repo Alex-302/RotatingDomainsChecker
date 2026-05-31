@@ -938,6 +938,16 @@ export class BatchProcessor {
     const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
     this.logger.debug(siteName, `Redirect chain: ${chainFormatted}`);
 
+    // Log early exit on JS redirect when probe_text matched
+    if (result.probeTextMatchedBeforeJsRedirect) {
+      const jsRedirectUrl = result.redirectChain[result.redirectChain.length - 1]?.location;
+      this.logger.info(
+        siteName,
+        `Early exit: probe_text confirmed on ${result.finalHost}, skipping JS redirect` +
+        (jsRedirectUrl ? ` (would redirect to: ${jsRedirectUrl})` : '')
+      );
+    }
+
     if (!result.success) {
       if (result.antibotDetected) {
         this.logger.warn(siteName, result.error || "Antibot/Cloudflare detected");

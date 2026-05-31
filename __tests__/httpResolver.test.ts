@@ -347,44 +347,52 @@ describe('6.10 extractJsRedirect', () => {
   const resolver = new HttpResolver(config);
   const base = 'https://shortlink.test/abc123';
 
-  test('meta refresh with URL= → returns absolute URL', () => {
+  test('meta refresh with URL= → returns { url, isJsRedirect: false }', () => {
     const body = '<html><head><meta http-equiv="refresh" content="0;URL=https://example11.com/"></head></html>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://example11.com/');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://example11.com/', isJsRedirect: false });
   });
 
-  test('meta refresh with url= (lowercase) → returns absolute URL', () => {
+  test('meta refresh with url= (lowercase) → returns { url, isJsRedirect: false }', () => {
     const body = '<meta http-equiv="refresh" content="0;url=https://example.com/">';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://example.com/');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://example.com/', isJsRedirect: false });
   });
 
-  test('location.replace("url") → returns absolute URL', () => {
+  test('location.replace("url") → returns { url, isJsRedirect: true }', () => {
     const body = '<script>location.replace("https://cdn-redirect.test/redirect.html")</script>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://cdn-redirect.test/redirect.html');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://cdn-redirect.test/redirect.html', isJsRedirect: true });
   });
 
-  test("location.replace('url') single quotes → returns absolute URL", () => {
+  test("location.replace('url') single quotes → returns { url, isJsRedirect: true }", () => {
     const body = "<script>location.replace('https://example.com/page')</script>";
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://example.com/page');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://example.com/page', isJsRedirect: true });
   });
 
-  test('window.location.href = "url" → returns absolute URL', () => {
+  test('window.location.href = "url" → returns { url, isJsRedirect: true }', () => {
     const body = '<script>window.location.href = "https://example11.com/"</script>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://example11.com/');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://example11.com/', isJsRedirect: true });
   });
 
-  test('window.location = "url" → returns absolute URL', () => {
+  test('window.location = "url" → returns { url, isJsRedirect: true }', () => {
     const body = '<script>window.location = "https://example.com/"</script>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://example.com/');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://example.com/', isJsRedirect: true });
   });
 
-  test('location.href = "url" (without window.) → returns absolute URL', () => {
+  test('location.href = "url" (without window.) → returns { url, isJsRedirect: true }', () => {
     const body = '<script>location.href = "https://example.com/"</script>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://example.com/');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://example.com/', isJsRedirect: true });
   });
 
   test('relative URL in meta refresh → resolved against baseUrl', () => {
     const body = '<meta http-equiv="refresh" content="0;URL=/new-path">';
-    expect(resolver.extractJsRedirect(body, 'https://example.com/old')).toBe('https://example.com/new-path');
+    const result = resolver.extractJsRedirect(body, 'https://example.com/old');
+    expect(result).toEqual({ url: 'https://example.com/new-path', isJsRedirect: false });
   });
 
   test('no redirect in body → returns undefined', () => {
@@ -400,13 +408,15 @@ describe('6.10 extractJsRedirect', () => {
     // Parked domain uses JS redirect — skip_text should catch it first in resolve()
     // This test verifies extractJsRedirect still extracts the URL correctly
     const body = '<html><body>Buy this domain! <script>window.location = "https://parklogic.com/buy"</script></body></html>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://parklogic.com/buy');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://parklogic.com/buy', isJsRedirect: true });
   });
 
   test('minified JS with location.replace → returns URL', () => {
     // Shortener-style minified script
     const body = '<script>(function(){location.replace("https://cdn-redirect.test/assets/inattv.html")})()</script>';
-    expect(resolver.extractJsRedirect(body, base)).toBe('https://cdn-redirect.test/assets/inattv.html');
+    const result = resolver.extractJsRedirect(body, base);
+    expect(result).toEqual({ url: 'https://cdn-redirect.test/assets/inattv.html', isJsRedirect: true });
   });
 });
 
@@ -590,5 +600,248 @@ describe('6.11 probe_text priority over skip_text (isolated mocks)', () => {
     expect(result.success).toBe(true);
     expect(result.skippedByText).toBeUndefined();
     expect(result.finalHost).toBe('mock-full-probe.test');
+  });
+});
+
+// ============================================================================
+// 6.12 Early exit on probe_text + JS redirect
+// ============================================================================
+
+describe('6.12 Early exit on probe_text + JS redirect', () => {
+  function makeFakeResponse(status: number, body: string, headers: Record<string, string> = {}): Response {
+    return {
+      status,
+      headers: {
+        get: (name: string) => headers[name.toLowerCase()] ?? null,
+      },
+      text: async () => body,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response;
+  }
+
+  const TEST_PROBE = 'TEST_PROBE_VIDEO_PLAYER';
+
+  test('probe_text matched + JS redirect (location.replace) → early exit on current domain', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 10, parallel: 1 },
+      skip_text: [],
+    });
+    const resolver = new HttpResolver(config);
+
+    // Working domain with probe_text that JS-redirects to a decoy
+    const workingDomainBody = `<html><body>
+      <div id="${TEST_PROBE}">Live stream</div>
+      <script>location.replace("https://decoy.test/fake")</script>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, workingDomainBody, { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve(
+      'https://example220tv.test/', false, undefined, [TEST_PROBE]
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.finalHost).toBe('example220tv.test');
+    expect(result.probeTextMatchedBeforeJsRedirect).toBe(true);
+    expect(result.shouldTriggerHeuristic).toBe(false); // No force_search_ahead
+    // Verify we only made 1 request (didn't follow JS redirect)
+    expect((resolver as any).fetchWithRetry).toHaveBeenCalledTimes(1);
+  });
+
+  test('probe_text matched + meta refresh → continue following (no early exit)', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 10, parallel: 1 },
+      skip_text: [],
+    });
+    const resolver = new HttpResolver(config);
+
+    // Domain with probe_text that meta-refreshes to another domain
+    const intermediateBody = `<html><body>
+      <div id="${TEST_PROBE}">Content</div>
+      <meta http-equiv="refresh" content="0;URL=https://final.test/">
+    </body></html>`;
+    const finalBody = '<html><body>Final page</body></html>';
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, intermediateBody, { 'content-type': 'text/html' }))
+      .mockResolvedValueOnce(makeFakeResponse(200, finalBody, { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve(
+      'https://example220tv.test/', false, undefined, [TEST_PROBE]
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.finalHost).toBe('final.test');
+    expect(result.probeTextMatchedBeforeJsRedirect).toBeUndefined();
+    // Meta refresh was followed (2 requests)
+    expect((resolver as any).fetchWithRetry).toHaveBeenCalledTimes(2);
+  });
+
+  test('probe_text NOT matched + JS redirect → continue following (old behavior)', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 10, parallel: 1 },
+      skip_text: [],
+    });
+    const resolver = new HttpResolver(config);
+
+    // Domain without probe_text that JS-redirects
+    const noProbeBody = `<html><body>
+      <div>No probe here</div>
+      <script>location.replace("https://redirected.test/")</script>
+    </body></html>`;
+    const redirectedBody = '<html><body>Redirected page</body></html>';
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, noProbeBody, { 'content-type': 'text/html' }))
+      .mockResolvedValueOnce(makeFakeResponse(200, redirectedBody, { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve(
+      'https://example220tv.test/', false, undefined, [TEST_PROBE]
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.finalHost).toBe('redirected.test');
+    expect(result.probeTextMatchedBeforeJsRedirect).toBeUndefined();
+    // JS redirect was followed (2 requests)
+    expect((resolver as any).fetchWithRetry).toHaveBeenCalledTimes(2);
+  });
+
+  test('probe_text not configured + JS redirect → continue following (old behavior)', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 10, parallel: 1 },
+      skip_text: [],
+    });
+    const resolver = new HttpResolver(config);
+
+    const jsRedirectBody = `<html><body>
+      <script>location.replace("https://redirected.test/")</script>
+    </body></html>`;
+    const redirectedBody = '<html><body>Redirected page</body></html>';
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, jsRedirectBody, { 'content-type': 'text/html' }))
+      .mockResolvedValueOnce(makeFakeResponse(200, redirectedBody, { 'content-type': 'text/html' }));
+
+    // No probe_text provided
+    const result = await resolver.resolve('https://example220tv.test/');
+
+    expect(result.success).toBe(true);
+    expect(result.finalHost).toBe('redirected.test');
+    expect(result.probeTextMatchedBeforeJsRedirect).toBeUndefined();
+  });
+
+  test('probe_text matched + JS redirect + force_search_ahead → shouldTriggerHeuristic = true', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 10, parallel: 1 },
+      skip_text: [],
+    });
+    const resolver = new HttpResolver(config);
+
+    const workingDomainBody = `<html><body>
+      <div id="${TEST_PROBE}">Live stream</div>
+      <script>location.replace("https://decoy.test/fake")</script>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, workingDomainBody, { 'content-type': 'text/html' }));
+
+    const site = { last_known_mirror: 'example220tv.test', force_search_ahead: true };
+    const result = await resolver.resolve(
+      'https://example220tv.test/', false, site, [TEST_PROBE]
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.finalHost).toBe('example220tv.test');
+    expect(result.probeTextMatchedBeforeJsRedirect).toBe(true);
+    expect(result.shouldTriggerHeuristic).toBe(true); // force_search_ahead triggers heuristic
+  });
+
+  test('probe_text matched + JS redirect + NO force_search_ahead → shouldTriggerHeuristic = false', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 10, parallel: 1 },
+      skip_text: [],
+    });
+    const resolver = new HttpResolver(config);
+
+    const workingDomainBody = `<html><body>
+      <div id="${TEST_PROBE}">Live stream</div>
+      <script>location.replace("https://decoy.test/fake")</script>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, workingDomainBody, { 'content-type': 'text/html' }));
+
+    const site = { last_known_mirror: 'example220tv.test', force_search_ahead: false };
+    const result = await resolver.resolve(
+      'https://example220tv.test/', false, site, [TEST_PROBE]
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.finalHost).toBe('example220tv.test');
+    expect(result.probeTextMatchedBeforeJsRedirect).toBe(true);
+    expect(result.shouldTriggerHeuristic).toBe(false);
+  });
+
+  test('JS redirect chain: probe on first domain, early exit preserves chain location', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 10, parallel: 1 },
+      skip_text: [],
+    });
+    const resolver = new HttpResolver(config);
+
+    const workingDomainBody = `<html><body>
+      <div id="${TEST_PROBE}">Live stream</div>
+      <script>location.replace("https://decoy.test/fake")</script>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(200, workingDomainBody, { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve(
+      'https://example220tv.test/', false, { last_known_mirror: 'example220tv.test', force_search_ahead: true }, [TEST_PROBE]
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.redirectChain).toHaveLength(1);
+    expect(result.redirectChain[0].url).toBe('https://example220tv.test/');
+    // Chain entry should include the JS redirect URL for visibility
+    expect(result.redirectChain[0].location).toBe('https://decoy.test/fake');
+  });
+
+  test('HTTP redirect → probe_text matched on final → JS redirect → early exit', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 10, parallel: 1 },
+      skip_text: [],
+    });
+    const resolver = new HttpResolver(config);
+
+    // First: HTTP redirect from shortlink
+    const shortlinkBody = '';
+    // Second: working domain with probe_text + JS redirect to decoy
+    const workingDomainBody = `<html><body>
+      <div id="${TEST_PROBE}">Live stream</div>
+      <script>window.location.href = "https://decoy.test/fake"</script>
+    </body></html>`;
+
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      // HTTP 301 redirect
+      .mockResolvedValueOnce({
+        status: 301,
+        headers: { get: (n: string) => n.toLowerCase() === 'location' ? 'https://example220tv.test/' : null },
+        arrayBuffer: async () => new ArrayBuffer(0),
+      } as unknown as Response)
+      // 200 with probe_text + JS redirect
+      .mockResolvedValueOnce(makeFakeResponse(200, workingDomainBody, { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve(
+      'https://shortlink.test/abc', false, { last_known_mirror: 'shortlink.test', force_search_ahead: true }, [TEST_PROBE]
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.finalHost).toBe('example220tv.test');
+    expect(result.probeTextMatchedBeforeJsRedirect).toBe(true);
+    expect(result.shouldTriggerHeuristic).toBe(true);
+    expect(result.redirectChain).toHaveLength(2);
   });
 });
