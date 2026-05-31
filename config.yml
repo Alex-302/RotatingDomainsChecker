@@ -30,7 +30,7 @@ thresholds:
 
 heuristic:
   enabled: true          # enable domain[N].tld heuristic search
-  maxAttempts: 50        # increase to check more domains, if there are difficulties in finding working domains
+  maxAttempts: 15        # increase to check more domains, if there are difficulties in finding working domains
   skipOnAntibot: true    # skip heuristic if antibot detected
   attemptParallel: 3     # max concurrent attempts per site (lower = less DNS load)
   dnsParallel: 50        # max concurrent DNS lookups in batch pre-filter (lightweight, can be high)
@@ -59,12 +59,12 @@ git:
 
 # Filters directory settings
 filtersdir:
-  repoPath: "ProdFilters"         # path to filters directory (for debugging, will be changed to ".." for production)
-  filterDirPattern: "*Filter"     # directories ending with "Filter"
+  repoPath: "ProdFilters"         # path to filters directory
+  filterDirPattern: "*Filter*"     # glob: *Filter=endsWith, *Filter*=includes, Filter=exact, *=all
   filePattern: "*.txt"
 
 # Test filters directory settings
 filtersdir_test:
-  repoPath: "TestFilters"         # path to test filters directory
-  filterDirPattern: "TestFilter"  # directories ending with "Filter"
-  filePattern: "testfilter.txt"   # only this specific test file
+  repoPath: "TestFilters"
+  filterDirPattern: "*Filter*"     # glob pattern (TestFilters matches *Filter*)
+  filePattern: "*.txt"

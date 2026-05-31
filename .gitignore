@@ -2,7 +2,5 @@ logs/
 node_modules/
 .vscode/
 coverage/
-TODO.md
-AGENTS.md
 dist/*.d.ts
 dist/*.d.ts.map

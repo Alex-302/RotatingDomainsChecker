@@ -8,12 +8,12 @@ import { GitManager } from "./git.js";
 import { Logger, LogLevel } from "./logger.js";
 import { connectionDiagnostics } from "./diagnostics.js";
 import { resolveHostname } from "./dnsResolver.js";
-import type { Summary } from "./types.js";
+import type { Summary, UnchangedWatcherEntry } from "./types.js";
 import { appendFileSync } from "fs";
-import { naturalCompare, calculateDaysSince } from "./utils.js";
+import { naturalCompare, calculateDaysSince, formatWatcherSummaryEntry, isRealDomainChange } from "./utils.js";
 
 // Re-export for backward compatibility (tests import from index.ts)
-export { naturalCompare, calculateDaysSince };
+export { naturalCompare, calculateDaysSince, formatWatcherSummaryEntry, isRealDomainChange };
 
 // Version
 const VERSION = "1.3.0";
@@ -549,36 +549,40 @@ export async function main() {
   const replacer = new FilterReplacer(config, logger, isTestMode);
   const replacerStats = await replacer.applyReplacements(summary.replacements, dryRun, originalLastKnownMirrors);
 
-  // Determine whether there are any real changes to create a PR/commit for.
+  // Compute mirror update info — used for both the console summary and the commit decision.
   // A real change means the domain actually changed from what was in watcher BEFORE processing.
-  // If newHost === original last_known_mirror, it's not a change — just entry point resolution.
-  const hasUniqueDomainChanges = (() => {
+  const mirrorUpdateEntries = (() => {
     const primaryBySite = new Map<string, typeof summary.replacements[number]>();
     for (const r of summary.replacements) {
       if (!primaryBySite.has(r.siteName)) {
         primaryBySite.set(r.siteName, r);
       }
     }
-    return [...primaryBySite.values()].some(r => {
-      // If newHost matches the original last_known_mirror, no real change occurred
-      const originalMirror = originalLastKnownMirrors.get(r.siteName);
-      if (originalMirror && r.newHost === originalMirror) return false;
-      const fromHost = r.startedHost || r.oldHost;
-      return fromHost !== r.newHost;
-    });
+    return [...primaryBySite.values()].filter(r =>
+      isRealDomainChange(r, originalLastKnownMirrors)
+    );
   })();
+  const hasUniqueDomainChanges = mirrorUpdateEntries.length > 0;
+  const nMirrorUpdates = mirrorUpdateEntries.length;
   const hasRealChanges = hasUniqueDomainChanges || replacerStats.totalLineEdits > 0;
+
+  // Count pattern→non-pattern transitions from warnings
+  const nPatternToNonPattern = summary.warnings.filter(
+    w => w.includes('Pattern domain redirected to non-pattern')
+  ).length;
 
   // Print summary with detailed breakdown
   logger.logGlobal(LogLevel.RAW, "⬇️ ⬇️ ⬇️  ---=== Domains rotating summary ===---  ⬇️ ⬇️ ⬇️");
   logger.logGlobal(LogLevel.RAW, `  Total sites: ${summary.totalSites}`);
   logger.logGlobal(LogLevel.RAW, `  ├─ Checked sites: ${summary.checked}`);
-  logger.logGlobal(LogLevel.RAW, `  ├─ Updated sites: ${summary.updated}`);
+  logger.logGlobal(LogLevel.RAW, `  ├─ 🔄 Watchers with active mirror changed: ${nMirrorUpdates}`);
+  logger.logGlobal(LogLevel.RAW, `  ├─ 📋 Watchers with filter mirror list changed: ${replacerStats.patternDiffs?.length ?? 0}`);
+  logger.logGlobal(LogLevel.RAW, `  ├─ 🚩 Pattern→non-pattern: ${nPatternToNonPattern}`);
   if (summary.antibotAccepted > 0) {
     logger.logGlobal(LogLevel.RAW, `  ├─ Antibot accepted: ${summary.antibotAccepted} (not in failed count)`);
   }
   const actualUnchangedDisplay = summary.unchanged;
-  logger.logGlobal(LogLevel.RAW, `  └─ Unchanged sites: ${actualUnchangedDisplay}`);
+  logger.logGlobal(LogLevel.RAW, `  └─ Unchanged watchers: ${actualUnchangedDisplay}`);
   logger.logGlobal(LogLevel.RAW, ` 🚨  Failed: ${summary.failed}`);
   if (summary.antibotBlocked > 0) {
     logger.logGlobal(LogLevel.RAW, `  ├─ including antibot blocked: ${summary.antibotBlocked}`);
@@ -586,6 +590,18 @@ export async function main() {
   const networkErrors = summary.failed - summary.antibotBlocked;
   if (networkErrors > 0) {
     logger.logGlobal(LogLevel.RAW, `  └─ Network problems or dead: ${networkErrors}`);
+  }
+
+  // Pattern domains list updates section (populated by replacer in task 03)
+  if (replacerStats.patternDiffs && replacerStats.patternDiffs.length > 0) {
+    logger.logGlobal(LogLevel.RAW, "");
+    logger.logGlobal(LogLevel.RAW, " 📋  Watchers with filter mirror list changed:");
+    for (const diff of replacerStats.patternDiffs) {
+      const addedStr = diff.added.length > 0 ? ` added: ${diff.added.join(', ')}` : '';
+      const removedStr = diff.removed.length > 0 ? ` removed: ${diff.removed.join(', ')}` : '';
+      logger.logGlobal(LogLevel.RAW, `     [${diff.siteName}]${addedStr}${removedStr}`);
+      logger.logGlobal(LogLevel.RAW, `       active mirror: ${diff.active} (+ ${diff.additionalCount} additional)`);
+    }
   }
 
   // Display detailed errors and warnings
@@ -601,14 +617,18 @@ export async function main() {
     }
   }
 
-  // Separate pattern changes from other warnings
-  const patternChanges = summary.warnings.filter(w => w.includes('→'));
-  const otherWarnings = summary.warnings.filter(w => !w.includes('→'));
+  // Separate pattern→non-pattern transitions from other warnings
+  const patternToNonPatternWarnings = summary.warnings.filter(
+    w => w.includes('Pattern domain redirected to non-pattern')
+  );
+  const otherWarnings = summary.warnings.filter(
+    w => !w.includes('Pattern domain redirected to non-pattern')
+  );
 
-  if (patternChanges.length > 0) {
-    logger.logGlobal(LogLevel.WARN, " ⚠️  Pattern changes requiring manual review:");
-    for (const warning of patternChanges) {
-      logger.logGlobal(LogLevel.WARN, `     ${warning}`);
+  if (patternToNonPatternWarnings.length > 0) {
+    logger.logGlobal(LogLevel.RAW, " 🚩  Changed pattern → non-pattern domains:");
+    for (const warning of patternToNonPatternWarnings) {
+      logger.logGlobal(LogLevel.RAW, `     ${warning}`);
     }
   }
 
@@ -618,8 +638,8 @@ export async function main() {
       logger.logGlobal(LogLevel.RAW, `     - ${warning}`);
     }
   }
-  logger.logGlobal(LogLevel.RAW, "");
 
+  logger.logGlobal(LogLevel.RAW, "");
   logger.logGlobal(LogLevel.RAW, `Total phase time: ${batchSeconds}s`);
 
   // Verification: display formula and check counts
@@ -633,9 +653,9 @@ export async function main() {
     logger.logGlobal(LogLevel.DEBUG, `DEBUG: updated=${summary.updated}, unchanged=${summary.unchanged}, failed=${summary.failed}, antibotAccepted=${summary.antibotAccepted} (included), missing=${missing}`);
   }
 
-  // List unchanged sites
+  // List unchanged watchers
+  const unchangedWatcherEntries: UnchangedWatcherEntry[] = [];
   if (summary.unchanged > 0 || summary.updated === 0) {
-    const unchangedHosts: string[] = [];
     for (const result of results) {
       const site = watchers.sites[result.siteName];
       if (!site) continue;
@@ -650,15 +670,22 @@ export async function main() {
 
       if (originalMirror) {
         if (result.newHost === originalMirror) {
-          unchangedHosts.push(result.newHost || originalMirror);
+          const activeHost = result.newHost || originalMirror;
+          if (activeHost && activeHost.trim() !== '') {
+            unchangedWatcherEntries.push({ siteName: result.siteName, activeHost });
+          }
         }
       } else if (!result.hostChanged) {
-        unchangedHosts.push(result.newHost);
+        if (result.newHost && result.newHost.trim() !== '') {
+          unchangedWatcherEntries.push({ siteName: result.siteName, activeHost: result.newHost });
+        }
       }
     }
-    const filteredHosts = unchangedHosts.filter(host => host && host.trim() !== '');
     logger.logGlobal(LogLevel.RAW, ``);
-    logger.logGlobal(LogLevel.RAW, `Unchanged sites:\n                        ${filteredHosts.join(', ')}`);
+    logger.logGlobal(
+      LogLevel.RAW,
+      `Unchanged watchers:\n                        ${unchangedWatcherEntries.map(entry => formatWatcherSummaryEntry(entry.siteName, entry.activeHost)).join(', ')}`,
+    );
   }
   logger.logRaw("");
 
@@ -707,7 +734,10 @@ export async function main() {
 
   // Display PR/Commit mode information only when there are real changes
   if (!skipReason) {
-    const prModeInfo = gitManager.getPRModeInfo(summary, dryRun);
+    const prModeInfo = gitManager.getPRModeInfo(summary, dryRun, originalLastKnownMirrors, {
+      patternDiffs: replacerStats.patternDiffs,
+      unchangedWatchers: unchangedWatcherEntries,
+    });
     if (prModeInfo.length > 0) {
       logger.logRaw("");
       prModeInfo.forEach(line => {
@@ -722,10 +752,13 @@ export async function main() {
   // Execute git operations (will include the log file in commit)
   let gitResult: { commitSha?: string; prNumber?: number; prUrl?: string } = {};
   if (skipReason) {
-    logger.logGlobal(LogLevel.INFO, `Skipping PR/commit — ${skipReason}`);
+    gitResult = await gitManager.commitOrCreatePR(summary, dryRun, originalLastKnownMirrors, {
+      patternDiffs: replacerStats.patternDiffs,
+      unchangedWatchers: unchangedWatcherEntries,
+    });
   } else {
     // prod_live, prod_dry, test_dry: execute git
-    gitResult = await gitManager.commitOrCreatePR(summary, dryRun);
+    gitResult = await gitManager.commitOrCreatePR(summary, dryRun, originalLastKnownMirrors);
   }
 
   // Set GitHub Actions outputs

@@ -1,0 +1,301 @@
+! ============================================================================
+! Test filter for RotatingDomainsChecker replacer tests
+! Contains all rule types covered by __tests__/replacer.test.ts
+! Domain conventions follow AGENTS.md § Test Domain Naming Conventions
+! ============================================================================
+
+! ============================================================================
+! Section 1: Comments and lines that should be skipped
+! ============================================================================
+
+! This is a comment — must be preserved as-is
+! Another comment with domains: example001.com should not be touched
+
+/regex_rule_should_be_skipped/
+/another\/regex\/pattern/
+
+! Wildcard URL rule without cosmetic/params — should be skipped
+||example*.com/*.gif
+
+! ============================================================================
+! Section 2: Cosmetic rules (##)
+! ============================================================================
+
+! 2.1 Single domain
+example001.com##.ads
+
+! 2.2 Comma-separated domain list
+example001.com,example002.com,example003.com##.banner
+
+! 2.3 Mixed: pattern domains + non-pattern domain
+example001.com,nopattern.com,example002.com##.sidebar-ad
+
+! 2.4 Non-pattern domain only
+nopattern.com##.tracker
+
+! 2.5 domain[N][text].tld pattern
+example126tv.com,example127tv.com,example128tv.com##.video-ad
+
+! 2.6 [N]domain.tld pattern
+14example.com,15example.com,16example.com##.popup
+
+! 2.7 www prefix pattern
+www.example375.com,www.example376.com##.footer-banner
+
+! ============================================================================
+! Section 3: Exception cosmetic rules (#@#)
+! ============================================================================
+
+! 3.1 Basic exception
+example001.com#@#.ad-container
+
+! 3.2 Exception with comma-separated list
+example001.com,example002.com,nopattern.com#@#.sponsored
+
+! 3.3 #@## regression: exception with ## inside selector
+example001.com#@##smartbanner.ios
+
+! ============================================================================
+! Section 4: CSS injection rules (#$#)
+! ============================================================================
+
+! 4.1 Basic CSS injection
+example001.com#$#body { background: #fff !important; }
+
+! 4.2 CSS injection with domain list
+example001.com,example002.com#$#.ads { display: none !important; }
+
+! ============================================================================
+! Section 5: CSS exception injection rules (#@$#)
+! ============================================================================
+
+! 5.1 CSS exception injection
+example001.com#@$#body { background: #fff !important; }
+
+! 5.2 CSS exception with list
+example001.com,nopattern.com#@$#.content { display: block !important; }
+
+! ============================================================================
+! Section 6: Extended CSS rules (#?#)
+! ============================================================================
+
+! 6.1 Basic extended CSS
+example001.com#?#.banner:-abp-has(.ad-label)
+
+! 6.2 Extended CSS with list
+example001.com,example002.com#?#.widget:-abp-contains(Advertisement)
+
+! ============================================================================
+! Section 7: Extended CSS exception rules (#@?#)
+! ============================================================================
+
+! 7.1 Extended CSS exception
+example001.com#@?#.mb-6:-abp-contains(gesponsord)
+
+! ============================================================================
+! Section 8: Extended CSS injection rules (#$?#)
+! ============================================================================
+
+! 8.1 Extended CSS injection
+example001.com#$?#.banner { remove: true; }
+
+! ============================================================================
+! Section 9: Extended CSS injection exception rules (#@$?#)
+! ============================================================================
+
+! 9.1 Extended CSS injection exception
+example001.com#@$?#.selector { remove: true; }
+
+! ============================================================================
+! Section 10: Script rules (#%#)
+! ============================================================================
+
+! 10.1 Basic scriptlet
+example001.com#%#//scriptlet('abort-on-property-read', 'popns')
+
+! 10.2 Scriptlet with comma-separated list
+example001.com,example002.com,example003.com#%#//scriptlet('set-constant', 'ads', 'false')
+
+! 10.3 Scriptlet with domain[N][text].tld
+example126tv.com,example127tv.com#%#//scriptlet('adjust-setInterval', 'timer', '*', '0.001')
+
+! ============================================================================
+! Section 11: Script exception rules (#@%#)
+! ============================================================================
+
+! 11.1 Script exception
+example001.com#@%#//scriptlet('remove-class', 'no_scroll')
+
+! ============================================================================
+! Section 12: Content rules ($$)
+! ============================================================================
+
+! 12.1 Basic content rule
+example126tv.com$$script:contains(duyuruModal)
+
+! 12.2 Content rule with domain list
+example126tv.com,example127tv.com$$script:contains(advert)
+
+! ============================================================================
+! Section 13: Content exception rules ($@$)
+! ============================================================================
+
+! 13.1 Content exception rule
+example001.com$@$script:contains(important-content)
+
+! ============================================================================
+! Section 14: uBO HTML filtering forms (##^, #@#^)
+! ============================================================================
+
+! 14.1 uBO HTML filtering
+www.91example.com##^script:has-text(runCount)
+
+! 14.2 uBO HTML filtering exception
+www.91example.com#@#^script:has-text(runCount)
+
+! 14.3 uBO HTML filtering with list
+www.91example.com,www.92example.com##^script:has-text(ads)
+
+! ============================================================================
+! Section 15: uBO scriptlet forms (##+js, #@#+js)
+! ============================================================================
+
+! 15.1 uBO scriptlet shorthand
+example001.com##+js(acs, jQuery, cookie)
+
+! 15.2 uBO scriptlet exception shorthand
+example001.com#@#+js(acs, jQuery, cookie)
+
+! 15.3 uBO scriptlet with list
+example001.com,example002.com##+js(set, adblock, false)
+
+! ============================================================================
+! Section 16: URL rules (||domain^)
+! ============================================================================
+
+! 16.1 Basic URL rule
+||example001.com^
+
+! 16.2 URL rule with modifier
+||example001.com^$third-party
+
+! 16.3 URL rule with $domain= parameter
+||example.com^$domain=example001.com|example002.com
+
+! ============================================================================
+! Section 17: List-valued parameter modifiers
+! ============================================================================
+
+! 17.1 $domain= with domain list
+||example.com^$domain=example001.com|nopattern.com|example002.com
+
+! 17.2 $domain= single domain
+||example.com^$domain=example001.com
+
+! 17.3 $from= with domain list
+||example.com^$from=example001.com|nopattern.com
+
+! 17.4 $denyallow= with domain list
+||example.com^$denyallow=example001.com|nopattern.com
+
+! 17.5 $to= with domain list
+||example.com^$to=example001.com|nopattern.com
+
+! ============================================================================
+! Section 18: Wrapper syntax [$domain=...]
+! ============================================================================
+
+! 18.1 Basic wrapper with #%#
+[$domain=example001.com|nopattern.com]#%#//scriptlet('set-constant', 'ads', 'false')
+
+! 18.2 Wrapper with ##
+[$domain=example001.com|nopattern.com]###banner
+
+! 18.3 Wrapper with #@# exception
+[$domain=testsite.com]#@#.selector
+
+! 18.4 Wrapper single domain
+[$domain=example001.com]##.ads
+
+! 18.5 Wrapper with regexp — must NOT be replaced
+[$domain=/example\d+\.com/]#%#//scriptlet('x')
+
+! ============================================================================
+! Section 19: Wildcard domains (must be preserved, not replaced)
+! ============================================================================
+
+! 19.1 Wildcard in cosmetic rule
+example.*##.ad
+
+! 19.2 Mixed: wildcard + full domains
+nopattern.com,example.*,testsite.com##.banner
+
+! 19.3 Wildcard with exception marker
+nopattern.com,example.*#@#.tracker
+
+! ============================================================================
+! Section 20: Discovery entrypoint and non-pattern domains
+! ============================================================================
+
+! 20.1 Discovery entrypoint: shortener/gateway domains mixed with mirrors
+||t.co^
+t.co##.dbad
+
+! 20.2 Non-pattern mirror domain (result of pattern→non-pattern transition)
+kathyinformationwhether.com##.dbad
+
+! 20.3 Discovery shortener as popup domain
+$popup,domain=nopattern.com|testsite.com
+
+! ============================================================================
+! Section 21: Predicted mirror scenarios
+! ============================================================================
+
+! 21.1 Multiple predicted mirrors + last_known_mirror
+example001.com,example002.com,example003.com,example020.com##.video-ad
+
+! 21.2 Predicted mirrors with [N]domain.tld pattern
+91example.com,92example.com,93example.com,99example.com##.sidebar
+
+! ============================================================================
+! Section 22: Scheme change scenarios
+! ============================================================================
+
+! 22.1 Domain that might redirect to non-pattern (scheme change detection)
+example015.com##a[href^="https://cutt.ly/"]
+
+! 22.2 Multiple domains with potential scheme change
+example014.com,example015.com##.redirect-banner
+
+! ============================================================================
+! Section 23: Complex combined rules
+! ============================================================================
+
+! 23.1 URL rule with multiple modifiers
+||example001.com^$third-party,script
+
+! 23.2 Conditional platform blocks
+!#if (adguard_app_windows || adguard_app_mac || adguard_app_android)
+example001.com,example002.com#%#//scriptlet('adjust-setInterval', 'timer', '*', '0.001')
+!#endif
+
+!#if (adguard_app_ios || adguard_ext_safari || ext_ublock)
+example001.com,example002.com##.mobile-banner
+example001.com,example002.com#%#//scriptlet('set-constant', 'isMobile', 'true')
+!#endif
+
+! ============================================================================
+! Section 24: Edge cases and regressions
+! ============================================================================
+
+! 24.1 Empty domain (should not break parsing)
+! (empty lines are skipped by shouldSkipLine)
+
+! 24.2 Rule with $badfilter modifier
+||nopattern.com^$badfilter
+
+! 24.3 URL rule with path
+||example001.com/video_reklam.html
+
+! 24.4 Mixed pattern and non-pattern in same $domain= list
+||example.com^$domain=14example.com|nopattern.com|example126tv.com

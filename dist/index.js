@@ -15397,6 +15397,8 @@ var __webpack_exports__ = {};
 __nccwpck_require__.d(__webpack_exports__, {
   US: () => (/* reexport */ calculateDaysSince),
   B_: () => (/* binding */ dnsPreflightCheck),
+  cG: () => (/* reexport */ formatWatcherSummaryEntry),
+  lG: () => (/* reexport */ isRealDomainChange),
   iW: () => (/* binding */ main),
   p0: () => (/* reexport */ naturalCompare),
   aq: () => (/* binding */ selectFirstByOrder),
@@ -15738,6 +15740,27 @@ function calculateDaysSince(dateStr) {
     catch {
         return 0;
     }
+}
+/**
+ * Determines whether a replacement entry represents a real mirror update.
+ * Uses the original last_known_mirror (captured before processing started)
+ * to distinguish actual changes from redirect-only or discovery-entrypoint noise.
+ *
+ * @param replacement — the replacement pair to evaluate
+ * @param originalLastKnownMirrors — optional map of siteName → original last_known_mirror
+ * @returns true if the domain actually changed relative to the original mirror
+ */
+function isRealDomainChange(replacement, originalLastKnownMirrors) {
+    const originalMirror = originalLastKnownMirrors?.get(replacement.siteName);
+    if (originalMirror !== undefined) {
+        return replacement.newHost !== originalMirror;
+    }
+    // Fallback: compare startedHost/oldHost with newHost (legacy behaviour)
+    const fromHost = replacement.startedHost || replacement.oldHost;
+    return fromHost !== replacement.newHost;
+}
+function formatWatcherSummaryEntry(siteName, activeHost) {
+    return `${siteName} (${activeHost})`;
 }
 
 ;// CONCATENATED MODULE: ./src/batch.ts
@@ -17277,6 +17300,7 @@ var src = __nccwpck_require__(4112);
 
 
 
+
 // Helper function for consistent domain normalization (www-aware)
 function normalizeDomain(domain) {
     return domain.replace(/^www\./, '').toLowerCase();
@@ -17367,7 +17391,7 @@ function deduplicateDomains(domains) {
         return true;
     });
 }
-function processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap = new Map()) {
+function processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap = new Map(), usedAdditionalKeys) {
     // 1. Replace domains
     const replaced = domains.map(d => replaceDomain(d, hostMap, initialToLastKnownMap));
     const changed = domains.some((d, i) => replaced[i] !== d);
@@ -17416,6 +17440,7 @@ function processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap,
             const key = normalizeDomain(d);
             const extras = additionalDomainsMap.get(key);
             if (extras) {
+                let changedByExtras = false;
                 for (const extra of extras) {
                     if (matchesNumericPattern(d) && !matchesNumericPattern(extra)) {
                         continue;
@@ -17424,12 +17449,19 @@ function processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap,
                     const existingIdx = existingNormalized.get(extraNorm);
                     if (existingIdx !== undefined) {
                         // Replace existing domain with the form from redirect chain
-                        processed[existingIdx] = extra;
+                        if (processed[existingIdx] !== extra) {
+                            processed[existingIdx] = extra;
+                            changedByExtras = true;
+                        }
                     }
                     else {
                         processed.push(extra);
                         existingNormalized.set(extraNorm, processed.length - 1);
+                        changedByExtras = true;
                     }
+                }
+                if (changedByExtras) {
+                    usedAdditionalKeys?.add(key);
                 }
             }
         }
@@ -17450,7 +17482,7 @@ class FilterReplacer {
         const replacerStart = Date.now();
         if (replacements.length === 0) {
             this._logger.logGlobal(LogLevel.INFO, "No replacements to process.");
-            return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000' };
+            return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000', patternDiffs: [] };
         }
         // Build ASCII table: Site | From (startedHost) | To | Time
         // Show only actual domain changes in the table.
@@ -17463,16 +17495,7 @@ class FilterReplacer {
                 primaryBySite.set(r.siteName, r);
             }
         }
-        const uniqueChanges = [...primaryBySite.values()].filter(r => {
-            // Skip if newHost matches the original mirror (not a real change)
-            if (originalMirrors) {
-                const originalMirror = originalMirrors.get(r.siteName);
-                if (originalMirror && r.newHost === originalMirror)
-                    return false;
-            }
-            const fromHost = r.startedHost || r.oldHost;
-            return fromHost !== r.newHost;
-        });
+        const uniqueChanges = [...primaryBySite.values()].filter(r => isRealDomainChange(r, originalMirrors));
         if (uniqueChanges.length > 0) {
             const rows = [["Site", "From", "To", "Time"]];
             for (const { siteName, newHost, startedHost, oldHost, checkDurationMs } of uniqueChanges) {
@@ -17498,14 +17521,14 @@ class FilterReplacer {
         const repoPath = filtersConfig.repoPath;
         if (!repoPath) {
             this._logger.logGlobal(LogLevel.INFO, `${this._isTestMode && this._config.filtersdir_test ? 'filtersdir_test' : 'filtersdir'}.repoPath is empty. Skipping file replacements.`);
-            return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000' };
+            return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000', patternDiffs: [] };
         }
         const filterDirPattern = filtersConfig.filterDirPattern || "*Filter";
         const filePattern = filtersConfig.filePattern || "*.txt";
         const files = await findTargetFiles(repoPath, filterDirPattern, filePattern);
         if (files.length === 0) {
             this._logger.logGlobal(LogLevel.INFO, "No target filter files found. Nothing to replace.");
-            return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000' };
+            return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000', patternDiffs: [] };
         }
         // Log replacement phase start (moved to end)
         this._logger.logGlobal(LogLevel.DEBUG, "=== Domains replacement started ===");
@@ -17596,6 +17619,8 @@ class FilterReplacer {
         let modifiedFiles = 0;
         let totalLineEdits = 0;
         const fileChanges = [];
+        const replacedOldHosts = new Set();
+        const usedAdditionalKeys = new Set();
         for (const file of files) {
             let changed = false;
             const lineChanges = [];
@@ -17617,7 +17642,7 @@ class FilterReplacer {
                 });
                 for await (const line of rl) {
                     lineNum++;
-                    const updatedLines = processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                    const updatedLines = processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, replacedOldHosts, usedAdditionalKeys);
                     // Check if line changed (first element differs) or extra lines were added
                     if (updatedLines.length > 1 || updatedLines[0] !== line) {
                         changed = true;
@@ -17658,11 +17683,51 @@ class FilterReplacer {
             }
         }
         this._logger.logGlobal(LogLevel.DEBUG, `=== Domains replacement finished ===\n`);
+        // Compute per-watcher pattern diffs from replacement data
+        const patternDiffs = [];
+        // Collect oldHosts per site
+        const oldHostsBySite = new Map();
+        for (const r of replacements) {
+            if (!oldHostsBySite.has(r.siteName)) {
+                oldHostsBySite.set(r.siteName, new Set());
+            }
+            oldHostsBySite.get(r.siteName).add(r.oldHost);
+        }
+        // Compute diff per site — only for pattern-domain watchers
+        for (const [siteName, primaryNewHost] of seenPrimary) {
+            if (!matchesNumericPattern(primaryNewHost)) {
+                continue;
+            }
+            const normalizedPrimary = normalizeDomain(primaryNewHost);
+            // Only show diff if the filter content was actually modified for this site.
+            // Check: (a) was the primary oldHost actually found & replaced in a filter line?
+            //        (b) were extra lines (additional domains) actually generated?
+            const wasPrimaryReplaced = [...oldHostsBySite.get(siteName) || []].some(oldHost => replacedOldHosts.has(normalizeDomain(oldHost)));
+            const hadExtraLines = usedAdditionalKeys.has(normalizedPrimary);
+            if (!wasPrimaryReplaced && !hadExtraLines) {
+                continue;
+            }
+            const additional = additionalDomainsMap.get(normalizedPrimary) || [];
+            const allNewHosts = new Set([primaryNewHost, ...additional]);
+            const oldHosts = [...(oldHostsBySite.get(siteName) || new Set())];
+            const added = [...allNewHosts].filter(h => !oldHosts.includes(h));
+            const removed = oldHosts.filter(h => !allNewHosts.has(h));
+            if (added.length > 0 || removed.length > 0) {
+                patternDiffs.push({
+                    siteName,
+                    added,
+                    removed,
+                    active: primaryNewHost,
+                    additionalCount: additional.length,
+                });
+            }
+        }
         return {
             filesScanned: files.length,
             filesModified: modifiedFiles,
             totalLineEdits: totalLineEdits,
-            replacerSeconds: replacerSeconds
+            replacerSeconds: replacerSeconds,
+            patternDiffs,
         };
     }
 }
@@ -17845,7 +17910,7 @@ function removePredictedMirrors(domains, priorityMap) {
         return !isPredicted;
     });
 }
-function processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap = new Map()) {
+function processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap = new Map(), replacedOldHosts, usedAdditionalKeys) {
     if (shouldSkipLine(line))
         return [line];
     // 1. Wrapper syntax: [$domain=...]
@@ -17859,12 +17924,12 @@ function processLine(line, hostMap, initialToLastKnownMap, priorityMap, addition
                 return [line];
             if (pv.includes("|")) {
                 const d = pv.split("|").map(s => s.trim());
-                const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
                 if (r.changed || r.processed.length !== d.length)
                     return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
             }
             else {
-                const r = processDomainList([pv], hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                const r = processDomainList([pv], hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
                 if (r.changed || r.processed.length !== 1) {
                     return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
                 }
@@ -17882,7 +17947,7 @@ function processLine(line, hostMap, initialToLastKnownMap, priorityMap, addition
     if (idx > 0) {
         const left = line.slice(0, idx), right = line.slice(idx);
         const parts = left.split(",").map(s => s.trim());
-        const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+        const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
         if (r.changed || r.processed.length !== parts.length)
             return [r.processed.join(",") + right];
         return [line];
@@ -17894,7 +17959,7 @@ function processLine(line, hostMap, initialToLastKnownMap, priorityMap, addition
             if (!line.slice(0, pos).match(/\$\w+=/)) {
                 const left = line.slice(0, pos), right = line.slice(pos);
                 const parts = left.split(",").map(s => s.trim());
-                const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
                 if (r.changed || r.processed.length !== parts.length)
                     return [r.processed.join(",") + right];
                 return [line];
@@ -17911,10 +17976,13 @@ function processLine(line, hostMap, initialToLastKnownMap, priorityMap, addition
         if (re.test(out)) {
             re.lastIndex = 0;
             out = out.replace(re, "||" + nh + "^");
+            replacedOldHosts?.add(normalizeDomain(oh));
             const ex = additionalDomainsMap.get(normalizeDomain(nh));
-            if (ex)
+            if (ex) {
+                usedAdditionalKeys?.add(normalizeDomain(nh));
                 for (const e of ex)
                     extraLines.push(out.replace(new RegExp("\\|\\|" + escapeRegExp(nh) + "\\^", "g"), "||" + e + "^"));
+            }
         }
     }
     const pm = out.match(/\$([^$]+)$/);
@@ -17931,7 +17999,7 @@ function processLine(line, hostMap, initialToLastKnownMap, priorityMap, addition
             const pn = pair.slice(0, eq), pv = pair.slice(eq + 1);
             if (pv.includes("|")) {
                 const d = pv.split("|").map(s => s.trim());
-                const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+                const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
                 np.push(r.changed || r.processed.length !== d.length
                     ? pn + "=" + r.processed.join("|") : pair);
             }
@@ -17956,6 +18024,7 @@ const external_child_process_namespaceObject = __WEBPACK_EXTERNAL_createRequire(
 
 
 
+
 class GitManager {
     config;
     logger;
@@ -17963,14 +18032,14 @@ class GitManager {
         this.config = config;
         this.logger = logger;
     }
-    async commitOrCreatePR(summary, dryRun) {
+    async commitOrCreatePR(summary, dryRun, originalLastKnownMirrors, presentationContext) {
         if (summary.replacements.length === 0) {
             if (this.logger) {
                 this.logger.logGlobal(LogLevel.INFO, "No changes to commit.");
             }
             return {};
         }
-        const message = this.buildCommitMessage(summary);
+        const message = this.buildCommitMessage(summary, originalLastKnownMirrors, presentationContext);
         if (dryRun) {
             // Dry run - simulate git operations
             if (this.logger) {
@@ -17994,7 +18063,7 @@ class GitManager {
             return await this.commitDirectly(summary, message);
         }
     }
-    buildCommitMessage(summary) {
+    buildCommitMessage(summary, originalLastKnownMirrors, presentationContext) {
         const lines = ["Rotating Domains Checker: Updating domains"];
         // Group errors by type
         const errorsByType = {
@@ -18005,20 +18074,21 @@ class GitManager {
             probe: summary.errors.filter(e => e.type === 'probe'),
             network: summary.errors.filter(e => e.type === 'network'),
         };
-        // Add replacements section - show all actual changes like in the log table
-        // Deduplicate by siteName FIRST (primary/effectiveNewHost entry), then filter actual changes
+        // Add replacements section — only show real mirror updates
+        // Deduplicate by siteName first, then filter using isRealDomainChange
         const primaryBySite = new Map();
         for (const r of summary.replacements) {
             if (!primaryBySite.has(r.siteName)) {
                 primaryBySite.set(r.siteName, r);
             }
         }
-        const uniqueChanges = [...primaryBySite.values()].filter(r => {
-            const fromHost = r.startedHost || r.oldHost;
-            return fromHost !== r.newHost;
-        });
+        const uniqueChanges = [...primaryBySite.values()].filter(r => isRealDomainChange(r, originalLastKnownMirrors));
+        const patternDiffs = presentationContext?.patternDiffs ?? [];
+        const unchangedWatchers = presentationContext?.unchangedWatchers ?? [];
+        const patternToNonPatternWarnings = summary.warnings.filter(w => w.includes('Pattern domain redirected to non-pattern'));
+        const otherWarnings = summary.warnings.filter(w => !w.includes('Pattern domain redirected to non-pattern'));
         if (uniqueChanges.length > 0) {
-            lines.push("\n🔄  Updated domains:\n");
+            lines.push("\n🔄  Watchers with active mirror changed:\n");
             const maxSiteNameLength = Math.max(...uniqueChanges.map(r => r.siteName.length));
             const maxDomainLength = Math.max(...uniqueChanges.map(r => (r.startedHost || r.oldHost).length));
             const maxFilterLength = Math.max(...uniqueChanges.map(r => r.newHost.length));
@@ -18036,13 +18106,22 @@ class GitManager {
         }
         // If no domain changes but replacements exist, summarize what happened
         else if (summary.replacements.length > 0) {
-            lines.push("\n🔄  Domain updates: 0 (mirror cleanup only)");
-            // List sites that had replacements (even if no domain change)
-            const allSiteNames = [...new Set(summary.replacements.map(r => r.siteName))];
-            if (allSiteNames.length > 0) {
-                lines.push("");
-                lines.push(`Sites processed: ${allSiteNames.join(", ")}`);
+            lines.push("\n🔄  Watchers with active mirror changed: 0 (filter mirror cleanup only)");
+        }
+        if (patternDiffs.length > 0) {
+            lines.push("\n📋  Watchers with filter mirror list changed:\n");
+            for (const diff of patternDiffs) {
+                const addedStr = diff.added.length > 0 ? ` added: ${diff.added.join(', ')}` : '';
+                const removedStr = diff.removed.length > 0 ? ` removed: ${diff.removed.join(', ')}` : '';
+                lines.push(`     [${diff.siteName}]${addedStr}${removedStr}`);
+                lines.push(`       active mirror: ${diff.active} (+ ${diff.additionalCount} additional)`);
             }
+            lines.push("");
+        }
+        if (unchangedWatchers.length > 0) {
+            lines.push("✅ Unchanged watchers:");
+            lines.push(`     ${unchangedWatchers.map(entry => formatWatcherSummaryEntry(entry.siteName, entry.activeHost)).join(', ')}`);
+            lines.push("");
         }
         // Show errors that are actual failures (not accepted antibot)
         const realErrors = summary.errors.filter(e => e.type !== 'antibot_accepted');
@@ -18054,10 +18133,17 @@ class GitManager {
                 lines.push(`     - ${siteName}${domainInfo}: ${error}${timeInfo}`);
             }
         }
-        if (summary.warnings.length > 0) {
+        if (patternToNonPatternWarnings.length > 0) {
+            lines.push("🚩  Changed pattern → non-pattern domains:");
+            for (const warning of patternToNonPatternWarnings) {
+                lines.push(`     ${warning}`);
+            }
+            lines.push("");
+        }
+        if (otherWarnings.length > 0) {
             lines.push("\n");
             lines.push("⚠️  Warnings:");
-            for (const warning of summary.warnings) {
+            for (const warning of otherWarnings) {
                 lines.push(`     - ${warning}`);
             }
         }
@@ -18207,13 +18293,13 @@ Please review the changes before merging.
             throw error;
         }
     }
-    getPRModeInfo(summary, dryRun) {
+    getPRModeInfo(summary, dryRun, originalLastKnownMirrors, presentationContext) {
         const lines = [];
         if (dryRun || this.config.git.mode === 'debug') {
             lines.push("⬇️ ⬇️ ⬇️  💡 💡 💡  Pull Request Mode 💡 💡 💡  ⬇️ ⬇️ ⬇️");
             lines.push(`Branch: ${this.config.git.prBranchPrefix}/${new Date().toISOString().split("T")[0]}`);
             lines.push("Commit message:");
-            lines.push(this.buildCommitMessage(summary));
+            lines.push(this.buildCommitMessage(summary, originalLastKnownMirrors, presentationContext));
             lines.push("⬆️ ⬆️ ⬆️  💡 💡 💡  Pull Request Mode 💡 💡 💡  ⬆️ ⬆️ ⬆️");
             lines.push("");
         }
@@ -18221,7 +18307,7 @@ Please review the changes before merging.
             lines.push("⬇️ ⬇️ ⬇️  💡 💡 💡  Direct Commit Mode 💡 💡 💡  ⬇️ ⬇️ ⬇️");
             lines.push(`Target branch: ${this.config.git.branch}`);
             lines.push("Commit message:");
-            lines.push(this.buildCommitMessage(summary));
+            lines.push(this.buildCommitMessage(summary, originalLastKnownMirrors, presentationContext));
             lines.push("⬆️ ⬆️ ⬆️  💡 💡 💡  Direct Commit Mode 💡 💡 💡  ⬆️ ⬆️ ⬆️");
             lines.push("");
         }
@@ -18816,36 +18902,34 @@ async function main() {
     // Apply replacements first (to show table before summary)
     const replacer = new FilterReplacer(config, logger, isTestMode);
     const replacerStats = await replacer.applyReplacements(summary.replacements, dryRun, originalLastKnownMirrors);
-    // Determine whether there are any real changes to create a PR/commit for.
+    // Compute mirror update info — used for both the console summary and the commit decision.
     // A real change means the domain actually changed from what was in watcher BEFORE processing.
-    // If newHost === original last_known_mirror, it's not a change — just entry point resolution.
-    const hasUniqueDomainChanges = (() => {
+    const mirrorUpdateEntries = (() => {
         const primaryBySite = new Map();
         for (const r of summary.replacements) {
             if (!primaryBySite.has(r.siteName)) {
                 primaryBySite.set(r.siteName, r);
             }
         }
-        return [...primaryBySite.values()].some(r => {
-            // If newHost matches the original last_known_mirror, no real change occurred
-            const originalMirror = originalLastKnownMirrors.get(r.siteName);
-            if (originalMirror && r.newHost === originalMirror)
-                return false;
-            const fromHost = r.startedHost || r.oldHost;
-            return fromHost !== r.newHost;
-        });
+        return [...primaryBySite.values()].filter(r => isRealDomainChange(r, originalLastKnownMirrors));
     })();
+    const hasUniqueDomainChanges = mirrorUpdateEntries.length > 0;
+    const nMirrorUpdates = mirrorUpdateEntries.length;
     const hasRealChanges = hasUniqueDomainChanges || replacerStats.totalLineEdits > 0;
+    // Count pattern→non-pattern transitions from warnings
+    const nPatternToNonPattern = summary.warnings.filter(w => w.includes('Pattern domain redirected to non-pattern')).length;
     // Print summary with detailed breakdown
     logger.logGlobal(LogLevel.RAW, "⬇️ ⬇️ ⬇️  ---=== Domains rotating summary ===---  ⬇️ ⬇️ ⬇️");
     logger.logGlobal(LogLevel.RAW, `  Total sites: ${summary.totalSites}`);
     logger.logGlobal(LogLevel.RAW, `  ├─ Checked sites: ${summary.checked}`);
-    logger.logGlobal(LogLevel.RAW, `  ├─ Updated sites: ${summary.updated}`);
+    logger.logGlobal(LogLevel.RAW, `  ├─ 🔄 Watchers with active mirror changed: ${nMirrorUpdates}`);
+    logger.logGlobal(LogLevel.RAW, `  ├─ 📋 Watchers with filter mirror list changed: ${replacerStats.patternDiffs?.length ?? 0}`);
+    logger.logGlobal(LogLevel.RAW, `  ├─ 🚩 Pattern→non-pattern: ${nPatternToNonPattern}`);
     if (summary.antibotAccepted > 0) {
         logger.logGlobal(LogLevel.RAW, `  ├─ Antibot accepted: ${summary.antibotAccepted} (not in failed count)`);
     }
     const actualUnchangedDisplay = summary.unchanged;
-    logger.logGlobal(LogLevel.RAW, `  └─ Unchanged sites: ${actualUnchangedDisplay}`);
+    logger.logGlobal(LogLevel.RAW, `  └─ Unchanged watchers: ${actualUnchangedDisplay}`);
     logger.logGlobal(LogLevel.RAW, ` 🚨  Failed: ${summary.failed}`);
     if (summary.antibotBlocked > 0) {
         logger.logGlobal(LogLevel.RAW, `  ├─ including antibot blocked: ${summary.antibotBlocked}`);
@@ -18853,6 +18937,17 @@ async function main() {
     const networkErrors = summary.failed - summary.antibotBlocked;
     if (networkErrors > 0) {
         logger.logGlobal(LogLevel.RAW, `  └─ Network problems or dead: ${networkErrors}`);
+    }
+    // Pattern domains list updates section (populated by replacer in task 03)
+    if (replacerStats.patternDiffs && replacerStats.patternDiffs.length > 0) {
+        logger.logGlobal(LogLevel.RAW, "");
+        logger.logGlobal(LogLevel.RAW, " 📋  Watchers with filter mirror list changed:");
+        for (const diff of replacerStats.patternDiffs) {
+            const addedStr = diff.added.length > 0 ? ` added: ${diff.added.join(', ')}` : '';
+            const removedStr = diff.removed.length > 0 ? ` removed: ${diff.removed.join(', ')}` : '';
+            logger.logGlobal(LogLevel.RAW, `     [${diff.siteName}]${addedStr}${removedStr}`);
+            logger.logGlobal(LogLevel.RAW, `       active mirror: ${diff.active} (+ ${diff.additionalCount} additional)`);
+        }
     }
     // Display detailed errors and warnings
     logger.logGlobal(LogLevel.RAW, "");
@@ -18866,13 +18961,13 @@ async function main() {
             logger.logGlobal(LogLevel.RAW, `     - ${siteName}${domainInfo}: ${error}${timeInfo}`);
         }
     }
-    // Separate pattern changes from other warnings
-    const patternChanges = summary.warnings.filter(w => w.includes('→'));
-    const otherWarnings = summary.warnings.filter(w => !w.includes('→'));
-    if (patternChanges.length > 0) {
-        logger.logGlobal(LogLevel.WARN, " ⚠️  Pattern changes requiring manual review:");
-        for (const warning of patternChanges) {
-            logger.logGlobal(LogLevel.WARN, `     ${warning}`);
+    // Separate pattern→non-pattern transitions from other warnings
+    const patternToNonPatternWarnings = summary.warnings.filter(w => w.includes('Pattern domain redirected to non-pattern'));
+    const otherWarnings = summary.warnings.filter(w => !w.includes('Pattern domain redirected to non-pattern'));
+    if (patternToNonPatternWarnings.length > 0) {
+        logger.logGlobal(LogLevel.RAW, " 🚩  Changed pattern → non-pattern domains:");
+        for (const warning of patternToNonPatternWarnings) {
+            logger.logGlobal(LogLevel.RAW, `     ${warning}`);
         }
     }
     if (otherWarnings.length > 0) {
@@ -18892,9 +18987,9 @@ async function main() {
         logger.logGlobal(LogLevel.WARN, `⚠️ Summary count mismatch: checked=${summary.checked}, but updated+unchanged+failed=${expectedTotal}`);
         logger.logGlobal(LogLevel.DEBUG, `DEBUG: updated=${summary.updated}, unchanged=${summary.unchanged}, failed=${summary.failed}, antibotAccepted=${summary.antibotAccepted} (included), missing=${missing}`);
     }
-    // List unchanged sites
+    // List unchanged watchers
+    const unchangedWatcherEntries = [];
     if (summary.unchanged > 0 || summary.updated === 0) {
-        const unchangedHosts = [];
         for (const result of results) {
             const site = watchers.sites[result.siteName];
             if (!site)
@@ -18908,16 +19003,20 @@ async function main() {
             }
             if (originalMirror) {
                 if (result.newHost === originalMirror) {
-                    unchangedHosts.push(result.newHost || originalMirror);
+                    const activeHost = result.newHost || originalMirror;
+                    if (activeHost && activeHost.trim() !== '') {
+                        unchangedWatcherEntries.push({ siteName: result.siteName, activeHost });
+                    }
                 }
             }
             else if (!result.hostChanged) {
-                unchangedHosts.push(result.newHost);
+                if (result.newHost && result.newHost.trim() !== '') {
+                    unchangedWatcherEntries.push({ siteName: result.siteName, activeHost: result.newHost });
+                }
             }
         }
-        const filteredHosts = unchangedHosts.filter(host => host && host.trim() !== '');
         logger.logGlobal(LogLevel.RAW, ``);
-        logger.logGlobal(LogLevel.RAW, `Unchanged sites:\n                        ${filteredHosts.join(', ')}`);
+        logger.logGlobal(LogLevel.RAW, `Unchanged watchers:\n                        ${unchangedWatcherEntries.map(entry => formatWatcherSummaryEntry(entry.siteName, entry.activeHost)).join(', ')}`);
     }
     logger.logRaw("");
     // Display replacer summary
@@ -18959,7 +19058,10 @@ async function main() {
     })();
     // Display PR/Commit mode information only when there are real changes
     if (!skipReason) {
-        const prModeInfo = gitManager.getPRModeInfo(summary, dryRun);
+        const prModeInfo = gitManager.getPRModeInfo(summary, dryRun, originalLastKnownMirrors, {
+            patternDiffs: replacerStats.patternDiffs,
+            unchangedWatchers: unchangedWatcherEntries,
+        });
         if (prModeInfo.length > 0) {
             logger.logRaw("");
             prModeInfo.forEach(line => {
@@ -18972,11 +19074,14 @@ async function main() {
     // Execute git operations (will include the log file in commit)
     let gitResult = {};
     if (skipReason) {
-        logger.logGlobal(LogLevel.INFO, `Skipping PR/commit — ${skipReason}`);
+        gitResult = await gitManager.commitOrCreatePR(summary, dryRun, originalLastKnownMirrors, {
+            patternDiffs: replacerStats.patternDiffs,
+            unchangedWatchers: unchangedWatcherEntries,
+        });
     }
     else {
         // prod_live, prod_dry, test_dry: execute git
-        gitResult = await gitManager.commitOrCreatePR(summary, dryRun);
+        gitResult = await gitManager.commitOrCreatePR(summary, dryRun, originalLastKnownMirrors);
     }
     // Set GitHub Actions outputs
     if (process.env.GITHUB_ACTIONS && process.env.GITHUB_OUTPUT) {
@@ -19004,8 +19109,10 @@ if (!process.env.JEST_WORKER_ID) {
 
 var __webpack_exports__calculateDaysSince = __webpack_exports__.US;
 var __webpack_exports__dnsPreflightCheck = __webpack_exports__.B_;
+var __webpack_exports__formatWatcherSummaryEntry = __webpack_exports__.cG;
+var __webpack_exports__isRealDomainChange = __webpack_exports__.lG;
 var __webpack_exports__main = __webpack_exports__.iW;
 var __webpack_exports__naturalCompare = __webpack_exports__.p0;
 var __webpack_exports__selectFirstByOrder = __webpack_exports__.aq;
 var __webpack_exports__selectPatternAwareWorkingSet = __webpack_exports__.gh;
-export { __webpack_exports__calculateDaysSince as calculateDaysSince, __webpack_exports__dnsPreflightCheck as dnsPreflightCheck, __webpack_exports__main as main, __webpack_exports__naturalCompare as naturalCompare, __webpack_exports__selectFirstByOrder as selectFirstByOrder, __webpack_exports__selectPatternAwareWorkingSet as selectPatternAwareWorkingSet };
+export { __webpack_exports__calculateDaysSince as calculateDaysSince, __webpack_exports__dnsPreflightCheck as dnsPreflightCheck, __webpack_exports__formatWatcherSummaryEntry as formatWatcherSummaryEntry, __webpack_exports__isRealDomainChange as isRealDomainChange, __webpack_exports__main as main, __webpack_exports__naturalCompare as naturalCompare, __webpack_exports__selectFirstByOrder as selectFirstByOrder, __webpack_exports__selectPatternAwareWorkingSet as selectPatternAwareWorkingSet };

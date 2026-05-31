@@ -1,13 +1,19 @@
 import { execSync, execFileSync } from 'child_process';
 import { writeFileSync, mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
-import type { Config, Summary } from './types.js';
+import type { Config, Summary, SummaryPresentationContext } from './types.js';
+import { formatWatcherSummaryEntry, isRealDomainChange } from './utils.js';
 import { Logger, LogLevel } from './logger.js';
 
 export class GitManager {
   constructor(private config: Config, private logger?: Logger) {}
 
-  async commitOrCreatePR(summary: Summary, dryRun: boolean): Promise<{commitSha?: string, prNumber?: number}> {
+  async commitOrCreatePR(
+    summary: Summary,
+    dryRun: boolean,
+    originalLastKnownMirrors?: Map<string, string>,
+    presentationContext?: SummaryPresentationContext,
+  ): Promise<{commitSha?: string, prNumber?: number}> {
     if (summary.replacements.length === 0) {
       if (this.logger) {
         this.logger.logGlobal(LogLevel.INFO, "No changes to commit.");
@@ -15,7 +21,7 @@ export class GitManager {
       return {};
     }
 
-    const message = this.buildCommitMessage(summary);
+    const message = this.buildCommitMessage(summary, originalLastKnownMirrors, presentationContext);
 
     if (dryRun) {
       // Dry run - simulate git operations
@@ -39,7 +45,11 @@ export class GitManager {
     }
   }
 
-  private buildCommitMessage(summary: Summary): string {
+  private buildCommitMessage(
+    summary: Summary,
+    originalLastKnownMirrors?: Map<string, string>,
+    presentationContext?: SummaryPresentationContext,
+  ): string {
     const lines: string[] = ["Rotating Domains Checker: Updating domains"];
 
     // Group errors by type
@@ -52,21 +62,28 @@ export class GitManager {
       network: summary.errors.filter(e => e.type === 'network'),
     };
 
-    // Add replacements section - show all actual changes like in the log table
-    // Deduplicate by siteName FIRST (primary/effectiveNewHost entry), then filter actual changes
+    // Add replacements section — only show real mirror updates
+    // Deduplicate by siteName first, then filter using isRealDomainChange
     const primaryBySite = new Map<string, typeof summary.replacements[number]>();
     for (const r of summary.replacements) {
       if (!primaryBySite.has(r.siteName)) {
         primaryBySite.set(r.siteName, r);
       }
     }
-    const uniqueChanges = [...primaryBySite.values()].filter(r => {
-      const fromHost = r.startedHost || r.oldHost;
-      return fromHost !== r.newHost;
-    });
+    const uniqueChanges = [...primaryBySite.values()].filter(r =>
+      isRealDomainChange(r, originalLastKnownMirrors)
+    );
+    const patternDiffs = presentationContext?.patternDiffs ?? [];
+    const unchangedWatchers = presentationContext?.unchangedWatchers ?? [];
+    const patternToNonPatternWarnings = summary.warnings.filter(
+      w => w.includes('Pattern domain redirected to non-pattern')
+    );
+    const otherWarnings = summary.warnings.filter(
+      w => !w.includes('Pattern domain redirected to non-pattern')
+    );
 
     if (uniqueChanges.length > 0) {
-      lines.push("\n🔄  Updated domains:\n");
+      lines.push("\n🔄  Watchers with active mirror changed:\n");
       const maxSiteNameLength = Math.max(...uniqueChanges.map(r => r.siteName.length));
       const maxDomainLength = Math.max(...uniqueChanges.map(r => (r.startedHost || r.oldHost).length));
       const maxFilterLength = Math.max(...uniqueChanges.map(r => r.newHost.length));
@@ -85,13 +102,24 @@ export class GitManager {
     }
     // If no domain changes but replacements exist, summarize what happened
     else if (summary.replacements.length > 0) {
-      lines.push("\n🔄  Domain updates: 0 (mirror cleanup only)");
-      // List sites that had replacements (even if no domain change)
-      const allSiteNames = [...new Set(summary.replacements.map(r => r.siteName))];
-      if (allSiteNames.length > 0) {
-        lines.push("");
-        lines.push(`Sites processed: ${allSiteNames.join(", ")}`);
+      lines.push("\n🔄  Watchers with active mirror changed: 0 (filter mirror cleanup only)");
+    }
+
+    if (patternDiffs.length > 0) {
+      lines.push("\n📋  Watchers with filter mirror list changed:\n");
+      for (const diff of patternDiffs) {
+        const addedStr = diff.added.length > 0 ? ` added: ${diff.added.join(', ')}` : '';
+        const removedStr = diff.removed.length > 0 ? ` removed: ${diff.removed.join(', ')}` : '';
+        lines.push(`     [${diff.siteName}]${addedStr}${removedStr}`);
+        lines.push(`       active mirror: ${diff.active} (+ ${diff.additionalCount} additional)`);
       }
+      lines.push("");
+    }
+
+    if (unchangedWatchers.length > 0) {
+      lines.push("✅ Unchanged watchers:");
+      lines.push(`     ${unchangedWatchers.map(entry => formatWatcherSummaryEntry(entry.siteName, entry.activeHost)).join(', ')}`);
+      lines.push("");
     }
 
     // Show errors that are actual failures (not accepted antibot)
@@ -105,10 +133,18 @@ export class GitManager {
       }
     }
 
-    if (summary.warnings.length > 0) {
+    if (patternToNonPatternWarnings.length > 0) {
+      lines.push("🚩  Changed pattern → non-pattern domains:");
+      for (const warning of patternToNonPatternWarnings) {
+        lines.push(`     ${warning}`);
+      }
+      lines.push("");
+    }
+
+    if (otherWarnings.length > 0) {
       lines.push("\n");
       lines.push("⚠️  Warnings:");
-      for (const warning of summary.warnings) {
+      for (const warning of otherWarnings) {
         lines.push(`     - ${warning}`);
       }
     }
@@ -281,14 +317,19 @@ Please review the changes before merging.
     }
   }
 
-  getPRModeInfo(summary: Summary, dryRun: boolean): string[] {
+  getPRModeInfo(
+    summary: Summary,
+    dryRun: boolean,
+    originalLastKnownMirrors?: Map<string, string>,
+    presentationContext?: SummaryPresentationContext,
+  ): string[] {
     const lines: string[] = [];
 
     if (dryRun || this.config.git.mode === 'debug') {
       lines.push("⬇️ ⬇️ ⬇️  💡 💡 💡  Pull Request Mode 💡 💡 💡  ⬇️ ⬇️ ⬇️");
       lines.push(`Branch: ${this.config.git.prBranchPrefix}/${new Date().toISOString().split("T")[0]}`);
       lines.push("Commit message:");
-      lines.push(this.buildCommitMessage(summary));
+      lines.push(this.buildCommitMessage(summary, originalLastKnownMirrors, presentationContext));
       lines.push("⬆️ ⬆️ ⬆️  💡 💡 💡  Pull Request Mode 💡 💡 💡  ⬆️ ⬆️ ⬆️");
       lines.push("");
     } else {
@@ -296,7 +337,7 @@ Please review the changes before merging.
       lines.push("⬇️ ⬇️ ⬇️  💡 💡 💡  Direct Commit Mode 💡 💡 💡  ⬇️ ⬇️ ⬇️");
       lines.push(`Target branch: ${this.config.git.branch}`);
       lines.push("Commit message:");
-      lines.push(this.buildCommitMessage(summary));
+      lines.push(this.buildCommitMessage(summary, originalLastKnownMirrors, presentationContext));
       lines.push("⬆️ ⬆️ ⬆️  💡 💡 💡  Direct Commit Mode 💡 💡 💡  ⬆️ ⬆️ ⬆️");
       lines.push("");
     }

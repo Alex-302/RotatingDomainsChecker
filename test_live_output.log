@@ -1,0 +1,146 @@
+yarn run v1.22.22
+$ tsx src/index.ts --mode=test_live
+2026-05-24 23:36:38.434 Rotating Domains Checker v1.1.45 - WRITE mode
+2026-05-24 23:36:38.435 Test filters dir: YES
+2026-05-24 23:36:38.435 Target repo path: TestFilters
+2026-05-24 23:36:38.435 Sites to check: 6
+
+2026-05-24 23:36:38.435 INFO "Turkifsaclub (turkifsaclub*.sbs)" Starting check...
+2026-05-24 23:36:38.435 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" Recent success (1 days ago), trying last_known_mirror first
+2026-05-24 23:36:38.435 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" Checking: turkifsaclub129.sbs
+2026-05-24 23:36:38.436 DEBUG "Piabet TV (piabettv*.live)" Queued for 1ms before start
+2026-05-24 23:36:38.436 INFO "Piabet TV (piabettv*.live)" Starting check...
+2026-05-24 23:36:38.436 DEBUG "Piabet TV (piabettv*.live)" Recent success (1 days ago), trying last_known_mirror first
+2026-05-24 23:36:38.436 DEBUG "Piabet TV (piabettv*.live)" Checking: piabettv18.live
+2026-05-24 23:36:38.436 DEBUG "woe.sx" Queued for 1ms before start
+2026-05-24 23:36:38.436 INFO "woe.sx" Starting check...
+2026-05-24 23:36:38.436 DEBUG "woe.sx" Recent success (1 days ago), trying last_known_mirror first
+2026-05-24 23:36:38.436 DEBUG "woe.sx" Checking: bryantenunder.com
+2026-05-24 23:36:38.436 DEBUG "PapazSports (papazsports*.pro)" Queued for 1ms before start
+2026-05-24 23:36:38.436 WARN "PapazSports (papazsports*.pro)" Geo-blocking: TR
+2026-05-24 23:36:38.436 INFO "PapazSports (papazsports*.pro)" Starting check...
+2026-05-24 23:36:38.436 DEBUG "PapazSports (papazsports*.pro)" Recent success (1 days ago), trying last_known_mirror first
+2026-05-24 23:36:38.436 DEBUG "PapazSports (papazsports*.pro)" Checking: papazsports1009.pro
+2026-05-24 23:36:38.436 DEBUG "HDFilmCehennemi (hdfilmcehennemi*.org)" Queued for 1ms before start
+2026-05-24 23:36:38.436 INFO "HDFilmCehennemi (hdfilmcehennemi*.org)" Starting check...
+2026-05-24 23:36:38.436 DEBUG "HDFilmCehennemi (hdfilmcehennemi*.org)" Recent success (1 days ago), trying last_known_mirror first
+2026-05-24 23:36:38.436 DEBUG "HDFilmCehennemi (hdfilmcehennemi*.org)" Checking: hdfilmcehennemi27.org
+2026-05-24 23:36:38.436 DEBUG "dizipal2071.com" Queued for 1ms before start
+2026-05-24 23:36:38.436 WARN "dizipal2071.com" Geo-blocking: TR
+2026-05-24 23:36:38.436 INFO "dizipal2071.com" Starting check...
+2026-05-24 23:36:38.436 DEBUG "dizipal2071.com" Recent success (1 days ago), trying last_known_mirror first
+2026-05-24 23:36:38.436 DEBUG "dizipal2071.com" Checking: dizipal2070.com
+2026-05-24 23:36:38.438 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" DNS OK (3ms)
+2026-05-24 23:36:38.457 DEBUG "Piabet TV (piabettv*.live)" DNS OK (21ms)
+2026-05-24 23:36:38.458 DEBUG "woe.sx" DNS OK (22ms)
+2026-05-24 23:36:38.459 DEBUG "PapazSports (papazsports*.pro)" DNS OK (23ms)
+2026-05-24 23:36:38.459 DEBUG "HDFilmCehennemi (hdfilmcehennemi*.org)" DNS OK (23ms)
+2026-05-24 23:36:38.460 DEBUG "dizipal2071.com" DNS OK (24ms)
+2026-05-24 23:36:38.835 DEBUG "Piabet TV (piabettv*.live)" Redirect chain: https://piabettv18.live (200)
+2026-05-24 23:36:38.835 INFO "Piabet TV (piabettv*.live)" Host unchanged: piabettv18.live
+2026-05-24 23:36:38.835 DEBUG "Piabet TV (piabettv*.live)" Check completed in 399ms (resolve: 378ms)
+2026-05-24 23:36:38.961 DEBUG "PapazSports (papazsports*.pro)" Redirect chain: https://papazsports1009.pro (301) -> https://www.psgiris.pro/ (302) -> https://www.papazsports1014.pro/ (403)
+2026-05-24 23:36:38.961 WARN "PapazSports (papazsports*.pro)" Antibot accepted (accept_antibot=true)
+2026-05-24 23:36:38.961 INFO "PapazSports (papazsports*.pro)" Host changed: papazsports1009.pro => www.papazsports1014.pro
+2026-05-24 23:36:38.961 DEBUG "PapazSports (papazsports*.pro)" Check completed in 525ms (resolve: 502ms)
+2026-05-24 23:36:38.984 DEBUG "woe.sx" Redirect chain: https://bryantenunder.com (302) -> https://voe.sx/ (200)
+2026-05-24 23:36:38.984 INFO "woe.sx" Content probe FAILED on https://voe.sx/
+2026-05-24 23:36:38.984 DEBUG "woe.sx" Check completed in 548ms (resolve: 526ms) - PROBE FAILED
+2026-05-24 23:36:38.984 INFO "woe.sx" Recent last_known_mirror failed (content probe failed), retrying via initial_domain
+2026-05-24 23:36:38.984 INFO "woe.sx" Starting check...
+2026-05-24 23:36:38.984 DEBUG "woe.sx" Checking: https://voe.sx/e/q9ed7q8sqh2d
+2026-05-24 23:36:38.985 DEBUG "woe.sx" DNS OK (1ms)
+2026-05-24 23:36:39.229 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" Redirect chain: https://turkifsaclub129.sbs (301) -> https://turkifsaclub130.sbs/ (200)
+2026-05-24 23:36:39.229 INFO "Turkifsaclub (turkifsaclub*.sbs)" Host changed: turkifsaclub129.sbs => turkifsaclub130.sbs
+2026-05-24 23:36:39.229 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" Check completed in 794ms (resolve: 791ms)
+2026-05-24 23:36:39.231 DEBUG "dizipal2071.com" Redirect chain: https://dizipal2070.com (301) -> ... (2 redirects) ... -> https://dizipal2073.com/ (200)
+2026-05-24 23:36:39.231 INFO "dizipal2071.com" Host changed: dizipal2070.com => dizipal2073.com
+2026-05-24 23:36:39.231 DEBUG "dizipal2071.com" Check completed in 795ms (resolve: 771ms)
+2026-05-24 23:36:39.257 DEBUG "woe.sx" Redirect chain: https://voe.sx/e/q9ed7q8sqh2d (200) -> https://bryantenunder.com/e/q9ed7q8sqh2d (302) -> https://bryantenunder.com/access/eyJpdiI6ImpqK09ob3g2Q1hrN0NzbVBLbUJ0UUE9PSIsInZhbHVlIjoickdjaUpZb282T3J5cmNhclVxZE02dmRBYnV5SVJKMUJSNUgzRklOVEJtMEg1Z2hiWHVZeUNiY0Fad0hKMzR2WndpM0JxdGFhK1YyY3RKdjIvcXRlR1hlU253VnJXL0Q2cFFabDZGWDcwUEU9IiwibWFjIjoiNzkzODczNjg0NjgzOWE0NzlkODY4NWE1MDlhY2QwYTVhMDI0ZWJmMGZlNTE1OWM3ODFhMGE4MjRhNzliMzk2YSIsInRhZyI6IiJ9?o=1 (200)
+2026-05-24 23:36:39.257 INFO "woe.sx" Content probe PASSED on https://bryantenunder.com/access/eyJpdiI6ImpqK09ob3g2Q1hrN0NzbVBLbUJ0UUE9PSIsInZhbHVlIjoickdjaUpZb282T3J5cmNhclVxZE02dmRBYnV5SVJKMUJSNUgzRklOVEJtMEg1Z2hiWHVZeUNiY0Fad0hKMzR2WndpM0JxdGFhK1YyY3RKdjIvcXRlR1hlU253VnJXL0Q2cFFabDZGWDcwUEU9IiwibWFjIjoiNzkzODczNjg0NjgzOWE0NzlkODY4NWE1MDlhY2QwYTVhMDI0ZWJmMGZlNTE1OWM3ODFhMGE4MjRhNzliMzk2YSIsInRhZyI6IiJ9?o=1
+2026-05-24 23:36:39.257 INFO "woe.sx" Host changed: voe.sx => bryantenunder.com
+2026-05-24 23:36:39.257 DEBUG "woe.sx" Check completed in 273ms (resolve: 272ms)
+2026-05-24 23:36:39.503 DEBUG "HDFilmCehennemi (hdfilmcehennemi*.org)" Redirect chain: https://hdfilmcehennemi27.org (200)
+2026-05-24 23:36:39.503 INFO "HDFilmCehennemi (hdfilmcehennemi*.org)" Host unchanged: hdfilmcehennemi27.org
+2026-05-24 23:36:39.503 DEBUG "HDFilmCehennemi (hdfilmcehennemi*.org)" Check completed in 1067ms (resolve: 1044ms)
+2026-05-24 23:36:39.505 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" Heuristic DNS check: https://turkifsaclub130.sbs - OK
+2026-05-24 23:36:39.505 DEBUG "Piabet TV (piabettv*.live)" Heuristic DNS check: https://piabettv19.live - OK
+2026-05-24 23:36:39.505 DEBUG "dizipal2071.com" Heuristic DNS check: https://dizipal2071.com - OK
+2026-05-24 23:36:39.708 DEBUG "PapazSports (papazsports*.pro)" Heuristic DNS check: https://papazsports923.pro - FAILED
+2026-05-24 23:36:39.709 INFO "Turkifsaclub (turkifsaclub*.sbs)" force_search_ahead: Phase 1 alias turkifsaclub129.sbs collected (redirects to turkifsaclub130.sbs)
+2026-05-24 23:36:39.709 INFO "Turkifsaclub (turkifsaclub*.sbs)" force_search_ahead: Phase 1 working domain(s) collected: turkifsaclub129.sbs, turkifsaclub130.sbs
+2026-05-24 23:36:39.709 INFO "Piabet TV (piabettv*.live)" force_search_ahead: Phase 1 working domain(s) collected: piabettv18.live
+2026-05-24 23:36:39.709 INFO "PapazSports (papazsports*.pro)" force_search_ahead: Phase 1 alias papazsports1009.pro collected (redirects to www.papazsports1014.pro)
+2026-05-24 23:36:39.709 INFO "PapazSports (papazsports*.pro)" force_search_ahead: Phase 1 working domain(s) collected: papazsports1009.pro, www.papazsports1014.pro
+2026-05-24 23:36:39.709 INFO "dizipal2071.com" force_search_ahead: Phase 1 alias dizipal2070.com collected (redirects to dizipal2073.com)
+2026-05-24 23:36:39.709 INFO "dizipal2071.com" force_search_ahead: Phase 1 working domain(s) collected: dizipal2070.com, dizipal2073.com
+2026-05-24 23:36:39.709 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" Heuristic checking candidate: https://turkifsaclub130.sbs
+2026-05-24 23:36:39.709 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" Heuristic: content probe not configured for https://turkifsaclub130.sbs
+2026-05-24 23:36:39.710 DEBUG "Piabet TV (piabettv*.live)" Heuristic checking candidate: https://piabettv19.live
+2026-05-24 23:36:39.710 DEBUG "Piabet TV (piabettv*.live)" Heuristic: content probe not configured for https://piabettv19.live
+2026-05-24 23:36:39.710 DEBUG "dizipal2071.com" Heuristic checking candidate: https://dizipal2071.com
+2026-05-24 23:36:39.710 DEBUG "dizipal2071.com" Heuristic: content probe not configured for https://dizipal2071.com
+2026-05-24 23:36:39.929 DEBUG "dizipal2071.com" Heuristic candidate https://dizipal2071.com: HTTP 200
+2026-05-24 23:36:39.929 INFO "dizipal2071.com" Heuristic SUCCESS: https://dizipal2071.com
+2026-05-24 23:36:39.929 INFO "dizipal2071.com" Heuristic redirect chain: https://dizipal2071.com (301) -> https://dizipal2072.com/ (301) -> https://dizipal2073.com/ (200)
+2026-05-24 23:36:39.929 INFO "dizipal2071.com" force_search_ahead: collected working domain dizipal2071.com from https://dizipal2071.com (final: dizipal2073.com)
+2026-05-24 23:36:40.131 DEBUG "Turkifsaclub (turkifsaclub*.sbs)" Heuristic candidate https://turkifsaclub130.sbs: HTTP 200
+2026-05-24 23:36:40.131 INFO "Turkifsaclub (turkifsaclub*.sbs)" Heuristic SUCCESS: https://turkifsaclub130.sbs
+2026-05-24 23:36:40.131 INFO "Turkifsaclub (turkifsaclub*.sbs)" Heuristic redirect chain: https://turkifsaclub130.sbs (200)
+2026-05-24 23:36:40.239 DEBUG "Piabet TV (piabettv*.live)" Heuristic candidate https://piabettv19.live: HTTP 200
+2026-05-24 23:36:40.239 INFO "Piabet TV (piabettv*.live)" Heuristic SUCCESS: https://piabettv19.live
+2026-05-24 23:36:40.239 INFO "Piabet TV (piabettv*.live)" Heuristic redirect chain: https://piabettv19.live (301) -> https://piabettv20.live/ (200)
+2026-05-24 23:36:40.239 INFO "Piabet TV (piabettv*.live)" force_search_ahead: collected working domain piabettv20.live from https://piabettv19.live (final: piabettv20.live)
+2026-05-24 23:36:40.239 INFO "Turkifsaclub (turkifsaclub*.sbs)" force_search_ahead: collected 2 working domains: turkifsaclub129.sbs, turkifsaclub130.sbs
+2026-05-24 23:36:40.239 INFO "Piabet TV (piabettv*.live)" force_search_ahead: collected 2 working domains: piabettv18.live, piabettv20.live
+2026-05-24 23:36:40.239 INFO "PapazSports (papazsports*.pro)" force_search_ahead: collected 2 working domains: papazsports1009.pro, www.papazsports1014.pro
+2026-05-24 23:36:40.239 INFO "dizipal2071.com" force_search_ahead: collected 3 working domains: dizipal2070.com, dizipal2071.com, dizipal2073.com
+2026-05-24 23:36:40.239 INFO === Domain checks finished ===
+
+2026-05-24 23:36:40.239 INFO No domain changes detected, but processing filters for predicted mirror cleanup.
+2026-05-24 23:36:40.240 DEBUG === Domains replacement started ===
+2026-05-24 23:36:40.240 DEBUG Files to scan: 3
+2026-05-24 23:36:40.240 DEBUG Files found: TestFilter\allowlist.txt, TestFilter\replacer_test_rules.txt, TestFilter\testfilter.txt
+2026-05-24 23:36:40.251 DEBUG     Changes by file
+2026-05-24 23:36:40.251 DEBUG     TestFilter\testfilter.txt:43
+2026-05-24 23:36:40.251 DEBUG [OLD] dizipal2070.com##.video-wrapper > a[href][target="_blank"]
+2026-05-24 23:36:40.251 DEBUG [UPD] dizipal2070.com,dizipal2073.com,dizipal2071.com##.video-wrapper > a[href][target="_blank"]
+2026-05-24 23:36:40.251 DEBUG     TestFilter\testfilter.txt:42
+2026-05-24 23:36:40.251 DEBUG [OLD] dizipal2070.com##a[target="_blank"][rel="nofollow"]
+2026-05-24 23:36:40.251 DEBUG [UPD] dizipal2070.com,dizipal2073.com,dizipal2071.com##a[target="_blank"][rel="nofollow"]
+2026-05-24 23:36:40.251 DEBUG     TestFilter\testfilter.txt:41
+2026-05-24 23:36:40.251 DEBUG [OLD] dizipal2070.com##body > a[class^="pageskin-"]
+2026-05-24 23:36:40.251 DEBUG [UPD] dizipal2070.com,dizipal2073.com,dizipal2071.com##body > a[class^="pageskin-"]
+2026-05-24 23:36:40.251 DEBUG === Domains replacement finished ===
+
+2026-05-24 23:36:40.251 тмЗя╕П тмЗя╕П тмЗя╕П  ---=== Domains rotating summary ===---  тмЗя╕П тмЗя╕П тмЗя╕П
+2026-05-24 23:36:40.251   Total sites: 6
+2026-05-24 23:36:40.251   тФЬтФА Checked sites: 6
+2026-05-24 23:36:40.251   тФЬтФА Updated sites: 4
+2026-05-24 23:36:40.251   тФФтФА Unchanged sites: 2
+2026-05-24 23:36:40.251  ЁЯЪи  Failed: 0
+2026-05-24 23:36:40.251
+2026-05-24 23:36:40.251 Problems:
+2026-05-24 23:36:40.251
+2026-05-24 23:36:40.251 Total phase time: 1.804s
+2026-05-24 23:36:40.251 DEBUG Checks number verification: 4 + 2 = 6
+2026-05-24 23:36:40.251
+2026-05-24 23:36:40.251 Unchanged sites:
+                        bryantenunder.com, hdfilmcehennemi27.org
+
+2026-05-24 23:36:40.251 === Domains replacement summary ===
+2026-05-24 23:36:40.251 Files scanned: 3
+2026-05-24 23:36:40.251 Files modified: 1
+2026-05-24 23:36:40.251 Total line edits: 3
+2026-05-24 23:36:40.251 Total phase time: 0.012s
+2026-05-24 23:36:40.251 тмЖя╕П тмЖя╕П тмЖя╕П  ---=== Domains rotating summary ===---  тмЖя╕П тмЖя╕П тмЖя╕П
+
+2026-05-24 23:36:40.255 INFO Watchers updated.
+
+2026-05-24 23:36:40.255 DEBUG HTTP POOL: 16 active connections, 0 requests in progress across 1 domains
+
+2026-05-24 23:36:40.359 тМЫ Total execution time: 1.934s
+2026-05-24 23:36:40.360 INFO Logs saved to: logs/rotating-domains-checker.log
+2026-05-24 23:36:40.360 INFO Skipping PR/commit — test mode (files were modified locally)
+2026-05-24 23:36:40.360 INFO тЬЕ Done.
+Done in 2.33s.

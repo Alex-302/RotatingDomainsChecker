@@ -1,0 +1,182 @@
+yarn run v1.22.22
+$ node --experimental-vm-modules node_modules/jest/bin/jest.js batch.test
+(node:30864) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL __tests__/batch.test.ts
+  3. Heuristic candidate generation
+    тИЪ 3.1 domain[N].tld: example001.com → generates example002..006 (4 ms)
+    тИЪ 3.2 [N]domain.tld: 14example.com → generates 15example.com, 16example.com... (1 ms)
+    тИЪ 3.3 domain[N][text].tld: example126tv.com → generates example127tv.com... (1 ms)
+    тИЪ 3.4 www. prefix with domain[N].tld: www.example375.com → generates www.example376.com...
+    тИЪ 3.5 www. prefix with [N]domain.tld: www.91example.com → generates www.92example.com... (1 ms)
+    тИЪ 3.6 no numeric pattern → empty candidates, no heuristic
+    тИЪ 3.7 heuristic.enabled: false → no heuristic even on failure (1 ms)
+    тИЪ 3.8 disable_heuristic on site → no heuristic for that site
+  4. shouldUpdate logic
+    тИЪ 4.1 hostChanged: true → shouldUpdate: true
+    тИЪ 4.2 hostChanged: false + numeric pattern → shouldUpdate: true (predicted mirror cleanup)
+    тИЪ 4.3 hostChanged: false + no numeric pattern → shouldUpdate: false
+    тИЪ 4.4 wildcard in siteName → shouldUpdate: true even without host change
+    тИЪ 4.5 failed check → shouldUpdate: false (1 ms)
+  4.7 calculateDaysSince (via recent last_seen optimization)
+    тИЪ last_seen recent (< 2 days) → tries last_known_mirror first
+    тИЪ recent dead last_known_mirror → falls back to initial_domain discovery entrypoint (1 ms)
+    тИЪ last_seen old (> 2 days) → uses initial_domain
+    тИЪ empty last_seen → uses initial_domain
+  5. Heuristic triggering conditions
+    тИЪ 5.1 antibot + skipOnAntibot: true + accept_antibot: false → foundSites.add, search stops
+    тИЪ 5.2 antibot + accept_antibot: true → candidate accepted as success
+    тИЪ 5.3 forceHeuristicOnCodes contains response code → heuristic triggered (1 ms)
+    тИЪ 5.4 DNS failed → shouldTriggerHeuristic: true → heuristic runs
+  5.5 Content probe in heuristic
+    тИЪ probe_text present + body matches → candidate accepted (1 ms)
+    тИЪ probe_text present + body does NOT match → candidate rejected, search continues
+  6.3 DNS pre-check
+    тИЪ dnsPreCheck.enabled: false → DNS check skipped, HTTP proceeds
+    тИЪ DNS ENOTFOUND → result.shouldTriggerHeuristic: true
+    тИЪ uses forced DNS servers for batch pre-check (1 ms)
+  Path mismatch handling
+    тИЪ site.path set + final path differs → shouldUpdate: false, error message
+    тИЪ site.path without leading slash matches URL.pathname → no path error (1 ms)
+    тИЪ site.path set + last_known_mirror has no path → resolve called with path appended
+    тИЪ site.path set + redirect drops path (root redirect) → shouldUpdate: false
+  No URL configured
+    тИЪ missing initial_domain and last_known_mirror → error result
+  7. skip_text scenarios
+    тИЪ 7.1 Scenario 1: main domain skipped, heuristic candidate OK → uses candidate (1 ms)
+    тИЪ 7.2 Scenario 2: main domain skipped, no heuristic candidates → error, potentially_dead
+    тИЪ 7.3 Scenario 3: all heuristic candidates skipped → no update
+    тИЪ 7.4 skip_text candidate skipped, next candidate OK → uses next candidate (1 ms)
+    тИЪ 7.5 no skip_text configured → normal behavior
+    тИЪ 7.6 skip_text_allow: allowed phrase bypasses global skip_text
+    тИЪ 7.7 skip_text_allow: non-allowed phrase still triggers skip_text
+  8. force_search_ahead scenarios
+    тИЪ 8.1 force_search_ahead disabled → stop after first success (1 ms)
+    тИЪ 8.2 force_search_ahead enabled → check all candidates
+    тИЪ 8.3 force_search_ahead with probe_text → only working domains collected
+    тИЪ 8.4 force_search_ahead: Phase 1 success with redirect → alias is collected alongside final host (1 ms)
+    ├Ч 8.5 force_search_ahead: Phase 1 success but host unchanged → still generates candidates (2 ms)
+    ├Ч 8.6 force_search_ahead: collects final working domains from all redirects
+    ├Ч 8.6b force_search_ahead: if many candidates redirect to current primary, collect candidate hosts uniquely (23 ms)
+    ├Ч 8.7 force_search_ahead + non-pattern initial_domain → falls back to last_known_mirror for candidates (1 ms)
+    ├Ч 8.8 force_search_ahead: Phase 1 success with redirect → current alias retained
+    тИЪ 8.9 force_search_ahead: Phase 1 success with redirect → pre-populate includes both alias and final host (1 ms)
+  9. Antibot + force_search_ahead + forceHeuristicOnCodes
+    тИЪ 9.1 accept_antibot + force_search_ahead: heuristic runs despite successful antibot check
+    тИЪ 9.2 accept_antibot WITHOUT force_search_ahead but 403 in forceHeuristicOnCodes: heuristic runs but stops after first (1 ms)
+    тИЪ 9.2b accept_antibot WITHOUT force_search_ahead and 403 NOT in forceHeuristicOnCodes: heuristic does NOT run
+    тИЪ 9.3 forceHeuristicOnCodes overrides skipOnAntibot when shouldTriggerHeuristic is true
+    тИЪ 9.4 antibot without forceHeuristicOnCodes match: heuristic is skipped (skipOnAntibot=true) (1 ms)
+    тИЪ 9.5 accept_antibot + probe_text: probe skipped for antibot response in Phase 1
+    тИЪ 9.6 accept_antibot + probe_text: probe checked normally for 200 response (no antibot)
+    тИЪ 9.7 accept_antibot + probe_text + force_search_ahead: antibot candidates skip probe, 200 candidates check probe (1 ms)
+  10. probe_text filtering in heuristic search
+    тИЪ 10.1 probe_text matches → heuristic succeeds
+    тИЪ 10.2 probe_text does NOT match → heuristic skips candidate, continues search (1 ms)
+    тИЪ 10.3 probe_text does NOT match on any candidate → heuristic fails (no update)
+    тИЪ 10.4 probe_text with accept_antibot=true → probe skipped for antibot, domain accepted
+    тИЪ 10.5 no probe_text → all 200 candidates accepted (existing behavior unchanged) (1 ms)
+    тИЪ 10.6 probe_text bypasses skip_text: domain has skip_text but also probe_text → accepted
+    тИЪ 9.8 probe_text failure sets result.success=false and triggers heuristic (1 ms)
+
+  тЧП 8. force_search_ahead scenarios →║ 8.5 force_search_ahead: Phase 1 success but host unchanged → still generates candidates
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: ArrayContaining ["example002.com", "example003.com"]
+    Received: undefined
+
+      1105 |     const watchers = makeWatchers({ 'testsite': site });
+      1106 |     const logger = makeLogger();
+    > 1107 |     const resolver = new HttpResolver(config);
+           |                                                     ^
+      1108 |
+      1109 |     let callCount = 0;
+      1110 |     const successfulCandidates: string[] = [];
+
+      at Object.<anonymous> (__tests__/batch.test.ts:1107:53)
+
+  тЧП 8. force_search_ahead scenarios →║ 8.6 force_search_ahead: collects final working domains from all redirects
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "example002.com"
+    Received array: []
+
+      1144 |
+      1145 |   test('8.3 force_search_ahead with probe_text → only working domains collected', async () => {
+    > 1146 |     const config = makeConfig({
+           |                            ^
+      1147 |       dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      1148 |       heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      1149 |     });
+
+      at Object.<anonymous> (__tests__/batch.test.ts:1146:28)
+
+  тЧП 8. force_search_ahead scenarios тА║ 8.6b force_search_ahead: if many candidates redirect to current primary, collect candidate hosts uniquely
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 1
+
+      Array [
+    -   "example014.pro",
+    -   "example015.pro",
+    +   "example013.pro",
+      ]
+
+      1179 |       return Promise.resolve(makeFailResult('Not found'));
+      1180 |     });
+    > 1181 |
+           | ^
+      1182 |     const processor = new BatchProcessor(config, watchers, logger, resolver);
+      1183 |     const results = await processor.processAll();
+      1184 |
+
+      at Object.<anonymous> (__tests__/batch.test.ts:1181:53)
+
+  тЧП 8. force_search_ahead scenarios тА║ 8.7 force_search_ahead + non-pattern initial_domain → falls back to last_known_mirror for candidates
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "example019.com"
+    Received array: ["short.link"]
+
+      1217 |       if (host === 'example4.com') return Promise.resolve(makeSuccessResult('example4.com'));
+      1218 |       if (host === 'example5.com') return Promise.resolve(makeSuccessResult('example5.com'));
+    > 1219 |       return Promise.resolve(makeFailResult('Not found'));
+           |                            ^
+      1220 |     });
+      1221 |
+      1222 |     const processor = new BatchProcessor(config, watchers, logger, resolver);
+
+      at Object.<anonymous> (__tests__/batch.test.ts:1219:28)
+
+  тЧП 8. force_search_ahead scenarios тА║ 8.8 force_search_ahead: Phase 1 success with redirect → current alias retained
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      1258 |
+      1259 |     let callCount = 0;
+    > 1260 |
+           | ^
+      1261 |     jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      1262 |       callCount++;
+      1263 |       const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+
+      at Object.<anonymous> (__tests__/batch.test.ts:1260:86)
+
+Test Suites: 1 failed, 1 total
+Tests:       5 failed, 58 passed, 63 total
+Snapshots:   0 total
+Time:        0.895 s, estimated 1 s
+Ran all test suites matching batch.test.
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+error Command failed with exit code 1.
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.

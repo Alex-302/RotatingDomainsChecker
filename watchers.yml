@@ -1,21 +1,59 @@
-# Rotating Domains Checker - monitored websites
-
 sites:
-  Dead site test - deadexample24.com:
-    initial_domain: deadexample24.com
-    last_known_mirror: ''
-  Test Probe Fail - example.org:
-    last_known_mirror: example.org
+  # Turkifsaclub (turkifsaclub*.sbs):
+  #   force_search_ahead: true
+  #   last_known_mirror: turkifsaclub127.sbs
+  #   success_since: 2026-05-24 23:44
+  # Piabet TV (piabettv*.live):
+  #   force_search_ahead: true
+  #   last_known_mirror: piabettv18.live
+  #   success_since: 2026-05-24 23:44
+  woe.sx:
+    initial_domain: https://voe.sx/e/q9ed7q8sqh2d
+    skip_text_allow:
+      - Redirecting...
     probe_text:
-      - not existing text
-  Test Probe Success - example.de:
-    last_known_mirror: example.de
-    probe_text:
-      - Malerei der Gruppe 3erlei
-  Frequently changed domains — Saha TV:
-    initial_domain: sahatv2.top
-    last_known_mirror: sahatv2.top
-  Frequently changed domains — YavasGir:
-    last_known_mirror: yavasgir31.com
-  Frequently changed domains — Kralsports HD:
-    last_known_mirror: kralsportshd7.com
+      - /jwplayer.js
+    last_known_mirror: rebeccacostthousand.com
+    success_since: 2026-05-31 23:34
+  # PapazSports (papazsports*.pro):
+  #   initial_domain: papazsports922.pro
+  #   accept_antibot: true
+  #   geoblock: TR
+  #   force_search_ahead: true
+  #   last_known_mirror: papazsports1009.pro
+  #   success_since: 2026-05-24 12:00
+  # HDFilmCehennemi (hdfilmcehennemi*.org):
+  #   initial_domain: t.co/3D4ep5ZtK4
+  #   last_known_mirror: hdfilmcehennemi27.org
+  #   success_since: 2026-05-24 23:44
+  # DiziPal Original:
+  #   accept_antibot: true
+  #   geoblock: TR
+  #   last_known_mirror: dizipal1553.com
+  # dizipal2071.com:
+  #   force_search_ahead: true
+  #   accept_antibot: true
+  #   geoblock: TR
+  #   last_known_mirror: dizipal2062.com
+  #   success_since: 2026-05-26 22:29
+  PapazSports (papazsports*.pro):
+    initial_domain: psgiris.pro
+    accept_antibot: true
+    geoblock: TR
+    force_search_ahead: true
+    last_known_mirror: www.papazsports1009.pro
+    success_since: 2026-05-31 22:56
+  turkifsa40.site:
+    force_search_ahead: true
+    last_known_mirror: turkifsa5.site
+    success_since: 2026-05-31 23:15
+  turkifsalar2.site:
+    force_search_ahead: true
+    last_known_mirror: turkifsalar2.site
+    success_since: 2026-05-31 23:34
+  Test Piabet TV (piabettv*.live):
+    force_search_ahead: true
+    last_known_mirror: piabett1.live
+    failed_since: 2026-05-31 22:36
+    failed_days: 1
+    potentially_dead: true
