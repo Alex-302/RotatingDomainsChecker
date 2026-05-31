@@ -14,7 +14,7 @@ sites:
     probe_text:
       - /jwplayer.js
     last_known_mirror: rebeccacostthousand.com
-    success_since: 2026-05-31 23:34
+    success_since: 2026-05-31 23:35
   # PapazSports (papazsports*.pro):
   #   initial_domain: papazsports922.pro
   #   accept_antibot: true
