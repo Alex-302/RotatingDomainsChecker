@@ -16,7 +16,7 @@ import { naturalCompare, calculateDaysSince } from "./utils.js";
 export { naturalCompare, calculateDaysSince };
 
 // Version
-const VERSION = "1.2.1";
+const VERSION = "1.3.0";
 
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.

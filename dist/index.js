@@ -16583,6 +16583,12 @@ class BatchProcessor {
         const resolveDuration = Date.now() - resolveStartTime;
         const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
         this.logger.debug(siteName, `Redirect chain: ${chainFormatted}`);
+        // Log early exit on JS redirect when probe_text matched
+        if (result.probeTextMatchedBeforeJsRedirect) {
+            const jsRedirectUrl = result.redirectChain[result.redirectChain.length - 1]?.location;
+            this.logger.info(siteName, `Early exit: probe_text confirmed on ${result.finalHost}, skipping JS redirect` +
+                (jsRedirectUrl ? ` (would redirect to: ${jsRedirectUrl})` : ''));
+        }
         if (!result.success) {
             if (result.antibotDetected) {
                 this.logger.warn(siteName, result.error || "Antibot/Cloudflare detected");
@@ -16896,11 +16902,31 @@ class HttpResolver {
                         };
                     }
                     // Check for JS / meta-refresh redirects in body
-                    const jsRedirectUrl = this.extractJsRedirect(finalBody, currentUrl);
-                    if (jsRedirectUrl) {
-                        // Update the already-pushed chain entry with the JS redirect location
-                        chain[chain.length - 1].location = jsRedirectUrl;
-                        currentUrl = jsRedirectUrl;
+                    const redirectInfo = this.extractJsRedirect(finalBody, currentUrl);
+                    if (redirectInfo) {
+                        // Early exit: if probe_text matched on current domain and next redirect is a JS redirect,
+                        // stop following. JS redirects are client-side anti-cloning logic (location.replace, etc.).
+                        // Meta refresh is server-like and typically legitimate — continue following those.
+                        if (hasProbeText && redirectInfo.isJsRedirect) {
+                            // Update chain entry with the JS redirect location for visibility
+                            chain[chain.length - 1].location = redirectInfo.url;
+                            // Determine if heuristic should still run (for force_search_ahead)
+                            const shouldTriggerHeuristic = Boolean(site?.force_search_ahead);
+                            return {
+                                success: true,
+                                finalUrl: currentUrl,
+                                finalHost: new URL(currentUrl).hostname,
+                                statusCode: response.status,
+                                redirectChain: chain,
+                                antibotDetected: false,
+                                finalBody,
+                                probeTextMatchedBeforeJsRedirect: true,
+                                shouldTriggerHeuristic,
+                            };
+                        }
+                        // Continue following the redirect (meta refresh or JS without probe_text match)
+                        chain[chain.length - 1].location = redirectInfo.url;
+                        currentUrl = redirectInfo.url;
                         depth++;
                         if (depth > this.config.processing.redirectDepth) {
                             return {
@@ -17121,25 +17147,17 @@ class HttpResolver {
     /**
      * Extract redirect URL from JS redirects and meta refresh tags in HTML body.
      * Handles: location.replace(), window.location.href=, location.href=, meta http-equiv="refresh"
-     * @returns Absolute redirect URL, or undefined if none found
+     * @returns Redirect info with URL and type, or undefined if none found
      */
     extractJsRedirect(body, baseUrl) {
         if (!body)
             return undefined;
-        // meta refresh: <meta http-equiv="refresh" content="0;URL=https://...">
-        const metaMatch = body.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["'][^"']*(?:url=|URL=)([^"'\s>]+)/i)
-            ?? body.match(/<meta[^>]+content=["'][^"']*(?:url=|URL=)([^"'\s>]+)[^"']*["'][^>]+http-equiv=["']?refresh["']?/i);
-        if (metaMatch) {
-            try {
-                return new URL(metaMatch[1].replace(/['"]/g, ''), baseUrl).href;
-            }
-            catch { }
-        }
         // JS: location.replace("url") or location.replace('url')
+        // Check JS redirects FIRST (higher priority — they're more likely to be anti-cloning)
         const replaceMatch = body.match(/location\.replace\(\s*["']([^"']+)["']\s*\)/);
         if (replaceMatch) {
             try {
-                return new URL(replaceMatch[1], baseUrl).href;
+                return { url: new URL(replaceMatch[1], baseUrl).href, isJsRedirect: true };
             }
             catch { }
         }
@@ -17147,7 +17165,7 @@ class HttpResolver {
         const windowLocMatch = body.match(/window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/);
         if (windowLocMatch) {
             try {
-                return new URL(windowLocMatch[1], baseUrl).href;
+                return { url: new URL(windowLocMatch[1], baseUrl).href, isJsRedirect: true };
             }
             catch { }
         }
@@ -17155,7 +17173,17 @@ class HttpResolver {
         const locHrefMatch = body.match(/(?<![.\w])location\.href\s*=\s*["']([^"']+)["']/);
         if (locHrefMatch) {
             try {
-                return new URL(locHrefMatch[1], baseUrl).href;
+                return { url: new URL(locHrefMatch[1], baseUrl).href, isJsRedirect: true };
+            }
+            catch { }
+        }
+        // meta refresh: <meta http-equiv="refresh" content="0;URL=https://...">
+        // Meta refresh is server-like, typically legitimate — lower priority
+        const metaMatch = body.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["'][^"']*(?:url=|URL=)([^"'\s>]+)/i)
+            ?? body.match(/<meta[^>]+content=["'][^"']*(?:url=|URL=)([^"'\s>]+)[^"']*["'][^>]+http-equiv=["']?refresh["']?/i);
+        if (metaMatch) {
+            try {
+                return { url: new URL(metaMatch[1].replace(/['"]/g, ''), baseUrl).href, isJsRedirect: false };
             }
             catch { }
         }
@@ -18340,7 +18368,7 @@ const connectionDiagnostics = new ConnectionDiagnostics();
 // Re-export for backward compatibility (tests import from index.ts)
 
 // Version
-const VERSION = "1.2.1";
+const VERSION = "1.3.0";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).

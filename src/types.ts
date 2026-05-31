@@ -120,6 +120,8 @@ export interface RedirectResult {
   finalBody?: string; // Response body from final successful request (for content probing)
   shouldTriggerHeuristic?: boolean; // Force heuristic search even for certain error statuses
   skippedByText?: string; // Set when skip_text phrase was found in response body
+  /** True when probe_text matched on an intermediate domain but JS redirect was not followed */
+  probeTextMatchedBeforeJsRedirect?: boolean;
 }
 
 export interface RedirectChainEntry {
