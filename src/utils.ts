@@ -2,6 +2,8 @@
  * Shared utility functions for Rotating Domains Checker
  */
 
+import type { ReplacementPair } from "./types.js";
+
 /**
  * Natural comparison for domain names - compares numeric chunks as numbers.
  * Example: example9 < example18 < example20 (not lexicographic: example18 < example20 < example9)
@@ -41,4 +43,30 @@ export function calculateDaysSince(dateStr: string): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Determines whether a replacement entry represents a real mirror update.
+ * Uses the original last_known_mirror (captured before processing started)
+ * to distinguish actual changes from redirect-only or discovery-entrypoint noise.
+ *
+ * @param replacement — the replacement pair to evaluate
+ * @param originalLastKnownMirrors — optional map of siteName → original last_known_mirror
+ * @returns true if the domain actually changed relative to the original mirror
+ */
+export function isRealDomainChange(
+  replacement: ReplacementPair,
+  originalLastKnownMirrors?: Map<string, string>,
+): boolean {
+  const originalMirror = originalLastKnownMirrors?.get(replacement.siteName);
+  if (originalMirror !== undefined) {
+    return replacement.newHost !== originalMirror;
+  }
+  // Fallback: compare startedHost/oldHost with newHost (legacy behaviour)
+  const fromHost = replacement.startedHost || replacement.oldHost;
+  return fromHost !== replacement.newHost;
+}
+
+export function formatWatcherSummaryEntry(siteName: string, activeHost: string): string {
+  return `${siteName} (${activeHost})`;
 }

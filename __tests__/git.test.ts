@@ -1,5 +1,5 @@
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
-import type { Config, Summary } from '../src/types.js';
+import type { Config, Summary, SummaryPresentationContext } from '../src/types.js';
 
 // ESM mock for child_process
 const mockedExecSync = jest.fn();
@@ -61,6 +61,14 @@ function makeSummaryWithReplacements(): Summary {
   ]);
 }
 
+function makePresentationContext(overrides?: Partial<SummaryPresentationContext>): SummaryPresentationContext {
+  return {
+    patternDiffs: [],
+    unchangedWatchers: [],
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   mockedExecSync.mockReset();
   mockedExecFileSync.mockReset();
@@ -82,12 +90,12 @@ describe('10.1 buildCommitMessage', () => {
     expect(message).toContain('Rotating Domains Checker: Updating domains');
   });
 
-  test('commit message contains Updated domains section', () => {
+  test('commit message contains Mirror updates section', () => {
     const git = new GitManager(makeConfig());
     const summary = makeSummaryWithReplacements();
     const info = git.getPRModeInfo(summary, false);
     const message = info.join('\n');
-    expect(message).toContain('Updated domains');
+    expect(message).toContain('Watchers with active mirror changed');
   });
 
   test('commit message deduplicates by siteName', () => {
@@ -127,6 +135,79 @@ describe('10.1 buildCommitMessage', () => {
     const message = info.join('\n');
     expect(message).toContain('Warnings');
     expect(message).toContain('Some warning message');
+  });
+
+  test('commit message: discovery entrypoint with unchanged mirror is excluded from Mirror updates', () => {
+    // old.com → example027.com, mirror already 027
+    const summary = makeSummary([
+      {
+        siteName: 'sitename1',
+        oldHost: 'old.com',
+        newHost: 'example027.com',
+        startedHost: 'old.com',
+        checkDurationMs: 1230,
+      },
+    ]);
+    const originalMirrors = new Map([['sitename1', 'example027.com']]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false, originalMirrors);
+    const message = info.join('\n');
+    expect(message).not.toContain('🔄  Watchers with active mirror changed:\n');
+    expect(message).toContain('Watchers with active mirror changed: 0');
+  });
+
+  test('commit message: real mirror change is included', () => {
+    const summary = makeSummary([
+      {
+        siteName: 'sitename4',
+        oldHost: 'example124.com',
+        newHost: 'example125.com',
+        startedHost: 'example124.com',
+        checkDurationMs: 2340,
+      },
+    ]);
+    const originalMirrors = new Map([['sitename4', 'example124.com']]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false, originalMirrors);
+    const message = info.join('\n');
+    expect(message).toContain('sitename4');
+    expect(message).toContain('example124.com');
+    expect(message).toContain('example125.com');
+  });
+
+  test('commit message: redirect-only with unchanged mirror is excluded', () => {
+    // example922.com → example1010.com, mirror already 1010
+    const summary = makeSummary([
+      {
+        siteName: 'sitename3',
+        oldHost: 'example922.com',
+        newHost: 'example1010.com',
+        startedHost: 'example922.com',
+        checkDurationMs: 1110,
+      },
+    ]);
+    const originalMirrors = new Map([['sitename3', 'example1010.com']]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false, originalMirrors);
+    const message = info.join('\n');
+    expect(message).not.toContain('🔄  Watchers with active mirror changed:\n');
+  });
+
+  test('commit message: no map → fallback to old behaviour (redirect counts as change)', () => {
+    // Without originalMirrors, old.com → mirror looks like a change
+    const summary = makeSummary([
+      {
+        siteName: 'sitename1',
+        oldHost: 'old.com',
+        newHost: 'example027.com',
+        startedHost: 'old.com',
+        checkDurationMs: 1230,
+      },
+    ]);
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false);
+    const message = info.join('\n');
+    expect(message).toContain('sitename1');
   });
 });
 
@@ -341,8 +422,8 @@ describe('10.6 Deduplication in commit message', () => {
     // Table should show a.com → b.com (first entry)
     expect(message).toContain('b.com');
     // Table should NOT show a.com → c.com (second entry is deduped)
-    // The c.com may appear in other contexts, but not in the "Updated domains" table line
-    const updatedSection = message.split('Updated domains')[1]?.split('🚨')[0] || '';
+    // The c.com may appear in other contexts, but not in the "Mirror updates" table line
+    const updatedSection = message.split('Watchers with active mirror changed')[1]?.split('🚨')[0] || '';
     expect(updatedSection).not.toMatch(/a\.com.*→.*c\.com/);
   });
 
@@ -373,12 +454,12 @@ describe('10.6 Deduplication in commit message', () => {
     const info = git.getPRModeInfo(summary, false);
     const message = info.join('\n');
 
-    // Should show "mirror cleanup only" instead of "Updated domains" table
-    expect(message).toContain('mirror cleanup only');
+    // Should show "mirror cleanup only" instead of "Mirror updates" table
+    expect(message).toContain('filter mirror cleanup only');
     expect(message).not.toMatch(/same\.com.*→.*same\.com/);
   });
 
-  test('mirror cleanup only: shows processed sites list', () => {
+  test('mirror cleanup only: no longer uses processed sites wording', () => {
     const summary = makeSummary([
       { siteName: 'Site Alpha', oldHost: 'a.com', newHost: 'a.com', startedHost: 'a.com', checkDurationMs: 100 },
       { siteName: 'Site Beta', oldHost: 'b.com', newHost: 'b.com', startedHost: 'b.com', checkDurationMs: 100 },
@@ -387,10 +468,8 @@ describe('10.6 Deduplication in commit message', () => {
     const info = git.getPRModeInfo(summary, false);
     const message = info.join('\n');
 
-    expect(message).toContain('Domain updates: 0 (mirror cleanup only)');
-    expect(message).toContain('Sites processed:');
-    expect(message).toContain('Site Alpha');
-    expect(message).toContain('Site Beta');
+    expect(message).toContain('Watchers with active mirror changed: 0 (filter mirror cleanup only)');
+    expect(message).not.toContain('Sites processed:');
   });
 
   test('mixed: real changes and no-changes together', () => {
@@ -404,9 +483,36 @@ describe('10.6 Deduplication in commit message', () => {
     const info = git.getPRModeInfo(summary, false);
     const message = info.join('\n');
 
-    // Should show "Updated domains" with real change only
-    expect(message).toContain('Updated domains');
+    expect(message).toContain('Watchers with active mirror changed');
     expect(message).toContain('new.com');
     expect(message).not.toContain('mirror cleanup only');
+  });
+
+  test('commit message includes watcher-oriented pattern diff and unchanged watchers sections', () => {
+    const summary = makeSummaryWithReplacements();
+    const context = makePresentationContext({
+      patternDiffs: [
+        {
+          siteName: 'PapazSports',
+          added: ['www.papazsports1011.pro'],
+          removed: ['www.papazsports1008.pro'],
+          active: 'www.papazsports1009.pro',
+          additionalCount: 1,
+        },
+      ],
+      unchangedWatchers: [
+        { siteName: 'RebeccaWatcher', activeHost: 'rebeccacostthousand.com' },
+      ],
+    });
+
+    const git = new GitManager(makeConfig());
+    const info = git.getPRModeInfo(summary, false, undefined, context);
+    const message = info.join('\n');
+
+    expect(message).toContain('Watchers with filter mirror list changed');
+    expect(message).toContain('[PapazSports] added: www.papazsports1011.pro removed: www.papazsports1008.pro');
+    expect(message).toContain('active mirror: www.papazsports1009.pro (+ 1 additional)');
+    expect(message).toContain('Unchanged watchers:');
+    expect(message).toContain('RebeccaWatcher (rebeccacostthousand.com)');
   });
 });

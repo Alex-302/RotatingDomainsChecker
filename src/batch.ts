@@ -506,9 +506,12 @@ export class BatchProcessor {
               candidateUrl: r.startedHost,
             }];
 
-            // If the starting alias redirected to a different final host, also include the alias
-            // This ensures the current working alias is not lost from the collected domains
-            if (r.hostChanged && r.startedHost) {
+            // Always include the starting alias in the working set when force_search_ahead is enabled.
+            // This ensures the current last_known_mirror is not lost from canonical selection even
+            // when Phase 1 didn't detect a host change (e.g., antibot served at the starting URL
+            // without a redirect). If the alias differs from newHost, it's a valid entry point and
+            // belongs in the collected set for stable canonical selection across runs.
+            if (r.startedHost) {
               const startedHostNormalized = r.startedHost.toLowerCase().replace(/^www\./, '');
               const newHostNormalized = r.newHost.toLowerCase();
               if (startedHostNormalized !== newHostNormalized) {
@@ -597,8 +600,7 @@ export class BatchProcessor {
             }
 
             if (probeOk) {
-              const oldHost = this.resolver.extractHostWithoutQuery(task.oldMirror);
-              const newHost = result.finalHost.toLowerCase();
+              const oldHost = this.resolver.normalizeAndExtractHost(task.oldMirror);              const newHost = result.finalHost.toLowerCase();
               const candidateHost = this.resolver.extractHostWithoutQuery(task.candidateUrl).toLowerCase();
               const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
               this.logger.info(task.siteName, `Heuristic SUCCESS: ${task.candidateUrl}`);
@@ -699,8 +701,7 @@ export class BatchProcessor {
           } else if (result.antibotDetected && task.site.accept_antibot) {
             // Antibot detected but site accepts antibot, treat as success
             foundSites.add(task.siteIndex);
-            const oldHost = this.resolver.extractHostWithoutQuery(task.oldMirror);
-            const newHost = result.finalHost.toLowerCase();
+            const oldHost = this.resolver.normalizeAndExtractHost(task.oldMirror);            const newHost = result.finalHost.toLowerCase();
             const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
             this.logger.info(task.siteName, `Heuristic SUCCESS (antibot accepted): ${task.candidateUrl}`);
             this.logger.info(task.siteName, `Heuristic redirect chain: ${chainFormatted}`);

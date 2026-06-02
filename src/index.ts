@@ -8,15 +8,29 @@ import { GitManager } from "./git.js";
 import { Logger, LogLevel } from "./logger.js";
 import { connectionDiagnostics } from "./diagnostics.js";
 import { resolveHostname } from "./dnsResolver.js";
-import type { Summary } from "./types.js";
+import type { Summary, UnchangedWatcherEntry } from "./types.js";
 import { appendFileSync } from "fs";
-import { naturalCompare, calculateDaysSince } from "./utils.js";
+import { naturalCompare, calculateDaysSince, formatWatcherSummaryEntry, isRealDomainChange } from "./utils.js";
 
 // Re-export for backward compatibility (tests import from index.ts)
-export { naturalCompare, calculateDaysSince };
+export { naturalCompare, calculateDaysSince, formatWatcherSummaryEntry, isRealDomainChange };
+
+/**
+ * Determines whether git operations should be skipped and why.
+ * Exported for testability.
+ */
+export function gitSkipReason(
+  isTestMode: boolean,
+  dryRun: boolean,
+  hasRealChanges: boolean,
+): string | null {
+  if (isTestMode && !dryRun) return "test mode (files were modified locally)";
+  if (!hasRealChanges) return "no filter changes (all domains already up to date)";
+  return null;
+}
 
 // Version
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
@@ -173,8 +187,7 @@ function updateSuccessSince(site: { success_since?: string }, newValue: string):
 /**
  * Pre-flight DNS availability check.
  * Resolves google.com, cloudflare.com and adguard.com in parallel.
- * Falls if 2+ fail (i.e. 0 or 1 resolve) — DNS is almost certainly broken.
- * Succeeds if 2+ resolve (at least two independent DNS servers are reachable).
+ * All three preflight hosts must resolve — if any one fails the run is fatal.
  */
 export async function dnsPreflightCheck(logger?: { logGlobal: (level: number, msg: string) => void }): Promise<void> {
   const preflightHosts = ["google.com", "cloudflare.com", "adguard.com"];
@@ -184,7 +197,7 @@ export async function dnsPreflightCheck(logger?: { logGlobal: (level: number, ms
     )
   );
   const resolvedCount = preflightResults.filter(ok => ok).length;
-  if (resolvedCount < 2) {
+  if (resolvedCount < preflightHosts.length) {
     logger?.logGlobal(0, `FATAL: DNS pre-flight check failed — only ${resolvedCount}/${preflightHosts.length} hosts resolved: ${preflightHosts.join(", ")}. Check network/DNS availability.`);
     process.exit(1);
   }
@@ -352,7 +365,8 @@ export async function main() {
       // Heuristic found a non-pattern domain (e.g. hepbetspor12.cfd → patronspor.is).
       // History and flags already set in batch.ts. Store the non-pattern domain separately
       // but do NOT overwrite last_known_mirror - filter files continue to use the last pattern domain.
-      summary.updated++;
+      // NOT counted in summary.updated — no filter replacements are generated (shouldUpdate === false).
+      // Displayed via 🚩 Pattern→non-pattern counter (from warnings) instead.
       const nonPatternCanonical = selectFirstByOrder(result.newHost, result.additionalWorkingDomains);
       const oldNonPatternMirror = originalNonPatternMirrors.get(result.siteName);
 
@@ -421,28 +435,13 @@ export async function main() {
         );
 
         // Update watcher on successful change
-        // Always save only the hostname (domain), regardless of initial_domain format
         site.last_known_mirror = effectiveNewHostAntibot;
-        // State transition: update success_since ONLY when the effective new host is
-        // genuinely different from the previously stored mirror. This suppresses
-        // churn in force_search_ahead scenarios where hostChanged=true comes from a
-        // redirect alias (Phase 1) but selectFirstByOrder picks back the same
-        // last_known_mirror — e.g., last_known=example001.com (alias→003),
-        // collected [001, 002, 003], effectiveNewHost = min = 001 (unchanged).
-        // Without this guard, repeated identical runs would rewrite the timestamp
-        // and produce spurious diffs in watchers.yml on every invocation.
-        if (effectiveNewHostAntibot !== oldLastKnownMirrorAntibot) {
-          updateSuccessSince(site, nowFormatted);
-        }
-        delete site.failed_days; // Reset on success
-        delete site.failed_since;
-        delete site.potentially_dead; // Remove flag on success
       } else {
         summary.unchanged++;
       }
 
-      // Update success_since: always for host change (state transition), otherwise only
-      // when exiting a prior failure state. On repeated identical runs we suppress churn.
+      // Single cleanup block — runs for both antibotActuallyChanged and unchanged.
+      // updateSuccessSince only on host change or failure→success transition (spec §8.4).
       if (antibotActuallyChanged || hadFailureBeforeThisRun.get(result.siteName)) {
         updateSuccessSince(site, nowFormatted);
       }
@@ -549,36 +548,40 @@ export async function main() {
   const replacer = new FilterReplacer(config, logger, isTestMode);
   const replacerStats = await replacer.applyReplacements(summary.replacements, dryRun, originalLastKnownMirrors);
 
-  // Determine whether there are any real changes to create a PR/commit for.
+  // Compute mirror update info — used for both the console summary and the commit decision.
   // A real change means the domain actually changed from what was in watcher BEFORE processing.
-  // If newHost === original last_known_mirror, it's not a change — just entry point resolution.
-  const hasUniqueDomainChanges = (() => {
+  const mirrorUpdateEntries = (() => {
     const primaryBySite = new Map<string, typeof summary.replacements[number]>();
     for (const r of summary.replacements) {
       if (!primaryBySite.has(r.siteName)) {
         primaryBySite.set(r.siteName, r);
       }
     }
-    return [...primaryBySite.values()].some(r => {
-      // If newHost matches the original last_known_mirror, no real change occurred
-      const originalMirror = originalLastKnownMirrors.get(r.siteName);
-      if (originalMirror && r.newHost === originalMirror) return false;
-      const fromHost = r.startedHost || r.oldHost;
-      return fromHost !== r.newHost;
-    });
+    return [...primaryBySite.values()].filter(r =>
+      isRealDomainChange(r, originalLastKnownMirrors)
+    );
   })();
+  const hasUniqueDomainChanges = mirrorUpdateEntries.length > 0;
+  const nMirrorUpdates = mirrorUpdateEntries.length;
   const hasRealChanges = hasUniqueDomainChanges || replacerStats.totalLineEdits > 0;
+
+  // Count pattern→non-pattern transitions from warnings
+  const nPatternToNonPattern = summary.warnings.filter(
+    w => w.includes('Pattern domain redirected to non-pattern')
+  ).length;
 
   // Print summary with detailed breakdown
   logger.logGlobal(LogLevel.RAW, "⬇️ ⬇️ ⬇️  ---=== Domains rotating summary ===---  ⬇️ ⬇️ ⬇️");
   logger.logGlobal(LogLevel.RAW, `  Total sites: ${summary.totalSites}`);
   logger.logGlobal(LogLevel.RAW, `  ├─ Checked sites: ${summary.checked}`);
-  logger.logGlobal(LogLevel.RAW, `  ├─ Updated sites: ${summary.updated}`);
+  logger.logGlobal(LogLevel.RAW, `  ├─ 🔄 Watchers with active mirror changed: ${nMirrorUpdates}`);
+  logger.logGlobal(LogLevel.RAW, `  ├─ 📋 Watchers with filter mirror list changed: ${replacerStats.patternDiffs?.length ?? 0}`);
+  logger.logGlobal(LogLevel.RAW, `  ├─ 🚩 Pattern→non-pattern: ${nPatternToNonPattern}`);
   if (summary.antibotAccepted > 0) {
     logger.logGlobal(LogLevel.RAW, `  ├─ Antibot accepted: ${summary.antibotAccepted} (not in failed count)`);
   }
   const actualUnchangedDisplay = summary.unchanged;
-  logger.logGlobal(LogLevel.RAW, `  └─ Unchanged sites: ${actualUnchangedDisplay}`);
+  logger.logGlobal(LogLevel.RAW, `  └─ Unchanged watchers: ${actualUnchangedDisplay}`);
   logger.logGlobal(LogLevel.RAW, ` 🚨  Failed: ${summary.failed}`);
   if (summary.antibotBlocked > 0) {
     logger.logGlobal(LogLevel.RAW, `  ├─ including antibot blocked: ${summary.antibotBlocked}`);
@@ -586,6 +589,18 @@ export async function main() {
   const networkErrors = summary.failed - summary.antibotBlocked;
   if (networkErrors > 0) {
     logger.logGlobal(LogLevel.RAW, `  └─ Network problems or dead: ${networkErrors}`);
+  }
+
+  // Pattern domains list updates section (populated by replacer in task 03)
+  if (replacerStats.patternDiffs && replacerStats.patternDiffs.length > 0) {
+    logger.logGlobal(LogLevel.RAW, "");
+    logger.logGlobal(LogLevel.RAW, " 📋  Watchers with filter mirror list changed:");
+    for (const diff of replacerStats.patternDiffs) {
+      const addedStr = diff.added.length > 0 ? ` added: ${diff.added.join(', ')}` : '';
+      const removedStr = diff.removed.length > 0 ? ` removed: ${diff.removed.join(', ')}` : '';
+      logger.logGlobal(LogLevel.RAW, `     [${diff.siteName}]${addedStr}${removedStr}`);
+      logger.logGlobal(LogLevel.RAW, `       active mirror: ${diff.active} (+ ${diff.additionalCount} additional)`);
+    }
   }
 
   // Display detailed errors and warnings
@@ -601,14 +616,18 @@ export async function main() {
     }
   }
 
-  // Separate pattern changes from other warnings
-  const patternChanges = summary.warnings.filter(w => w.includes('→'));
-  const otherWarnings = summary.warnings.filter(w => !w.includes('→'));
+  // Separate pattern→non-pattern transitions from other warnings
+  const patternToNonPatternWarnings = summary.warnings.filter(
+    w => w.includes('Pattern domain redirected to non-pattern')
+  );
+  const otherWarnings = summary.warnings.filter(
+    w => !w.includes('Pattern domain redirected to non-pattern')
+  );
 
-  if (patternChanges.length > 0) {
-    logger.logGlobal(LogLevel.WARN, " ⚠️  Pattern changes requiring manual review:");
-    for (const warning of patternChanges) {
-      logger.logGlobal(LogLevel.WARN, `     ${warning}`);
+  if (patternToNonPatternWarnings.length > 0) {
+    logger.logGlobal(LogLevel.RAW, " 🚩  Changed pattern → non-pattern domains:");
+    for (const warning of patternToNonPatternWarnings) {
+      logger.logGlobal(LogLevel.RAW, `     ${warning}`);
     }
   }
 
@@ -618,24 +637,26 @@ export async function main() {
       logger.logGlobal(LogLevel.RAW, `     - ${warning}`);
     }
   }
-  logger.logGlobal(LogLevel.RAW, "");
 
+  logger.logGlobal(LogLevel.RAW, "");
   logger.logGlobal(LogLevel.RAW, `Total phase time: ${batchSeconds}s`);
 
   // Verification: display formula and check counts
   const actualUnchanged = actualUnchangedDisplay;
   logger.logGlobal(LogLevel.DEBUG, `Checks number verification: ${summary.updated} + ${actualUnchanged} = ${summary.checked}`);
 
-  const expectedTotal = summary.updated + summary.unchanged + summary.failed;
+  const expectedTotal = summary.updated + summary.unchanged + summary.failed + nPatternToNonPattern;
   if (expectedTotal !== summary.checked) {
     const missing = summary.checked - expectedTotal;
-    logger.logGlobal(LogLevel.WARN, `⚠️ Summary count mismatch: checked=${summary.checked}, but updated+unchanged+failed=${expectedTotal}`);
-    logger.logGlobal(LogLevel.DEBUG, `DEBUG: updated=${summary.updated}, unchanged=${summary.unchanged}, failed=${summary.failed}, antibotAccepted=${summary.antibotAccepted} (included), missing=${missing}`);
+    logger.logGlobal(LogLevel.WARN, `⚠️ Summary count mismatch: checked=${summary.checked}, but updated+unchanged+failed+pattern→non-pattern=${expectedTotal}`);
+    logger.logGlobal(LogLevel.DEBUG, `DEBUG: updated=${summary.updated}, unchanged=${summary.unchanged}, failed=${summary.failed}, pattern→non-pattern=${nPatternToNonPattern}, antibotAccepted=${summary.antibotAccepted} (included), missing=${missing}`);
   }
 
-  // List unchanged sites
-  if (summary.unchanged > 0 || summary.updated === 0) {
-    const unchangedHosts: string[] = [];
+  // List unchanged watchers.
+  // Show unchanged list only when there are actually unchanged sites, or when there are no
+  // updates and no pattern→non-pattern transitions (everything is stable).
+  const unchangedWatcherEntries: UnchangedWatcherEntry[] = [];
+  if (summary.unchanged > 0 || (summary.updated === 0 && nPatternToNonPattern === 0)) {
     for (const result of results) {
       const site = watchers.sites[result.siteName];
       if (!site) continue;
@@ -650,15 +671,22 @@ export async function main() {
 
       if (originalMirror) {
         if (result.newHost === originalMirror) {
-          unchangedHosts.push(result.newHost || originalMirror);
+          const activeHost = result.newHost || originalMirror;
+          if (activeHost && activeHost.trim() !== '') {
+            unchangedWatcherEntries.push({ siteName: result.siteName, activeHost });
+          }
         }
       } else if (!result.hostChanged) {
-        unchangedHosts.push(result.newHost);
+        if (result.newHost && result.newHost.trim() !== '') {
+          unchangedWatcherEntries.push({ siteName: result.siteName, activeHost: result.newHost });
+        }
       }
     }
-    const filteredHosts = unchangedHosts.filter(host => host && host.trim() !== '');
     logger.logGlobal(LogLevel.RAW, ``);
-    logger.logGlobal(LogLevel.RAW, `Unchanged sites:\n                        ${filteredHosts.join(', ')}`);
+    logger.logGlobal(
+      LogLevel.RAW,
+      `Unchanged watchers:\n                        ${unchangedWatcherEntries.map(entry => formatWatcherSummaryEntry(entry.siteName, entry.activeHost)).join(', ')}`,
+    );
   }
   logger.logRaw("");
 
@@ -699,33 +727,36 @@ export async function main() {
   const gitManager = new GitManager(config, logger);
 
   // Determine skip reason BEFORE displaying PR info
-  const skipReason = (() => {
-    if (isTestMode && !dryRun) return "test mode (files were modified locally)";
-    if (!hasRealChanges) return "no filter changes (all domains already up to date)";
-    return null;
-  })();
+  const skipReason = gitSkipReason(isTestMode, dryRun, hasRealChanges);
 
-  // Display PR/Commit mode information only when there are real changes
+  // Display PR/Commit mode information only when git ops are not skipped.
+  // Per spec §11.4: test_live must completely skip git logic — no preview either.
   if (!skipReason) {
-    const prModeInfo = gitManager.getPRModeInfo(summary, dryRun);
+    const prModeInfo = gitManager.getPRModeInfo(summary, dryRun, originalLastKnownMirrors, {
+      patternDiffs: replacerStats.patternDiffs,
+      unchangedWatchers: unchangedWatcherEntries,
+    });
     if (prModeInfo.length > 0) {
       logger.logRaw("");
       prModeInfo.forEach(line => {
         logger.logRaw(line);
       });
     }
+  } else {
+    logger.logGlobal(LogLevel.INFO, `Skipping PR/commit — ${skipReason}`);
   }
 
   // Always save logs to file if configured
   logger.saveToFile();
 
-  // Execute git operations (will include the log file in commit)
+  // Execute git operations only when there is no skip reason
   let gitResult: { commitSha?: string; prNumber?: number; prUrl?: string } = {};
-  if (skipReason) {
-    logger.logGlobal(LogLevel.INFO, `Skipping PR/commit — ${skipReason}`);
-  } else {
+  if (!skipReason) {
     // prod_live, prod_dry, test_dry: execute git
-    gitResult = await gitManager.commitOrCreatePR(summary, dryRun);
+    gitResult = await gitManager.commitOrCreatePR(summary, dryRun, originalLastKnownMirrors, {
+      patternDiffs: replacerStats.patternDiffs,
+      unchangedWatchers: unchangedWatcherEntries,
+    });
   }
 
   // Set GitHub Actions outputs

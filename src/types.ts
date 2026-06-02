@@ -170,6 +170,24 @@ export interface Summary {
   warnings: string[];
 }
 
+export interface PatternDiffEntry {
+  siteName: string;
+  added: string[];
+  removed: string[];
+  active: string;
+  additionalCount: number;
+}
+
+export interface UnchangedWatcherEntry {
+  siteName: string;
+  activeHost: string;
+}
+
+export interface SummaryPresentationContext {
+  patternDiffs?: PatternDiffEntry[];
+  unchangedWatchers?: UnchangedWatcherEntry[];
+}
+
 export interface HeuristicTask {
   siteName: string;
   siteIndex: number;

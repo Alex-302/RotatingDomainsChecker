@@ -57,15 +57,15 @@ describe('dnsPreflightCheck', () => {
     expect(logSpy).toHaveBeenCalledWith(0, expect.stringContaining('1/3'));
   });
 
-  test('2 of 3 resolve → resolves without exit', async () => {
+  test('2 of 3 resolve → process.exit(1) (spec §10.4 requires all 3)', async () => {
     mockedDnsResolve
       .mockResolvedValueOnce(['8.8.8.8'] as never)                        // google.com OK
       .mockResolvedValueOnce(['1.1.1.1'] as never)                        // cloudflare.com OK
       .mockRejectedValueOnce(new Error('ENOTFOUND') as never);            // adguard.com fail
 
-    await dnsPreflightCheck(logger);
-
-    expect(exitSpy).not.toHaveBeenCalled();
+    await expect(dnsPreflightCheck(logger)).rejects.toThrow('process.exit called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(logSpy).toHaveBeenCalledWith(0, expect.stringContaining('2/3'));
   });
 
   test('all 3 resolve → resolves without exit', async () => {
@@ -76,15 +76,15 @@ describe('dnsPreflightCheck', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  test('google.com fail, cloudflare.com OK, adguard.com OK → resolves without exit', async () => {
+  test('google.com fail, cloudflare.com OK, adguard.com OK → process.exit(1) (spec §10.4 requires all 3)', async () => {
     mockedDnsResolve
       .mockRejectedValueOnce(new Error('ENOTFOUND') as never)             // google.com fail
       .mockResolvedValueOnce(['1.1.1.1'] as never)                        // cloudflare.com OK
       .mockResolvedValueOnce(['127.0.0.1'] as never);                     // adguard.com OK
 
-    await dnsPreflightCheck(logger);
-
-    expect(exitSpy).not.toHaveBeenCalled();
+    await expect(dnsPreflightCheck(logger)).rejects.toThrow('process.exit called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(logSpy).toHaveBeenCalledWith(0, expect.stringContaining('2/3'));
   });
 
   test('FATAL log includes all host names', async () => {
@@ -98,10 +98,7 @@ describe('dnsPreflightCheck', () => {
   });
 
   test('works without logger (no error when logger undefined)', async () => {
-    mockedDnsResolve
-      .mockRejectedValueOnce(new Error('ENOTFOUND') as never)
-      .mockResolvedValueOnce(['1.1.1.1'] as never)
-      .mockResolvedValueOnce(['127.0.0.1'] as never);
+    mockedDnsResolve.mockResolvedValue(['127.0.0.1'] as never);
 
     await expect(dnsPreflightCheck(undefined)).resolves.toBeUndefined();
     expect(exitSpy).not.toHaveBeenCalled();

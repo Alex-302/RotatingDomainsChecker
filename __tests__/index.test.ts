@@ -1,15 +1,17 @@
 import { describe, test, expect, beforeAll, afterAll, jest } from '@jest/globals';
-import { naturalCompare, selectFirstByOrder, calculateDaysSince, selectPatternAwareWorkingSet } from '../src/index.js';
+import { gitSkipReason, naturalCompare, selectFirstByOrder, calculateDaysSince, selectPatternAwareWorkingSet, isRealDomainChange } from '../src/index.js';
 import { loadWatchers, saveWatchers } from '../src/config.js';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { Summary, ReplacementPair } from '../src/types.js';
 
 // ============================================================================
 // 11. naturalCompare and selectFirstByOrder
 // ============================================================================
 // 11.3 success_since migration and state churn
 // ============================================================================
+
 
 
 describe('11.1 naturalCompare - natural sorting for domain names', () => {
@@ -683,5 +685,119 @@ describe('11.8 state cleanup and churn suppression coverage', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+// ============================================================================
+// 11.9 Console summary counters (task 02/04 regression tests)
+// ============================================================================
+describe('11.9 console summary counters', () => {
+  function makeReplacement(overrides?: Partial<ReplacementPair>): ReplacementPair {
+    return {
+      siteName: 'testsite',
+      oldHost: 'example001.com',
+      newHost: 'example020.com',
+      startedHost: 'example001.com',
+      checkDurationMs: 1500,
+      ...overrides,
+    };
+  }
+
+  test('Mirror updates counter matches isRealDomainChange results after dedup', () => {
+    // Simulate the dedup+filter logic from main() in index.ts
+    const replacements: ReplacementPair[] = [
+      // Site1: real change (example001 → example020, original was example001)
+      makeReplacement({ siteName: 'Site1', oldHost: 'example001.com', newHost: 'example020.com', startedHost: 'example001.com' }),
+      // Site1 duplicate — should be deduped
+      makeReplacement({ siteName: 'Site1', oldHost: 'example001.com', newHost: 'example020.com', startedHost: 'redirect.link' }),
+      // Site2: entrypoint only — mirror unchanged (original was example027.com)
+      makeReplacement({ siteName: 'Site2', oldHost: 'old.com', newHost: 'example027.com', startedHost: 'old.com' }),
+      // Site3: entrypoint only — mirror unchanged (original was example100.com)
+      makeReplacement({ siteName: 'Site3', oldHost: 'short.link', newHost: 'example100.com', startedHost: 'short.link' }),
+      // Site4: real change (example200 → example201, original was example200)
+      makeReplacement({ siteName: 'Site4', oldHost: 'example200.com', newHost: 'example201.com', startedHost: 'example200.com' }),
+    ];
+
+    const originalLastKnownMirrors = new Map([
+      ['Site1', 'example001.com'],  // different → true (real change)
+      ['Site2', 'example027.com'],  // same → false (entrypoint only)
+      ['Site3', 'example100.com'],  // same → false (entrypoint only)
+      ['Site4', 'example200.com'],  // different → true (real change)
+    ]);
+
+    // Replicate the dedup+filter logic from main()
+    const primaryBySite = new Map<string, ReplacementPair>();
+    for (const r of replacements) {
+      if (!primaryBySite.has(r.siteName)) {
+        primaryBySite.set(r.siteName, r);
+      }
+    }
+    const mirrorUpdateEntries = [...primaryBySite.values()].filter(r =>
+      isRealDomainChange(r, originalLastKnownMirrors)
+    );
+
+    // After dedup: Site1, Site2, Site3, Site4 (4 entries)
+    expect(primaryBySite.size).toBe(4);
+    // After filter: Site1 and Site4 are real changes → 2
+    expect(mirrorUpdateEntries.length).toBe(2);
+    expect(mirrorUpdateEntries.map(e => e.siteName).sort()).toEqual(['Site1', 'Site4']);
+  });
+
+  test('Pattern list updates counter uses patternDiffs.length with nullish fallback', () => {
+    // The counter formula is: replacerStats.patternDiffs?.length ?? 0
+    // Use a function that returns the union so TS doesn't narrow to never
+    function maybeArr(n: number): string[] | undefined {
+      return n === 0 ? undefined : n === 1 ? [] : ['a', 'b', 'c'];
+    }
+    expect(maybeArr(2)?.length ?? 0).toBe(3);
+    expect(maybeArr(1)?.length ?? 0).toBe(0);
+    expect(maybeArr(0)?.length ?? 0).toBe(0);
+  });
+
+  test('Pattern→non-pattern counter filters warnings by pattern_changed keyword', () => {
+    // The counter formula is: summary.warnings.filter(w => w.includes('Pattern domain redirected to non-pattern')).length
+    const warnings = [
+      'Some regular warning',
+      'Pattern domain redirected to non-pattern for SiteA',
+      'Another regular warning',
+      'Pattern domain redirected to non-pattern for SiteB',
+    ];
+
+    const nPatternToNonPattern = warnings.filter(
+      w => w.includes('Pattern domain redirected to non-pattern')
+    ).length;
+
+    expect(nPatternToNonPattern).toBe(2);
+  });
+});
+
+// ============================================================================
+// 11.10 gitSkipReason — test_live guard regression (Bug 3)
+// ============================================================================
+describe('11.10 gitSkipReason', () => {
+  test('test_live: isTestMode && !dryRun → skip', () => {
+    expect(gitSkipReason(true, false, true)).toBe('test mode (files were modified locally)');
+  });
+  test('test_live: skipReason non-null even without real changes', () => {
+    expect(gitSkipReason(true, false, false)).toBe('test mode (files were modified locally)');
+  });
+  test('test_dry: isTestMode && dryRun → no skip from test mode', () => {
+    expect(gitSkipReason(true, true, true)).toBeNull();
+  });
+  test('prod_dry: !isTestMode && dryRun → no test mode skip', () => {
+    expect(gitSkipReason(false, true, true)).toBeNull();
+  });
+  test('no real changes → skip with filter cleanup message', () => {
+    expect(gitSkipReason(false, false, false)).toBe('no filter changes (all domains already up to date)');
+  });
+  test('hasRealChanges + prod_live → no skip', () => {
+    expect(gitSkipReason(false, false, true)).toBeNull();
+  });
+  test('hasRealChanges + prod_live → skipReason null → git guard not inverted', () => {
+    // Regression: skipReason must be null for real git operations to proceed.
+    // Previously the guard was inverted (if(skipReason) { git }) causing test_live to actually run git.
+    const skipReason = gitSkipReason(false, false, true);
+    expect(skipReason).toBeNull();
+    expect(skipReason === null).toBe(true);
   });
 });

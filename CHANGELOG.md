@@ -2,6 +2,33 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.4.0] - 2026-06-02
+
+### Added
+
+- Shared `isRealDomainChange()` predicate in `src/utils.ts` that unifies mirror-change
+  detection across all reporting layers. Uses pre-run `last_known_mirror` instead of
+  `startedHost`, so discovery-entrypoint and redirect-only scenarios no longer produce
+  false "mirror update" noise.
+- Split summary reporting into three semantic sections:
+  `🔄 Watchers with active mirror changed`, `📋 Watchers with filter mirror list changed`,
+  and `🚩 Pattern→non-pattern`. Console and PR/commit outputs are now watcher-oriented
+  with consistent wording.
+- Per-watcher pattern-domain diff collection in `applyReplacements()`: displays added
+  and removed domains alongside the active mirror. Each watcher's diff is independent
+  even when multiple watchers share the same numeric pattern.
+- `gitSkipReason()` guard prevents `test_live` mode from attempting real git/PR operations
+  when `gh` CLI is unavailable (ENOENT).
+
+### Fixed
+
+- Pattern diffs were non-empty on repeat runs (idempotency). Added `usedAdditionalKeys`
+  tracking through `processDomainList` to detect when the filter already contained all
+  additional domains.
+- Pattern diffs block was displayed inside the `Problems:` section. Moved it before the
+  Problems heading in console output.
+- Stale `docs/TODO_summary_reporting.md` monolithic file removed (superseded by sub-folder).
+
 ## [1.3.0] - 2026-05-31
 
 ### Added
