@@ -771,6 +771,158 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
 });
 
 // ============================================================================
+// 3.6 processDomainList — spec_drift 022: cleanup only on affected lines
+// ============================================================================
+describe('3.6 processDomainList — cleanup only on affected lines (spec_drift 022)', () => {
+  const emptyInitialMap = new Map<string, string>();
+
+  // Case A: Line with numeric pattern, NOT containing watcher domains → must NOT change
+  test('Case A: numeric-pattern line without watcher domains is untouched', () => {
+    // additionalDomainsMap is populated (from another watcher), but this line
+    // has no domains that are keys in additionalDomainsMap, and no replacement occurs
+    const hostMap = new Map([['watcher001.com', 'watcher002.com']]); // unrelated watcher
+    const priorityMap = new Map([
+      ['unrelated001.com', { initial: null, lastKnown: 'unrelated001.com', oldHost: '' }],
+    ]);
+    const additionalDomainsMap = new Map([
+      ['watcher002.com', ['watcher003.com']], // from a different watcher
+    ]);
+
+    // Line with numeric pattern but NOT related to the watcher
+    const domains = ['metamani.blog15.fc2.com', 'metamani.blog16.fc2.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Line must remain unchanged — no replacement, no additional domains for these keys
+    expect(changed).toBe(false);
+    expect(processed).toEqual(['metamani.blog15.fc2.com', 'metamani.blog16.fc2.com']);
+  });
+
+  // Case B: Line with numeric pattern, containing replaced domain → cleanup runs
+  test('Case B: numeric-pattern line with replaced domain gets cleanup', () => {
+    const hostMap = new Map([['example001.com', 'example002.com']]);
+    const priorityMap = new Map([
+      ['example002.com', { initial: null, lastKnown: 'example002.com', oldHost: 'example001.com' }],
+    ]);
+    const additionalDomainsMap = new Map<string, string[]>();
+
+    // Line contains domain that gets replaced
+    const domains = ['example001.com', 'example003.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Domain should be replaced, cleanup should run
+    expect(changed).toBe(true);
+    expect(processed).toContain('example002.com');
+  });
+
+  // Case C: Line with numeric pattern, containing key from additionalDomainsMap → cleanup runs
+  test('Case C: numeric-pattern line with additionalDomainsMap key gets cleanup', () => {
+    // No actual domain replacement, but the line contains a key in additionalDomainsMap
+    const hostMap = new Map([['watcher001.com', 'watcher002.com']]); // unrelated
+    const priorityMap = new Map([
+      ['example001.com', { initial: null, lastKnown: 'example001.com', oldHost: '' }],
+    ]);
+    const additionalDomainsMap = new Map([
+      ['example001.com', ['example002.com', 'example003.com']], // this line has the key
+    ]);
+
+    const domains = ['example001.com', 'example004.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Cleanup should run because example001.com is a key in additionalDomainsMap
+    expect(changed).toBe(true);
+    expect(processed).toContain('example001.com');
+    expect(processed).toContain('example002.com');
+    expect(processed).toContain('example003.com');
+  });
+
+  // Case D: Line without numeric pattern, not containing watcher domains → must NOT change
+  test('Case D: non-pattern line without watcher domains is untouched', () => {
+    const hostMap = new Map([['watcher001.com', 'watcher002.com']]);
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    const additionalDomainsMap = new Map([
+      ['watcher002.com', ['watcher003.com']],
+    ]);
+
+    // Non-pattern domains, not related to watcher
+    const domains = ['nopattern.com', 'testsite.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    expect(changed).toBe(false);
+    expect(processed).toEqual(['nopattern.com', 'testsite.com']);
+  });
+
+  // Case E: force_search_ahead gives additional domains, but numeric-pattern line has no keys → untouched
+  test('Case E: global additionalDomainsMap does NOT trigger cleanup on unrelated lines', () => {
+    // This is the exact bug from spec_drift 022 — additionalDomainsMap.size > 0 was
+    // triggering cleanup on ALL numeric-pattern lines, not just affected ones
+    const hostMap = new Map([['sporcafe001.xyz', 'sporcafe002.xyz']]);
+    const priorityMap = new Map([
+      // Unrelated numeric-pattern site in priorityMap
+      ['metamani.blog15.fc2.com', {
+        initial: null,
+        lastKnown: 'metamani.blog15.fc2.com',
+        oldHost: '',
+      }],
+    ]);
+    const additionalDomainsMap = new Map([
+      ['sporcafe002.xyz', ['sporcafe003.xyz']], // from sporcafe watcher
+    ]);
+
+    // Line with numeric pattern from a DIFFERENT site (metamani, not sporcafe)
+    const domains = ['metamani.blog15.fc2.com', 'metamani.blog15.fc2.com']; // duplicate
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Line must NOT be modified — sporcafe's additional domains should not
+    // trigger cleanup on metamani's line (this was the bug)
+    expect(changed).toBe(false);
+    // The duplicate should remain because dedup should not run on unaffected lines
+    expect(processed).toEqual(['metamani.blog15.fc2.com', 'metamani.blog15.fc2.com']);
+  });
+
+  // Case F: Non-pattern line with replaced domain → replacement + dedup runs
+  test('Case F: non-pattern line with replaced domain gets replacement + dedup', () => {
+    const hostMap = new Map([['old.com', 'new.com']]);
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    const additionalDomainsMap = new Map<string, string[]>();
+
+    // Non-pattern domain with duplicate that gets replaced
+    const domains = ['old.com', 'old.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Replacement should occur, and dedup should clean up the duplicate
+    expect(changed).toBe(true);
+    expect(processed).toEqual(['new.com']);
+  });
+
+  // Case G: Non-pattern line with replaced domain, no duplicates → just replacement
+  test('Case G: non-pattern line with single replaced domain', () => {
+    const hostMap = new Map([['old.com', 'new.com']]);
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    const additionalDomainsMap = new Map<string, string[]>();
+
+    const domains = ['old.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    expect(changed).toBe(true);
+    expect(processed).toEqual(['new.com']);
+  });
+});
+
+// ============================================================================
 // 4. FilterReplacer.applyReplacements — originalMirrors filtering
 // ============================================================================
 describe('4.1 originalMirrors: entry point resolution detection', () => {
@@ -1466,6 +1618,9 @@ describe('2.17 processLine — Wrapper syntax [$domain=...]', () => {
       ]],
     ]);
 
+    // Per spec_drift 022: cleanup only runs on affected lines.
+    // example2045.com is NOT in hostMap (no replacement) and NOT a key in additionalDomainsMap.
+    // Therefore, the line remains unchanged — no predicted mirror removal or additional domain appending.
     expect(processLine(
       '[$domain=example2045.com]##.header-banner',
       hostMap,
@@ -1473,7 +1628,7 @@ describe('2.17 processLine — Wrapper syntax [$domain=...]', () => {
       priorityMap as Map<string, { initial: string | null; lastKnown: string; oldHost: string }>,
       additionalDomainsMap,
     )).toEqual([
-      '[$domain=example2062.com|example2063.com|example2064.com|example2065.com|example2066.com|example2067.com|example2069.com|example2070.com|example2071.com|example2072.com|example2073.com]##.header-banner',
+      '[$domain=example2045.com]##.header-banner',
     ]);
   });
 

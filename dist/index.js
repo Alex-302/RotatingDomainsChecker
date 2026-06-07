@@ -17420,8 +17420,11 @@ function processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap,
     // Clean up predicted mirrors on real rotation, and also when force_search_ahead supplied
     // a fresh set of additional domains for the current primary host. This allows filter lines
     // to prune stale predicted mirrors even when the primary domain itself stayed unchanged.
+    // Use per-line check instead of global additionalDomainsMap.size > 0
     const hasNumericPatterns = domains.some(d => matchesNumericPattern(d));
-    if ((changed || additionalDomainsMap.size > 0) && hasNumericPatterns && priorityMap.size > 0) {
+    const hasLineInAdditionalMap = domains.some(d => additionalDomainsMap.has(normalizeDomain(d))) ||
+        replaced.some(d => additionalDomainsMap.has(normalizeDomain(d)));
+    if ((changed || hasLineInAdditionalMap) && hasNumericPatterns && priorityMap.size > 0) {
         // Find matching last_known_mirror for current pattern
         const currentPattern = extractBasePattern(domains[0]);
         let matchingLastKnown = null;
@@ -17442,10 +17445,16 @@ function processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap,
             }
         }
     }
+    // 4b. Deduplicate any changed line (non-pattern lines also need dedup)
+    // For numeric-pattern lines, deduplicateDomains was already called in 4a above.
+    if (changed) {
+        processed = deduplicateDomains(processed);
+    }
     // 5. Append additional domains from force_search_ahead
     // If an additional domain normalizes to one already in the list, replace it
     // (use the form from redirect chain, e.g. www.webspor124.xyz instead of webspor124.xyz)
-    if (additionalDomainsMap.size > 0) {
+    // spec_drift 022: use per-line check instead of global additionalDomainsMap.size > 0
+    if (hasLineInAdditionalMap) {
         const existingNormalized = new Map(); // normalized → index in processed
         for (let i = 0; i < processed.length; i++) {
             existingNormalized.set(normalizeDomain(processed[i]), i);
