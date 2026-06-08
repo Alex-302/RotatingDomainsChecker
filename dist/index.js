@@ -18648,7 +18648,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.4.1";
+const VERSION = "1.4.2";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
@@ -18668,12 +18668,18 @@ function src_matchesNumericPattern(domain) {
 }
 function selectPatternAwareWorkingSet(newHost, additionalDomains) {
     const allUniqueDomains = [...new Set([newHost, ...(additionalDomains || [])])];
-    const patternDomains = allUniqueDomains.filter(src_matchesNumericPattern).sort(naturalCompare);
+    // Strip www prefix before naturalCompare so numeric order drives canonical
+    // selection. Without this, "www.papazsports1015.pro" sorts after
+    // "papazsports1016.pro" ('w' > 'p') even though 1015 < 1016.
+    const stripWww = (s) => s.replace(/^www\./, '');
+    const patternDomains = allUniqueDomains
+        .filter(src_matchesNumericPattern)
+        .sort((a, b) => naturalCompare(stripWww(a), stripWww(b)));
     if (patternDomains.length === 0) {
         const canonicalHost = selectFirstByOrder(newHost, additionalDomains);
         const ignoredNonPatternDomains = allUniqueDomains
             .filter(domain => domain !== canonicalHost)
-            .sort(naturalCompare);
+            .sort((a, b) => naturalCompare(stripWww(a), stripWww(b)));
         return {
             canonicalHost,
             additionalPatternDomains: [],
@@ -18685,7 +18691,7 @@ function selectPatternAwareWorkingSet(newHost, additionalDomains) {
         additionalPatternDomains: patternDomains.slice(1),
         ignoredNonPatternDomains: allUniqueDomains
             .filter(domain => !src_matchesNumericPattern(domain))
-            .sort(naturalCompare),
+            .sort((a, b) => naturalCompare(stripWww(a), stripWww(b))),
     };
 }
 function extractHostname(value) {
