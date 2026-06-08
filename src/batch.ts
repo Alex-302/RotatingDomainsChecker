@@ -506,9 +506,12 @@ export class BatchProcessor {
               candidateUrl: r.startedHost,
             }];
 
-            // If the starting alias redirected to a different final host, also include the alias
-            // This ensures the current working alias is not lost from the collected domains
-            if (r.hostChanged && r.startedHost) {
+            // Always include the starting alias in the working set when force_search_ahead is enabled.
+            // This ensures the current last_known_mirror is not lost from canonical selection even
+            // when Phase 1 didn't detect a host change (e.g., antibot served at the starting URL
+            // without a redirect). If the alias differs from newHost, it's a valid entry point and
+            // belongs in the collected set for stable canonical selection across runs.
+            if (r.startedHost) {
               const startedHostNormalized = r.startedHost.toLowerCase().replace(/^www\./, '');
               const newHostNormalized = r.newHost.toLowerCase();
               if (startedHostNormalized !== newHostNormalized) {
@@ -597,8 +600,7 @@ export class BatchProcessor {
             }
 
             if (probeOk) {
-              const oldHost = this.resolver.extractHostWithoutQuery(task.oldMirror);
-              const newHost = result.finalHost.toLowerCase();
+              const oldHost = this.resolver.normalizeAndExtractHost(task.oldMirror);              const newHost = result.finalHost.toLowerCase();
               const candidateHost = this.resolver.extractHostWithoutQuery(task.candidateUrl).toLowerCase();
               const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
               this.logger.info(task.siteName, `Heuristic SUCCESS: ${task.candidateUrl}`);
@@ -699,40 +701,48 @@ export class BatchProcessor {
           } else if (result.antibotDetected && task.site.accept_antibot) {
             // Antibot detected but site accepts antibot, treat as success
             foundSites.add(task.siteIndex);
-            const oldHost = this.resolver.extractHostWithoutQuery(task.oldMirror);
-            const newHost = result.finalHost.toLowerCase();
+            const oldHost = this.resolver.normalizeAndExtractHost(task.oldMirror);            const newHost = result.finalHost.toLowerCase();
             const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
             this.logger.info(task.siteName, `Heuristic SUCCESS (antibot accepted): ${task.candidateUrl}`);
             this.logger.info(task.siteName, `Heuristic redirect chain: ${chainFormatted}`);
 
-            // Normalize URL before extracting host for heuristic success
-            const heuristicStartUrl = task.site.initial_domain || task.site.last_known_mirror;
-            const heuristicNormalized = heuristicStartUrl.startsWith("http://") || heuristicStartUrl.startsWith("https://")
-              ? heuristicStartUrl
-              : `https://${heuristicStartUrl}`;
-            const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
+            // CRITICAL: If site was already found from Phase 1 (force_search_ahead), do NOT
+            // overwrite the Phase 1 result. The candidate is already collected as additional
+            // working domain by the result.success handler above. Without this guard, a heuristic
+            // candidate with antibot accepted would overwrite Phase 1's primary result, causing
+            // LKM regression (e.g., 1015 → 1016) even when Phase 1 confirmed the LKM works.
+            if (!alreadyFound) {
+              // Normalize URL before extracting host for heuristic success
+              const heuristicStartUrl = task.site.initial_domain || task.site.last_known_mirror;
+              const heuristicNormalized = heuristicStartUrl.startsWith("http://") || heuristicStartUrl.startsWith("https://")
+                ? heuristicStartUrl
+                : `https://${heuristicStartUrl}`;
+              const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
 
-            // Save old last_known_mirror BEFORE any mutation for history comparison
-            const oldLastKnownMirrorAntibot = task.site.last_known_mirror;
+              // Save old last_known_mirror BEFORE any mutation for history comparison
+              const oldLastKnownMirrorAntibot = task.site.last_known_mirror;
 
-            // Update domain history now (we have the correct old value)
-            this.updateDomainHistory(task.site, newHost, oldLastKnownMirrorAntibot);
+              // Update domain history now (we have the correct old value)
+              this.updateDomainHistory(task.site, newHost, oldLastKnownMirrorAntibot);
 
-            // If new domain is non-pattern, do NOT update filters
-            const newHostIsPatternAntibot = this.matchesNumericPattern(newHost);
+              // If new domain is non-pattern, do NOT update filters
+              const newHostIsPatternAntibot = this.matchesNumericPattern(newHost);
 
-            results[task.siteIndex] = {
-              siteName: task.siteName,
-              oldHost,
-              newHost,
-              hostChanged: newHostIsPatternAntibot,
-              startedHost: this.resolver.extractHostWithoutQuery(heuristicNormalized),
-              result,
-              shouldUpdate: newHostIsPatternAntibot,
-              checkDurationMs: siteDuration,
-              actualCheckedDomain: task.candidateUrl,
-              historyUpdated: true, // already called updateDomainHistory above
-            };
+              results[task.siteIndex] = {
+                siteName: task.siteName,
+                oldHost,
+                newHost,
+                hostChanged: newHostIsPatternAntibot,
+                startedHost: this.resolver.extractHostWithoutQuery(heuristicNormalized),
+                result,
+                shouldUpdate: newHostIsPatternAntibot,
+                checkDurationMs: siteDuration,
+                actualCheckedDomain: task.candidateUrl,
+                historyUpdated: true, // already called updateDomainHistory above
+              };
+            } else {
+              this.logger.debug(task.siteName, `Heuristic: skip antibot result overwrite for ${task.candidateUrl} (already found from Phase 1)`);
+            }
           }
 
           // Start next task if available and below parallel limit
@@ -1127,6 +1137,41 @@ export class BatchProcessor {
         };
       } else {
         this.logger.info(siteName, `Heuristic search found no working pattern domains`);
+      }
+    }
+
+    // LKM verification: if Phase 1 checked via initial_domain (not LKM), and LKM is a
+    // numeric pattern with a lower number than the new host, verify LKM too. If LKM is
+    // alive, prefer it as canonical (spec §5.1a). This prevents losing a working LKM
+    // when initial_domain takes priority and redirects to a higher-numbered domain.
+    if (result.success && !triedRecentLastKnownMirror && hostChanged && site.initial_domain &&
+        site.last_known_mirror && this.matchesNumericPattern(site.last_known_mirror) &&
+        this.matchesNumericPattern(newHost) && !site.initial_domain.match(/\d+/)) {
+      const lkmNum = parseInt(site.last_known_mirror.match(/\d+/)?.[0] || '0', 10);
+      const newNum = parseInt(newHost.match(/\d+/)?.[0] || '0', 10);
+      if (lkmNum < newNum) {
+        this.logger.info(siteName, `LKM ${site.last_known_mirror} has lower number than new host ${newHost}, verifying LKM liveliness...`);
+        const lkmUrl = site.last_known_mirror.startsWith('http://') || site.last_known_mirror.startsWith('https://')
+          ? site.last_known_mirror
+          : `https://${site.last_known_mirror}`;
+        const lkmCheckUrl = this.appendSitePath(lkmUrl, site.path);
+        const lkmResult = await this.resolver.resolve(lkmCheckUrl, false, site, site.probe_text);
+        if (lkmResult.success) {
+          // LKM is alive — prefer it
+          this.logger.info(siteName, `LKM ${site.last_known_mirror} is alive, reverting from ${newHost}`);
+          return {
+            siteName,
+            oldHost,
+            newHost: site.last_known_mirror,
+            hostChanged: false,
+            startedHost,
+            result: lkmResult,
+            shouldUpdate: false,
+            checkDurationMs: Date.now() - siteStartTime,
+            actualCheckedDomain: lkmCheckUrl,
+          };
+        }
+        this.logger.info(siteName, `LKM ${site.last_known_mirror} is dead, keeping ${newHost}`);
       }
     }
 

@@ -771,6 +771,158 @@ describe('3.5 processDomainList — hostMap first-wins with same oldHost for pri
 });
 
 // ============================================================================
+// 3.6 processDomainList — spec_drift 022: cleanup only on affected lines
+// ============================================================================
+describe('3.6 processDomainList — cleanup only on affected lines (spec_drift 022)', () => {
+  const emptyInitialMap = new Map<string, string>();
+
+  // Case A: Line with numeric pattern, NOT containing watcher domains → must NOT change
+  test('Case A: numeric-pattern line without watcher domains is untouched', () => {
+    // additionalDomainsMap is populated (from another watcher), but this line
+    // has no domains that are keys in additionalDomainsMap, and no replacement occurs
+    const hostMap = new Map([['watcher001.com', 'watcher002.com']]); // unrelated watcher
+    const priorityMap = new Map([
+      ['unrelated001.com', { initial: null, lastKnown: 'unrelated001.com', oldHost: '' }],
+    ]);
+    const additionalDomainsMap = new Map([
+      ['watcher002.com', ['watcher003.com']], // from a different watcher
+    ]);
+
+    // Line with numeric pattern but NOT related to the watcher
+    const domains = ['metamani.blog15.fc2.com', 'metamani.blog16.fc2.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Line must remain unchanged — no replacement, no additional domains for these keys
+    expect(changed).toBe(false);
+    expect(processed).toEqual(['metamani.blog15.fc2.com', 'metamani.blog16.fc2.com']);
+  });
+
+  // Case B: Line with numeric pattern, containing replaced domain → cleanup runs
+  test('Case B: numeric-pattern line with replaced domain gets cleanup', () => {
+    const hostMap = new Map([['example001.com', 'example002.com']]);
+    const priorityMap = new Map([
+      ['example002.com', { initial: null, lastKnown: 'example002.com', oldHost: 'example001.com' }],
+    ]);
+    const additionalDomainsMap = new Map<string, string[]>();
+
+    // Line contains domain that gets replaced
+    const domains = ['example001.com', 'example003.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Domain should be replaced, cleanup should run
+    expect(changed).toBe(true);
+    expect(processed).toContain('example002.com');
+  });
+
+  // Case C: Line with numeric pattern, containing key from additionalDomainsMap → cleanup runs
+  test('Case C: numeric-pattern line with additionalDomainsMap key gets cleanup', () => {
+    // No actual domain replacement, but the line contains a key in additionalDomainsMap
+    const hostMap = new Map([['watcher001.com', 'watcher002.com']]); // unrelated
+    const priorityMap = new Map([
+      ['example001.com', { initial: null, lastKnown: 'example001.com', oldHost: '' }],
+    ]);
+    const additionalDomainsMap = new Map([
+      ['example001.com', ['example002.com', 'example003.com']], // this line has the key
+    ]);
+
+    const domains = ['example001.com', 'example004.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Cleanup should run because example001.com is a key in additionalDomainsMap
+    expect(changed).toBe(true);
+    expect(processed).toContain('example001.com');
+    expect(processed).toContain('example002.com');
+    expect(processed).toContain('example003.com');
+  });
+
+  // Case D: Line without numeric pattern, not containing watcher domains → must NOT change
+  test('Case D: non-pattern line without watcher domains is untouched', () => {
+    const hostMap = new Map([['watcher001.com', 'watcher002.com']]);
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    const additionalDomainsMap = new Map([
+      ['watcher002.com', ['watcher003.com']],
+    ]);
+
+    // Non-pattern domains, not related to watcher
+    const domains = ['nopattern.com', 'testsite.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    expect(changed).toBe(false);
+    expect(processed).toEqual(['nopattern.com', 'testsite.com']);
+  });
+
+  // Case E: force_search_ahead gives additional domains, but numeric-pattern line has no keys → untouched
+  test('Case E: global additionalDomainsMap does NOT trigger cleanup on unrelated lines', () => {
+    // This is the exact bug from spec_drift 022 — additionalDomainsMap.size > 0 was
+    // triggering cleanup on ALL numeric-pattern lines, not just affected ones
+    const hostMap = new Map([['sporcafe001.xyz', 'sporcafe002.xyz']]);
+    const priorityMap = new Map([
+      // Unrelated numeric-pattern site in priorityMap
+      ['metamani.blog15.fc2.com', {
+        initial: null,
+        lastKnown: 'metamani.blog15.fc2.com',
+        oldHost: '',
+      }],
+    ]);
+    const additionalDomainsMap = new Map([
+      ['sporcafe002.xyz', ['sporcafe003.xyz']], // from sporcafe watcher
+    ]);
+
+    // Line with numeric pattern from a DIFFERENT site (metamani, not sporcafe)
+    const domains = ['metamani.blog15.fc2.com', 'metamani.blog15.fc2.com']; // duplicate
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Line must NOT be modified — sporcafe's additional domains should not
+    // trigger cleanup on metamani's line (this was the bug)
+    expect(changed).toBe(false);
+    // The duplicate should remain because dedup should not run on unaffected lines
+    expect(processed).toEqual(['metamani.blog15.fc2.com', 'metamani.blog15.fc2.com']);
+  });
+
+  // Case F: Non-pattern line with replaced domain → replacement + dedup runs
+  test('Case F: non-pattern line with replaced domain gets replacement + dedup', () => {
+    const hostMap = new Map([['old.com', 'new.com']]);
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    const additionalDomainsMap = new Map<string, string[]>();
+
+    // Non-pattern domain with duplicate that gets replaced
+    const domains = ['old.com', 'old.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    // Replacement should occur, and dedup should clean up the duplicate
+    expect(changed).toBe(true);
+    expect(processed).toEqual(['new.com']);
+  });
+
+  // Case G: Non-pattern line with replaced domain, no duplicates → just replacement
+  test('Case G: non-pattern line with single replaced domain', () => {
+    const hostMap = new Map([['old.com', 'new.com']]);
+    const priorityMap = new Map<string, { initial: string | null; lastKnown: string; oldHost: string }>();
+    const additionalDomainsMap = new Map<string, string[]>();
+
+    const domains = ['old.com'];
+    const { processed, changed } = processDomainList(
+      domains, hostMap, emptyInitialMap, priorityMap, additionalDomainsMap
+    );
+
+    expect(changed).toBe(true);
+    expect(processed).toEqual(['new.com']);
+  });
+});
+
+// ============================================================================
 // 4. FilterReplacer.applyReplacements — originalMirrors filtering
 // ============================================================================
 describe('4.1 originalMirrors: entry point resolution detection', () => {
@@ -1466,6 +1618,9 @@ describe('2.17 processLine — Wrapper syntax [$domain=...]', () => {
       ]],
     ]);
 
+    // Per spec_drift 022: cleanup only runs on affected lines.
+    // example2045.com is NOT in hostMap (no replacement) and NOT a key in additionalDomainsMap.
+    // Therefore, the line remains unchanged — no predicted mirror removal or additional domain appending.
     expect(processLine(
       '[$domain=example2045.com]##.header-banner',
       hostMap,
@@ -1473,7 +1628,7 @@ describe('2.17 processLine — Wrapper syntax [$domain=...]', () => {
       priorityMap as Map<string, { initial: string | null; lastKnown: string; oldHost: string }>,
       additionalDomainsMap,
     )).toEqual([
-      '[$domain=example2062.com|example2063.com|example2064.com|example2065.com|example2066.com|example2067.com|example2069.com|example2070.com|example2071.com|example2072.com|example2073.com]##.header-banner',
+      '[$domain=example2045.com]##.header-banner',
     ]);
   });
 
@@ -1910,5 +2065,266 @@ describe('6.1 applyReplacements with streaming (edge cases)', () => {
     const written = await fsp.readFile(filterFile, 'utf-8');
     // File should be unchanged (no matches for example501.com)
     expect(written).toBe(content);
+  });
+});
+
+// ============================================================================
+// 7. applyReplacements — patternDiffs return value (task 03 regression tests)
+// ============================================================================
+describe('7. applyReplacements — patternDiffs diff collection', () => {
+  let tmpDir: string;
+
+  function makeConfig(repoPath: string): Config {
+    return {
+      http: { timeout: 5000, retries: 1, heuristicTimeout: 3000, userAgent: 'test' },
+      processing: { parallel: 1, redirectDepth: 5 },
+      dnsPreCheck: { enabled: false, timeout: 1000, retryOnce: false },
+      contentProbe: { enabled: false },
+      antibot: { detectCodes: [], detectUrlPattern: '' },
+      thresholds: { failedDaysWarning: 3 },
+      heuristic: { enabled: false, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+      logging: { saveToFile: false, incremental: false, filePath: '' },
+      git: { mode: 'debug', branch: 'master', prBranchPrefix: 'test-' },
+      filtersdir: {
+        repoPath,
+        filterDirPattern: '*Filter',
+        filePattern: '*.txt',
+      },
+      filtersdir_test: {
+        repoPath,
+        filterDirPattern: '*Filter',
+        filePattern: '*.txt',
+      },
+    };
+  }
+
+  beforeEach(async () => {
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'rdc-patterndiff-'));
+    await fsp.mkdir(path.join(tmpDir, 'TestFilter'));
+  });
+
+  afterEach(async () => {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test('force_search_ahead: additional domains appear in added list', async () => {
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, '||example001.com^\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example002.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example003.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example004.com', startedHost: 'example001.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    // One diff entry for PatternWatcher
+    expect(result.patternDiffs).toHaveLength(1);
+    const diff = result.patternDiffs[0];
+    expect(diff.siteName).toBe('PatternWatcher');
+    // All three new hosts should be in added (none were in oldHosts)
+    expect(diff.added).toEqual(expect.arrayContaining(['example002.com', 'example003.com', 'example004.com']));
+    expect(diff.added).toHaveLength(3);
+    // oldHost should be in removed
+    expect(diff.removed).toEqual(['example001.com']);
+    // Two additional domains (example003, example004) beyond primary
+    expect(diff.additionalCount).toBe(2);
+  });
+
+  test('cosmetic rule + identity primary + additional → non-empty patternDiffs', async () => {
+    // Simulates: filter has cosmetic rule with only the primary domain,
+    // but force_search_ahead found additional working domains.
+    // Unlike URL rules (step 4), cosmetic rules (step 2) go through
+    // processDomainList which appends additionalDomainsMap entries directly.
+    // Regression test: usedAdditionalKeys must be tracked via processDomainList too.
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, 'example001.com##.ads\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example001.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example005.com', startedHost: 'example001.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    // Additional domain should be appended to the cosmetic rule line
+    expect(result.patternDiffs).toHaveLength(1);
+    const diff = result.patternDiffs[0];
+    expect(diff.siteName).toBe('PatternWatcher');
+    // example005.com was added as additional domain
+    expect(diff.added).toContain('example005.com');
+    expect(diff.added).toHaveLength(1);
+    // primary (identity) — not removed
+    expect(diff.removed).toHaveLength(0);
+    expect(diff.additionalCount).toBe(1);
+  });
+
+  test('cosmetic rule already contains additional domains → empty patternDiffs on repeat run', async () => {
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, 'example001.com,example005.com##.ads\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example001.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example005.com', startedHost: 'example001.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    expect(result.patternDiffs).toHaveLength(0);
+  });
+
+  test('two watchers with same pattern produce separate diffs', async () => {
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, '||example010.com^\n||example020.com^\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      { siteName: 'WatcherAlpha', oldHost: 'example010.com', newHost: 'example011.com', startedHost: 'example010.com', checkDurationMs: 100 },
+      { siteName: 'WatcherBeta', oldHost: 'example020.com', newHost: 'example021.com', startedHost: 'example020.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    // Two separate diff entries
+    expect(result.patternDiffs).toHaveLength(2);
+    const alphaDiff = result.patternDiffs.find(d => d.siteName === 'WatcherAlpha');
+    const betaDiff = result.patternDiffs.find(d => d.siteName === 'WatcherBeta');
+    expect(alphaDiff).toBeDefined();
+    expect(betaDiff).toBeDefined();
+    expect(alphaDiff!.added).toContain('example011.com');
+    expect(alphaDiff!.removed).toContain('example010.com');
+    expect(betaDiff!.added).toContain('example021.com');
+    expect(betaDiff!.removed).toContain('example020.com');
+  });
+
+  test('same oldHost for two watchers produces separate diffs', async () => {
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, '||example030.com^\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      { siteName: 'WatcherOne', oldHost: 'example030.com', newHost: 'example031.com', startedHost: 'example030.com', checkDurationMs: 100 },
+      { siteName: 'WatcherTwo', oldHost: 'example030.com', newHost: 'example032.com', startedHost: 'example030.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    // Two separate diff entries, one per watcher
+    expect(result.patternDiffs).toHaveLength(2);
+    const oneDiff = result.patternDiffs.find(d => d.siteName === 'WatcherOne');
+    const twoDiff = result.patternDiffs.find(d => d.siteName === 'WatcherTwo');
+    expect(oneDiff).toBeDefined();
+    expect(twoDiff).toBeDefined();
+    expect(oneDiff!.added).toContain('example031.com');
+    expect(oneDiff!.removed).toContain('example030.com');
+    expect(twoDiff!.added).toContain('example032.com');
+    expect(twoDiff!.removed).toContain('example030.com');
+  });
+
+  test('identity primary + additional → empty patternDiffs (idempotency, Bug 2 regression)', async () => {
+    // Simulates second run: filter already has the correct primary domain.
+    // Primary replacement is identity (oldHost === newHost), but force_search_ahead
+    // produced additional replacements for the same site. Since oh === nh for the
+    // primary entry in hostMap, the hostMap loop in processLine is skipped entirely,
+    // no extraLines are generated, and the diff should be empty.
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, '||example001.com^\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      // Primary: identity (oldHost === newHost) — filter content already correct
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example001.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      // Additional domain from force_search_ahead (same oldHost)
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example005.com', startedHost: 'example001.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    // No diff because nothing actually changed in the filter
+    expect(result.patternDiffs).toHaveLength(0);
+  });
+
+  test('second run with initial_domain + identity primary → empty patternDiffs (Bug 2 regression)', async () => {
+    // Simulates second run where the filter already has the correct primary domain.
+    // replacementSources = [initial_domain, last_known_mirror], but initial_domain
+    // is NOT in the filter (was replaced in first run). The primary identity entry
+    // (oldHost === newHost) skips the hostMap loop, and since initial_domain is not
+    // found in any line, no replacement happens. PatternDiffs should be empty.
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, '||example010.com^\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      // initial_domain → primaryNewHost — initial_domain NOT in filter (replaced in 1st run)
+      { siteName: 'WatcherAlpha', oldHost: 'old-initial.com', newHost: 'example010.com', startedHost: 'old-initial.com', checkDurationMs: 100 },
+      // last_known_mirror → same (identity) — filter already has this
+      { siteName: 'WatcherAlpha', oldHost: 'example010.com', newHost: 'example010.com', startedHost: 'old-initial.com', checkDurationMs: 100 },
+      // Additional domain from force_search_ahead
+      { siteName: 'WatcherAlpha', oldHost: 'example010.com', newHost: 'example011.com', startedHost: 'old-initial.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    // No diff: initial_domain not in filter, primary is identity, no extraLines generated
+    expect(result.patternDiffs).toHaveLength(0);
+  });
+
+  test('cosmetic rule with existing + new additional domains → only truly new in added (Bug 2 regression)', async () => {
+    // Simulates second run: filter already has example001.com + example002.com from a previous run.
+    // New run's force_search_ahead provides 002 (already present) + 003 (truly new).
+    // patternDiffs.added must contain ONLY 003, not 002.
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, 'example001.com,example002.com##.ads\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      // Primary: identity (oldHost === newHost)
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example001.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      // Additional domain ALREADY in filter from previous run
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example002.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      // Additional domain TRULY NEW
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example003.com', startedHost: 'example001.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    expect(result.patternDiffs).toHaveLength(1);
+    const diff = result.patternDiffs[0];
+    // Only example003.com is truly new
+    expect(diff.added).toEqual(['example003.com']);
+    // example002.com is already in the filter, should NOT be in added
+    expect(diff.added).not.toContain('example002.com');
+    // No domains were removed
+    expect(diff.removed).toHaveLength(0);
+    // additionalCount reflects total additional, not just new
+    expect(diff.additionalCount).toBe(2);
   });
 });

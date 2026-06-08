@@ -4,7 +4,8 @@
 import { promises as fs, createReadStream } from "fs";
 import path from "path";
 import { createInterface } from "readline/promises";
-import type { Config, ReplacementPair } from "./types.js";
+import type { Config, PatternDiffEntry, ReplacementPair } from "./types.js";
+import { naturalCompare, isRealDomainChange } from "./utils.js";
 import { Logger, LogLevel } from "./logger.js";
 import { table as renderTable, getBorderCharacters } from "table";
 
@@ -131,7 +132,8 @@ function processDomainList(
   hostMap: Map<string, string>,
   initialToLastKnownMap: Map<string, string>,
   priorityMap: Map<string, { initial: string | null; lastKnown: string; oldHost: string }>,
-  additionalDomainsMap: Map<string, string[]> = new Map()
+  additionalDomainsMap: Map<string, string[]> = new Map(),
+  usedAdditionalKeys?: Set<string>,
 ): { processed: string[]; changed: boolean; schemeChangeDetected: boolean } {
   // 1. Replace domains
   const replaced = domains.map(d => replaceDomain(d, hostMap, initialToLastKnownMap));
@@ -151,8 +153,12 @@ function processDomainList(
   // Clean up predicted mirrors on real rotation, and also when force_search_ahead supplied
   // a fresh set of additional domains for the current primary host. This allows filter lines
   // to prune stale predicted mirrors even when the primary domain itself stayed unchanged.
+  // Use per-line check instead of global additionalDomainsMap.size > 0
   const hasNumericPatterns = domains.some(d => matchesNumericPattern(d));
-  if ((changed || additionalDomainsMap.size > 0) && hasNumericPatterns && priorityMap.size > 0) {
+  const hasLineInAdditionalMap =
+    domains.some(d => additionalDomainsMap.has(normalizeDomain(d))) ||
+    replaced.some(d => additionalDomainsMap.has(normalizeDomain(d)));
+  if ((changed || hasLineInAdditionalMap) && hasNumericPatterns && priorityMap.size > 0) {
     // Find matching last_known_mirror for current pattern
     const currentPattern = extractBasePattern(domains[0]);
     let matchingLastKnown = null;
@@ -177,10 +183,17 @@ function processDomainList(
     }
   }
 
+  // 4b. Deduplicate any changed line (non-pattern lines also need dedup)
+  // For numeric-pattern lines, deduplicateDomains was already called in 4a above.
+  if (changed) {
+    processed = deduplicateDomains(processed);
+  }
+
   // 5. Append additional domains from force_search_ahead
   // If an additional domain normalizes to one already in the list, replace it
   // (use the form from redirect chain, e.g. www.webspor124.xyz instead of webspor124.xyz)
-  if (additionalDomainsMap.size > 0) {
+  // spec_drift 022: use per-line check instead of global additionalDomainsMap.size > 0
+  if (hasLineInAdditionalMap) {
     const existingNormalized = new Map<string, number>(); // normalized → index in processed
     for (let i = 0; i < processed.length; i++) {
       existingNormalized.set(normalizeDomain(processed[i]), i);
@@ -189,6 +202,7 @@ function processDomainList(
       const key = normalizeDomain(d);
       const extras = additionalDomainsMap.get(key);
       if (extras) {
+        let changedByExtras = false;
         for (const extra of extras) {
           if (matchesNumericPattern(d) && !matchesNumericPattern(extra)) {
             continue;
@@ -197,14 +211,23 @@ function processDomainList(
           const existingIdx = existingNormalized.get(extraNorm);
           if (existingIdx !== undefined) {
             // Replace existing domain with the form from redirect chain
-            processed[existingIdx] = extra;
+            if (processed[existingIdx] !== extra) {
+              processed[existingIdx] = extra;
+              changedByExtras = true;
+            }
           } else {
             processed.push(extra);
             existingNormalized.set(extraNorm, processed.length - 1);
+            changedByExtras = true;
           }
+        }
+        if (changedByExtras) {
+          usedAdditionalKeys?.add(key);
         }
       }
     }
+    // Final deduplication after additional-domain appending
+    processed = deduplicateDomains(processed);
   }
 
   const finalChanged = changed || processed.length !== domains.length || domains.some((d, i) => processed[i] !== d);
@@ -222,12 +245,12 @@ export class FilterReplacer {
     replacements: ReplacementPair[],
     dryRun: boolean = false,
     originalMirrors?: Map<string, string>,
-  ): Promise<{filesScanned: number, filesModified: number, totalLineEdits: number, replacerSeconds: string}> {
+  ): Promise<{filesScanned: number, filesModified: number, totalLineEdits: number, replacerSeconds: string, patternDiffs: PatternDiffEntry[]}> {
     const replacerStart = Date.now();
 
     if (replacements.length === 0) {
       this._logger.logGlobal(LogLevel.INFO, "No replacements to process.");
-      return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000' };
+      return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000', patternDiffs: [] };
     }
 
     // Build ASCII table: Site | From (startedHost) | To | Time
@@ -241,15 +264,9 @@ export class FilterReplacer {
         primaryBySite.set(r.siteName, r);
       }
     }
-    const uniqueChanges = [...primaryBySite.values()].filter(r => {
-      // Skip if newHost matches the original mirror (not a real change)
-      if (originalMirrors) {
-        const originalMirror = originalMirrors.get(r.siteName);
-        if (originalMirror && r.newHost === originalMirror) return false;
-      }
-      const fromHost = r.startedHost || r.oldHost;
-      return fromHost !== r.newHost;
-    });
+    const uniqueChanges = [...primaryBySite.values()].filter(r =>
+      isRealDomainChange(r, originalMirrors)
+    );
 
     if (uniqueChanges.length > 0) {
       const rows: string[][] = [["Site", "From", "To", "Time"]];
@@ -280,7 +297,7 @@ export class FilterReplacer {
     const repoPath = filtersConfig.repoPath;
     if (!repoPath) {
       this._logger.logGlobal(LogLevel.INFO, `${this._isTestMode && this._config.filtersdir_test ? 'filtersdir_test' : 'filtersdir'}.repoPath is empty. Skipping file replacements.`);
-      return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000' };
+      return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000', patternDiffs: [] };
     }
 
     const filterDirPattern = filtersConfig.filterDirPattern || "*Filter";
@@ -289,7 +306,7 @@ export class FilterReplacer {
     const files = await findTargetFiles(repoPath, filterDirPattern, filePattern);
     if (files.length === 0) {
       this._logger.logGlobal(LogLevel.INFO, "No target filter files found. Nothing to replace.");
-      return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000' };
+      return { filesScanned: 0, filesModified: 0, totalLineEdits: 0, replacerSeconds: '0.000', patternDiffs: [] };
     }
 
     // Log replacement phase start (moved to end)
@@ -390,6 +407,22 @@ export class FilterReplacer {
       file: string;
       changes: Array<{ line: number; before: string; after: string }>;
     }> = [];
+    const replacedOldHosts = new Set<string>();
+    const usedAdditionalKeys = new Set<string>();
+
+    // Track domains seen in filter lines BEFORE modification, per site.
+    // Used by patternDiffs computation to report only truly new domains.
+    const siteDomainsBefore = new Map<string, Set<string>>();
+    // Reverse lookup: normalized domain → set of siteNames (from replacements)
+    // Uses a multi-map because the same oldHost can belong to multiple watchers.
+    const oldHostToSite = new Map<string, Set<string>>();
+    for (const r of replacements) {
+      const norm = normalizeDomain(r.oldHost);
+      if (!oldHostToSite.has(norm)) {
+        oldHostToSite.set(norm, new Set());
+      }
+      oldHostToSite.get(norm)!.add(r.siteName);
+    }
 
     for (const file of files) {
       let changed = false;
@@ -415,7 +448,31 @@ export class FilterReplacer {
 
         for await (const line of rl) {
           lineNum++;
-          const updatedLines = processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+
+          // Extract domains from the original line for "before" state tracking.
+          // Used by patternDiffs to report only truly new domains (Bug 2 fix).
+          const lineDomains = extractDomainsFromLine(line);
+          const trackedSitesForLine = new Set<string>();
+          for (const d of lineDomains) {
+            const norm = normalizeDomain(d);
+            const siteNames = oldHostToSite.get(norm);
+            if (siteNames) {
+              for (const siteName of siteNames) {
+                if (!trackedSitesForLine.has(siteName)) {
+                  trackedSitesForLine.add(siteName);
+                  if (!siteDomainsBefore.has(siteName)) {
+                    siteDomainsBefore.set(siteName, new Set());
+                  }
+                  // Add ALL extracted domains from this line to the site's before set
+                  for (const ld of lineDomains) {
+                    siteDomainsBefore.get(siteName)!.add(normalizeDomain(ld));
+                  }
+                }
+              }
+            }
+          }
+
+          const updatedLines = processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, replacedOldHosts, usedAdditionalKeys);
           // Check if line changed (first element differs) or extra lines were added
           if (updatedLines.length > 1 || updatedLines[0] !== line) {
             changed = true;
@@ -459,11 +516,60 @@ export class FilterReplacer {
 
     this._logger.logGlobal(LogLevel.DEBUG, `=== Domains replacement finished ===\n`);
 
+    // Compute per-watcher pattern diffs from actual filter content changes.
+    // Uses siteDomainsBefore (domains extracted from lines before modification)
+    // instead of oldHosts from replacements, to avoid reporting already-present
+    // domains as "added" on every run. See spec §11.
+    const patternDiffs: PatternDiffEntry[] = [];
+
+    // Compute diff per site — only for pattern-domain watchers
+    for (const [siteName, primaryNewHost] of seenPrimary) {
+      if (!matchesNumericPattern(primaryNewHost)) {
+        continue;
+      }
+      const normalizedPrimary = normalizeDomain(primaryNewHost);
+
+      // Only show diff if the filter content was actually modified for this site.
+      // Check: (a) was the primary oldHost actually found & replaced in a filter line?
+      //        (b) were extra lines (additional domains) actually generated?
+      const wasPrimaryReplaced = replacements
+        .filter(r => r.siteName === siteName)
+        .some(r => replacedOldHosts.has(normalizeDomain(r.oldHost)));
+      const hadExtraLines = usedAdditionalKeys.has(normalizedPrimary);
+      if (!wasPrimaryReplaced && !hadExtraLines) {
+        continue;
+      }
+
+      const additional = additionalDomainsMap.get(normalizedPrimary) || [];
+      const allNewHosts = new Set([primaryNewHost, ...additional]);
+      const beforeSet = siteDomainsBefore.get(siteName) || new Set();
+
+      // added = domains in "after" that were NOT in the filter before
+      const added = [...allNewHosts]
+        .filter(h => !beforeSet.has(normalizeDomain(h)))
+        .sort(naturalCompare);
+      // removed = domains that were in the filter before but NOT in "after"
+      const removed = [...beforeSet]
+        .filter(h => !allNewHosts.has(h))
+        .sort(naturalCompare);
+
+      if (added.length > 0 || removed.length > 0) {
+        patternDiffs.push({
+          siteName,
+          added,
+          removed,
+          active: primaryNewHost,
+          additionalCount: additional.length,
+        });
+      }
+    }
+
     return {
       filesScanned: files.length,
       filesModified: modifiedFiles,
       totalLineEdits: totalLineEdits,
-      replacerSeconds: replacerSeconds
+      replacerSeconds: replacerSeconds,
+      patternDiffs,
     };
   }
 }
@@ -662,7 +768,9 @@ function processLine(
   hostMap: Map<string, string>,
   initialToLastKnownMap: Map<string, string>,
   priorityMap: Map<string, { initial: string | null; lastKnown: string; oldHost: string }>,
-  additionalDomainsMap: Map<string, string[]> = new Map()
+  additionalDomainsMap: Map<string, string[]> = new Map(),
+  replacedOldHosts?: Set<string>,
+  usedAdditionalKeys?: Set<string>,
 ): string[] {
   if (shouldSkipLine(line)) return [line];
 
@@ -676,11 +784,11 @@ function processLine(
       if (pv.startsWith("/")) return [line];
       if (pv.includes("|")) {
         const d = pv.split("|").map(s => s.trim());
-        const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+        const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
         if (r.changed || r.processed.length !== d.length)
           return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
       } else {
-        const r = processDomainList([pv], hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+        const r = processDomainList([pv], hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
         if (r.changed || r.processed.length !== 1) {
           return ["[" + pn + "=" + r.processed.join("|") + "]" + rest];
         }
@@ -698,7 +806,7 @@ function processLine(
   if (idx > 0) {
     const left = line.slice(0, idx), right = line.slice(idx);
     const parts = left.split(",").map(s => s.trim());
-    const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+    const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
     if (r.changed || r.processed.length !== parts.length) return [r.processed.join(",") + right];
     return [line];
   }
@@ -710,7 +818,7 @@ function processLine(
       if (!line.slice(0, pos).match(/\$\w+=/)) {
         const left = line.slice(0, pos), right = line.slice(pos);
         const parts = left.split(",").map(s => s.trim());
-        const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+        const r = processDomainList(parts, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
         if (r.changed || r.processed.length !== parts.length) return [r.processed.join(",") + right];
         return [line];
       }
@@ -726,9 +834,13 @@ function processLine(
     if (re.test(out)) {
       re.lastIndex = 0;
       out = out.replace(re, "||" + nh + "^");
+      replacedOldHosts?.add(normalizeDomain(oh));
       const ex = additionalDomainsMap.get(normalizeDomain(nh));
-      if (ex) for (const e of ex)
-        extraLines.push(out.replace(new RegExp("\\|\\|" + escapeRegExp(nh) + "\\^", "g"), "||" + e + "^"));
+      if (ex) {
+        usedAdditionalKeys?.add(normalizeDomain(nh));
+        for (const e of ex)
+          extraLines.push(out.replace(new RegExp("\\|\\|" + escapeRegExp(nh) + "\\^", "g"), "||" + e + "^"));
+      }
     }
   }
   const pm = out.match(/\$([^$]+)$/);
@@ -742,7 +854,7 @@ function processLine(
       const pn = pair.slice(0, eq), pv = pair.slice(eq + 1);
       if (pv.includes("|")) {
         const d = pv.split("|").map(s => s.trim());
-        const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap);
+        const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
         np.push(r.changed || r.processed.length !== d.length
           ? pn + "=" + r.processed.join("|") : pair);
       } else {
@@ -755,6 +867,87 @@ function processLine(
   }
   return [out, ...extraLines];
 }
+
+/**
+ * Extract domain tokens from a filter line for "before" state tracking.
+ * Used by patternDiffs to compute the actual diff of filter content.
+ *
+ * Covers:
+ * - URL rules: ||domain^
+ * - Cosmetic rules: domain##... or domain1,domain2##...
+ * - Dollar-markers: domain$$... or domain$@$...
+ * - Wrapper syntax: [$domain=...]
+ * - Domain parameters: $domain=val1|val2
+ *
+ * Returns an array of domain strings found in the line (may be empty).
+ */
+function extractDomainsFromLine(line: string): string[] {
+  if (shouldSkipLine(line)) return [];
+
+  // Wrapper syntax: [$domain=...]
+  const wm = line.match(/^\[([^\]]+)\](.*)/);
+  if (wm) {
+    const wc = wm[1];
+    const eq = wc.indexOf("=");
+    if (eq > 0) {
+      const pv = wc.slice(eq + 1);
+      if (pv.startsWith("/")) return [];
+      if (pv.includes("|")) {
+        return pv.split("|").map(s => s.trim()).filter(Boolean);
+      }
+      return [pv.trim()].filter(Boolean);
+    }
+    return [];
+  }
+
+  // Cosmetic markers: ## #@# #?# #@?# #$?# #@$?# #%# #@%#
+  for (const sep of COSMETIC_MARKERS) {
+    const pos = line.indexOf(sep);
+    if (pos > 0) {
+      const left = line.slice(0, pos);
+      return left.split(",").map(s => s.trim()).filter(Boolean);
+    }
+  }
+
+  // Dollar markers: $$ $@$
+  for (const sep of DOLLAR_MARKERS) {
+    const pos = line.indexOf(sep);
+    if (pos > 0) {
+      if (!line.slice(0, pos).match(/\$\w+=/)) {
+        const left = line.slice(0, pos);
+        return left.split(",").map(s => s.trim()).filter(Boolean);
+      }
+    }
+  }
+
+  // URL rules: ||domain^
+  const urlMatch = line.match(/^\|\|([^/^]+)\^/);
+  if (urlMatch) {
+    return [urlMatch[1]];
+  }
+
+  // Domain parameters: $domain=val or $domain=val1|val2
+  const paramMatch = line.match(/\$([^$]+)$/);
+  if (paramMatch) {
+    const params = paramMatch[1];
+    const domains: string[] = [];
+    for (const pair of params.split(",")) {
+      const eq = pair.indexOf("=");
+      if (eq === -1) continue;
+      const pv = pair.slice(eq + 1);
+      if (pv.includes("|")) {
+        domains.push(...pv.split("|").map(s => s.trim()).filter(Boolean));
+      } else {
+        domains.push(pv.trim());
+      }
+    }
+    return domains;
+  }
+
+  return [];
+}
+
+
 // Exports for testing
 export {
   normalizeDomain,
@@ -773,4 +966,5 @@ export {
   shouldSkipLine,
   findTargetFiles,
   escapeRegExp,
+  extractDomainsFromLine,
 };
