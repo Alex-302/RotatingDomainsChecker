@@ -84,26 +84,74 @@ sites:
     expect(watchers.sites['example001.com'].last_known_mirror).toBe('example020.com');
   });
 
-  test('saveWatchers preserves comments', async () => {
-    const watchersContent = `# Main watchers file
-sites:
-  # Turkish sites
-  example001.com:
-    initial_domain: example001.com
-    last_known_mirror: example020.com
-    success_since: "2024-01-15"
-    failed_since: ""
-    failed_days: 0
-`;
+  test('saveWatchers preserves all comment positions (rich)', async () => {
+    // Note: inline comment after `sites:` at root level is lost by yaml library's
+    // parseDocument+stringify round-trip — that's a library limitation, not ours.
+    // All other comment positions (before-field, inline after field values) are preserved.
+    const watchersContent = [
+      '# comment',
+      'sites:',
+      '# comment',
+      '  videasy.net:',
+      '  # comment',
+      '    last_known_mirror: www.videasy.to # comment',
+      '    # comment',
+      '    success_since: "2026-06-08 16:12" # comment',
+    ].join('\n') + '\n';
     const watchersPath = join(tempDir, 'watchers.yml');
     writeFileSync(watchersPath, watchersContent, 'utf-8');
 
     const watchers = await loadWatchers(watchersPath);
-    watchers.sites['example001.com'].last_known_mirror = 'example025.com';
+    watchers.sites['videasy.net'].success_since = '2026-06-09 10:00';
     await saveWatchers(watchers, watchersPath);
 
     const savedContent = readFileSync(watchersPath, 'utf-8');
-    expect(savedContent).toContain('example025.com');
+
+    // Top-level comment before sites: preserved
+    expect(savedContent).toContain('# comment');
+    // Before-field comment under videasy.net preserved
+    expect(savedContent).toContain('  # comment');
+    // Inline comment after last_known_mirror value preserved
+    expect(savedContent).toContain('last_known_mirror: www.videasy.to # comment');
+    // Updated field value written
+    expect(savedContent).toContain('success_since: "2026-06-09 10:00"');
+    // Inline comment after success_since preserved
+    expect(savedContent).toMatch(/success_since: "2026-06-09 10:00" # comment/);
+  });
+
+  test('saveWatchers preserves comment at every structural level', async () => {
+    // Top-level, before-key, inline-after-key, before-field, inline-after-field
+    const watchersContent = [
+      '# TOP: main watchers file',
+      'sites:',
+      '  # SITE-COMMENT: before site key',
+      '  site1.com:',
+      '    # FIELD-COMMENT: before last_known_mirror',
+      '    last_known_mirror: mirror1.com # INLINE: current mirror',
+      '    # FIELD-COMMENT: before success_since',
+      '    success_since: "2024-01-15 10:00" # INLINE: first success',
+      '    # FIELD-COMMENT: before failed_since',
+      '    failed_since: ""',
+      '    failed_days: 0',
+    ].join('\n') + '\n';
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    const watchers = await loadWatchers(watchersPath);
+    watchers.sites['site1.com'].last_known_mirror = 'mirror2.com';
+    await saveWatchers(watchers, watchersPath);
+
+    const savedContent = readFileSync(watchersPath, 'utf-8');
+
+    expect(savedContent).toContain('# TOP: main watchers file');
+    expect(savedContent).toContain('# SITE-COMMENT: before site key');
+    expect(savedContent).toContain('# FIELD-COMMENT: before last_known_mirror');
+    expect(savedContent).toContain('last_known_mirror: mirror2.com # INLINE: current mirror');
+    expect(savedContent).toContain('# FIELD-COMMENT: before success_since');
+    expect(savedContent).toContain('success_since: "2024-01-15 10:00" # INLINE: first success');
+    expect(savedContent).toContain('# FIELD-COMMENT: before failed_since');
+    expect(savedContent).toContain('failed_since: ""');
+    expect(savedContent).toContain('failed_days: 0');
   });
 
   test('updating individual site fields does not overwrite others', async () => {

@@ -1,5 +1,5 @@
 import { promises as fs } from "fs";
-import { parse, parseDocument, stringify } from "yaml";
+import { parse, parseDocument, stringify, YAMLMap, Scalar } from "yaml";
 import type { Config, Watchers } from "./types.js";
 
 export async function loadConfig(configPath = "./config.yml"): Promise<Config> {
@@ -30,15 +30,47 @@ export async function saveWatchers(watchers: Watchers, watchersPath = "watchers.
   const existingContent = await fs.readFile(watchersPath, "utf-8");
   const doc = parseDocument(existingContent);
 
-  // Update sites in the document, dropping legacy `last_seen` if present
-  if (doc.contents && typeof doc.contents === 'object') {
-    const yamlMap = doc.contents as any;
-    const sites = yamlMap.get('sites');
-    if (sites && typeof sites === 'object') {
+  // Update sites in the document, preserving existing AST comments
+  if (doc.contents instanceof YAMLMap) {
+    const sites = doc.contents.get('sites');
+    if (sites instanceof YAMLMap) {
       Object.keys(watchers.sites).forEach(key => {
         const siteData = { ...watchers.sites[key] } as Record<string, unknown>;
         delete siteData.last_seen; // never persist legacy field
-        sites.set(key, siteData);
+
+        // Find existing site node in the AST
+        let siteMap: YAMLMap | undefined;
+        for (const item of sites.items) {
+          const itemKey = (item.key as Scalar | undefined)?.value;
+          if (itemKey === key && item.value instanceof YAMLMap) {
+            siteMap = item.value;
+            break;
+          }
+        }
+
+        if (siteMap) {
+          // Update individual fields on the existing AST node.
+          // This preserves comments on other fields and inline comments.
+          for (const [k, v] of Object.entries(siteData)) {
+            siteMap.set(k, v);
+          }
+
+          // Remove fields that are no longer present in the data
+          // (handles legacy `last_seen` and any removed fields)
+          const existingKeys = new Set<string>();
+          for (const item of siteMap.items) {
+            const k = (item.key as Scalar | undefined)?.value;
+            if (k !== undefined) existingKeys.add(String(k));
+          }
+          for (const existingKey of existingKeys) {
+            if (!(existingKey in siteData)) {
+              siteMap.delete(existingKey);
+            }
+          }
+        } else {
+          // Fallback: site node not found in AST — create new
+          (sites as any).set(key, siteData);
+        }
       });
     }
   }
