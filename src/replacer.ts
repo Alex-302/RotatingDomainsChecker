@@ -5,7 +5,7 @@ import { promises as fs, createReadStream } from "fs";
 import path from "path";
 import { createInterface } from "readline/promises";
 import type { Config, PatternDiffEntry, ReplacementPair } from "./types.js";
-import { isRealDomainChange } from "./utils.js";
+import { naturalCompare, isRealDomainChange } from "./utils.js";
 import { Logger, LogLevel } from "./logger.js";
 import { table as renderTable, getBorderCharacters } from "table";
 
@@ -410,6 +410,20 @@ export class FilterReplacer {
     const replacedOldHosts = new Set<string>();
     const usedAdditionalKeys = new Set<string>();
 
+    // Track domains seen in filter lines BEFORE modification, per site.
+    // Used by patternDiffs computation to report only truly new domains.
+    const siteDomainsBefore = new Map<string, Set<string>>();
+    // Reverse lookup: normalized domain → set of siteNames (from replacements)
+    // Uses a multi-map because the same oldHost can belong to multiple watchers.
+    const oldHostToSite = new Map<string, Set<string>>();
+    for (const r of replacements) {
+      const norm = normalizeDomain(r.oldHost);
+      if (!oldHostToSite.has(norm)) {
+        oldHostToSite.set(norm, new Set());
+      }
+      oldHostToSite.get(norm)!.add(r.siteName);
+    }
+
     for (const file of files) {
       let changed = false;
       const lineChanges: Array<{ line: number; before: string; after: string }> = [];
@@ -434,6 +448,30 @@ export class FilterReplacer {
 
         for await (const line of rl) {
           lineNum++;
+
+          // Extract domains from the original line for "before" state tracking.
+          // Used by patternDiffs to report only truly new domains (Bug 2 fix).
+          const lineDomains = extractDomainsFromLine(line);
+          const trackedSitesForLine = new Set<string>();
+          for (const d of lineDomains) {
+            const norm = normalizeDomain(d);
+            const siteNames = oldHostToSite.get(norm);
+            if (siteNames) {
+              for (const siteName of siteNames) {
+                if (!trackedSitesForLine.has(siteName)) {
+                  trackedSitesForLine.add(siteName);
+                  if (!siteDomainsBefore.has(siteName)) {
+                    siteDomainsBefore.set(siteName, new Set());
+                  }
+                  // Add ALL extracted domains from this line to the site's before set
+                  for (const ld of lineDomains) {
+                    siteDomainsBefore.get(siteName)!.add(normalizeDomain(ld));
+                  }
+                }
+              }
+            }
+          }
+
           const updatedLines = processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, replacedOldHosts, usedAdditionalKeys);
           // Check if line changed (first element differs) or extra lines were added
           if (updatedLines.length > 1 || updatedLines[0] !== line) {
@@ -478,17 +516,11 @@ export class FilterReplacer {
 
     this._logger.logGlobal(LogLevel.DEBUG, `=== Domains replacement finished ===\n`);
 
-    // Compute per-watcher pattern diffs from replacement data
+    // Compute per-watcher pattern diffs from actual filter content changes.
+    // Uses siteDomainsBefore (domains extracted from lines before modification)
+    // instead of oldHosts from replacements, to avoid reporting already-present
+    // domains as "added" on every run. See spec §11.
     const patternDiffs: PatternDiffEntry[] = [];
-
-    // Collect oldHosts per site
-    const oldHostsBySite = new Map<string, Set<string>>();
-    for (const r of replacements) {
-      if (!oldHostsBySite.has(r.siteName)) {
-        oldHostsBySite.set(r.siteName, new Set());
-      }
-      oldHostsBySite.get(r.siteName)!.add(r.oldHost);
-    }
 
     // Compute diff per site — only for pattern-domain watchers
     for (const [siteName, primaryNewHost] of seenPrimary) {
@@ -500,9 +532,9 @@ export class FilterReplacer {
       // Only show diff if the filter content was actually modified for this site.
       // Check: (a) was the primary oldHost actually found & replaced in a filter line?
       //        (b) were extra lines (additional domains) actually generated?
-      const wasPrimaryReplaced = [...oldHostsBySite.get(siteName) || []].some(oldHost =>
-        replacedOldHosts.has(normalizeDomain(oldHost))
-      );
+      const wasPrimaryReplaced = replacements
+        .filter(r => r.siteName === siteName)
+        .some(r => replacedOldHosts.has(normalizeDomain(r.oldHost)));
       const hadExtraLines = usedAdditionalKeys.has(normalizedPrimary);
       if (!wasPrimaryReplaced && !hadExtraLines) {
         continue;
@@ -510,10 +542,16 @@ export class FilterReplacer {
 
       const additional = additionalDomainsMap.get(normalizedPrimary) || [];
       const allNewHosts = new Set([primaryNewHost, ...additional]);
-      const oldHosts = [...(oldHostsBySite.get(siteName) || new Set())];
+      const beforeSet = siteDomainsBefore.get(siteName) || new Set();
 
-      const added = [...allNewHosts].filter(h => !oldHosts.includes(h));
-      const removed = oldHosts.filter(h => !allNewHosts.has(h));
+      // added = domains in "after" that were NOT in the filter before
+      const added = [...allNewHosts]
+        .filter(h => !beforeSet.has(normalizeDomain(h)))
+        .sort(naturalCompare);
+      // removed = domains that were in the filter before but NOT in "after"
+      const removed = [...beforeSet]
+        .filter(h => !allNewHosts.has(h))
+        .sort(naturalCompare);
 
       if (added.length > 0 || removed.length > 0) {
         patternDiffs.push({
@@ -829,6 +867,87 @@ function processLine(
   }
   return [out, ...extraLines];
 }
+
+/**
+ * Extract domain tokens from a filter line for "before" state tracking.
+ * Used by patternDiffs to compute the actual diff of filter content.
+ *
+ * Covers:
+ * - URL rules: ||domain^
+ * - Cosmetic rules: domain##... or domain1,domain2##...
+ * - Dollar-markers: domain$$... or domain$@$...
+ * - Wrapper syntax: [$domain=...]
+ * - Domain parameters: $domain=val1|val2
+ *
+ * Returns an array of domain strings found in the line (may be empty).
+ */
+function extractDomainsFromLine(line: string): string[] {
+  if (shouldSkipLine(line)) return [];
+
+  // Wrapper syntax: [$domain=...]
+  const wm = line.match(/^\[([^\]]+)\](.*)/);
+  if (wm) {
+    const wc = wm[1];
+    const eq = wc.indexOf("=");
+    if (eq > 0) {
+      const pv = wc.slice(eq + 1);
+      if (pv.startsWith("/")) return [];
+      if (pv.includes("|")) {
+        return pv.split("|").map(s => s.trim()).filter(Boolean);
+      }
+      return [pv.trim()].filter(Boolean);
+    }
+    return [];
+  }
+
+  // Cosmetic markers: ## #@# #?# #@?# #$?# #@$?# #%# #@%#
+  for (const sep of COSMETIC_MARKERS) {
+    const pos = line.indexOf(sep);
+    if (pos > 0) {
+      const left = line.slice(0, pos);
+      return left.split(",").map(s => s.trim()).filter(Boolean);
+    }
+  }
+
+  // Dollar markers: $$ $@$
+  for (const sep of DOLLAR_MARKERS) {
+    const pos = line.indexOf(sep);
+    if (pos > 0) {
+      if (!line.slice(0, pos).match(/\$\w+=/)) {
+        const left = line.slice(0, pos);
+        return left.split(",").map(s => s.trim()).filter(Boolean);
+      }
+    }
+  }
+
+  // URL rules: ||domain^
+  const urlMatch = line.match(/^\|\|([^/^]+)\^/);
+  if (urlMatch) {
+    return [urlMatch[1]];
+  }
+
+  // Domain parameters: $domain=val or $domain=val1|val2
+  const paramMatch = line.match(/\$([^$]+)$/);
+  if (paramMatch) {
+    const params = paramMatch[1];
+    const domains: string[] = [];
+    for (const pair of params.split(",")) {
+      const eq = pair.indexOf("=");
+      if (eq === -1) continue;
+      const pv = pair.slice(eq + 1);
+      if (pv.includes("|")) {
+        domains.push(...pv.split("|").map(s => s.trim()).filter(Boolean));
+      } else {
+        domains.push(pv.trim());
+      }
+    }
+    return domains;
+  }
+
+  return [];
+}
+
+
 // Exports for testing
 export {
   normalizeDomain,
@@ -847,4 +966,5 @@ export {
   shouldSkipLine,
   findTargetFiles,
   escapeRegExp,
+  extractDomainsFromLine,
 };

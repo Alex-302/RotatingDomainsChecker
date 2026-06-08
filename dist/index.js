@@ -16774,6 +16774,40 @@ class BatchProcessor {
                 this.logger.info(siteName, `Heuristic search found no working pattern domains`);
             }
         }
+        // LKM verification: if Phase 1 checked via initial_domain (not LKM), and LKM is a
+        // numeric pattern with a lower number than the new host, verify LKM too. If LKM is
+        // alive, prefer it as canonical (spec §5.1a). This prevents losing a working LKM
+        // when initial_domain takes priority and redirects to a higher-numbered domain.
+        if (result.success && !triedRecentLastKnownMirror && hostChanged && site.initial_domain &&
+            site.last_known_mirror && this.matchesNumericPattern(site.last_known_mirror) &&
+            this.matchesNumericPattern(newHost) && !site.initial_domain.match(/\d+/)) {
+            const lkmNum = parseInt(site.last_known_mirror.match(/\d+/)?.[0] || '0', 10);
+            const newNum = parseInt(newHost.match(/\d+/)?.[0] || '0', 10);
+            if (lkmNum < newNum) {
+                this.logger.info(siteName, `LKM ${site.last_known_mirror} has lower number than new host ${newHost}, verifying LKM liveliness...`);
+                const lkmUrl = site.last_known_mirror.startsWith('http://') || site.last_known_mirror.startsWith('https://')
+                    ? site.last_known_mirror
+                    : `https://${site.last_known_mirror}`;
+                const lkmCheckUrl = this.appendSitePath(lkmUrl, site.path);
+                const lkmResult = await this.resolver.resolve(lkmCheckUrl, false, site, site.probe_text);
+                if (lkmResult.success) {
+                    // LKM is alive — prefer it
+                    this.logger.info(siteName, `LKM ${site.last_known_mirror} is alive, reverting from ${newHost}`);
+                    return {
+                        siteName,
+                        oldHost,
+                        newHost: site.last_known_mirror,
+                        hostChanged: false,
+                        startedHost,
+                        result: lkmResult,
+                        shouldUpdate: false,
+                        checkDurationMs: Date.now() - siteStartTime,
+                        actualCheckedDomain: lkmCheckUrl,
+                    };
+                }
+                this.logger.info(siteName, `LKM ${site.last_known_mirror} is dead, keeping ${newHost}`);
+            }
+        }
         return {
             siteName,
             oldHost,
@@ -17646,6 +17680,19 @@ class FilterReplacer {
         const fileChanges = [];
         const replacedOldHosts = new Set();
         const usedAdditionalKeys = new Set();
+        // Track domains seen in filter lines BEFORE modification, per site.
+        // Used by patternDiffs computation to report only truly new domains.
+        const siteDomainsBefore = new Map();
+        // Reverse lookup: normalized domain → set of siteNames (from replacements)
+        // Uses a multi-map because the same oldHost can belong to multiple watchers.
+        const oldHostToSite = new Map();
+        for (const r of replacements) {
+            const norm = normalizeDomain(r.oldHost);
+            if (!oldHostToSite.has(norm)) {
+                oldHostToSite.set(norm, new Set());
+            }
+            oldHostToSite.get(norm).add(r.siteName);
+        }
         for (const file of files) {
             let changed = false;
             const lineChanges = [];
@@ -17667,6 +17714,28 @@ class FilterReplacer {
                 });
                 for await (const line of rl) {
                     lineNum++;
+                    // Extract domains from the original line for "before" state tracking.
+                    // Used by patternDiffs to report only truly new domains (Bug 2 fix).
+                    const lineDomains = extractDomainsFromLine(line);
+                    const trackedSitesForLine = new Set();
+                    for (const d of lineDomains) {
+                        const norm = normalizeDomain(d);
+                        const siteNames = oldHostToSite.get(norm);
+                        if (siteNames) {
+                            for (const siteName of siteNames) {
+                                if (!trackedSitesForLine.has(siteName)) {
+                                    trackedSitesForLine.add(siteName);
+                                    if (!siteDomainsBefore.has(siteName)) {
+                                        siteDomainsBefore.set(siteName, new Set());
+                                    }
+                                    // Add ALL extracted domains from this line to the site's before set
+                                    for (const ld of lineDomains) {
+                                        siteDomainsBefore.get(siteName).add(normalizeDomain(ld));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     const updatedLines = processLine(line, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, replacedOldHosts, usedAdditionalKeys);
                     // Check if line changed (first element differs) or extra lines were added
                     if (updatedLines.length > 1 || updatedLines[0] !== line) {
@@ -17708,16 +17777,11 @@ class FilterReplacer {
             }
         }
         this._logger.logGlobal(LogLevel.DEBUG, `=== Domains replacement finished ===\n`);
-        // Compute per-watcher pattern diffs from replacement data
+        // Compute per-watcher pattern diffs from actual filter content changes.
+        // Uses siteDomainsBefore (domains extracted from lines before modification)
+        // instead of oldHosts from replacements, to avoid reporting already-present
+        // domains as "added" on every run. See spec §11.
         const patternDiffs = [];
-        // Collect oldHosts per site
-        const oldHostsBySite = new Map();
-        for (const r of replacements) {
-            if (!oldHostsBySite.has(r.siteName)) {
-                oldHostsBySite.set(r.siteName, new Set());
-            }
-            oldHostsBySite.get(r.siteName).add(r.oldHost);
-        }
         // Compute diff per site — only for pattern-domain watchers
         for (const [siteName, primaryNewHost] of seenPrimary) {
             if (!matchesNumericPattern(primaryNewHost)) {
@@ -17727,16 +17791,24 @@ class FilterReplacer {
             // Only show diff if the filter content was actually modified for this site.
             // Check: (a) was the primary oldHost actually found & replaced in a filter line?
             //        (b) were extra lines (additional domains) actually generated?
-            const wasPrimaryReplaced = [...oldHostsBySite.get(siteName) || []].some(oldHost => replacedOldHosts.has(normalizeDomain(oldHost)));
+            const wasPrimaryReplaced = replacements
+                .filter(r => r.siteName === siteName)
+                .some(r => replacedOldHosts.has(normalizeDomain(r.oldHost)));
             const hadExtraLines = usedAdditionalKeys.has(normalizedPrimary);
             if (!wasPrimaryReplaced && !hadExtraLines) {
                 continue;
             }
             const additional = additionalDomainsMap.get(normalizedPrimary) || [];
             const allNewHosts = new Set([primaryNewHost, ...additional]);
-            const oldHosts = [...(oldHostsBySite.get(siteName) || new Set())];
-            const added = [...allNewHosts].filter(h => !oldHosts.includes(h));
-            const removed = oldHosts.filter(h => !allNewHosts.has(h));
+            const beforeSet = siteDomainsBefore.get(siteName) || new Set();
+            // added = domains in "after" that were NOT in the filter before
+            const added = [...allNewHosts]
+                .filter(h => !beforeSet.has(normalizeDomain(h)))
+                .sort(naturalCompare);
+            // removed = domains that were in the filter before but NOT in "after"
+            const removed = [...beforeSet]
+                .filter(h => !allNewHosts.has(h))
+                .sort(naturalCompare);
             if (added.length > 0 || removed.length > 0) {
                 patternDiffs.push({
                     siteName,
@@ -18038,6 +18110,82 @@ function processLine(line, hostMap, initialToLastKnownMap, priorityMap, addition
             out = out.replace("$" + params, "$" + upd);
     }
     return [out, ...extraLines];
+}
+/**
+ * Extract domain tokens from a filter line for "before" state tracking.
+ * Used by patternDiffs to compute the actual diff of filter content.
+ *
+ * Covers:
+ * - URL rules: ||domain^
+ * - Cosmetic rules: domain##... or domain1,domain2##...
+ * - Dollar-markers: domain$$... or domain$@$...
+ * - Wrapper syntax: [$domain=...]
+ * - Domain parameters: $domain=val1|val2
+ *
+ * Returns an array of domain strings found in the line (may be empty).
+ */
+function extractDomainsFromLine(line) {
+    if (shouldSkipLine(line))
+        return [];
+    // Wrapper syntax: [$domain=...]
+    const wm = line.match(/^\[([^\]]+)\](.*)/);
+    if (wm) {
+        const wc = wm[1];
+        const eq = wc.indexOf("=");
+        if (eq > 0) {
+            const pv = wc.slice(eq + 1);
+            if (pv.startsWith("/"))
+                return [];
+            if (pv.includes("|")) {
+                return pv.split("|").map(s => s.trim()).filter(Boolean);
+            }
+            return [pv.trim()].filter(Boolean);
+        }
+        return [];
+    }
+    // Cosmetic markers: ## #@# #?# #@?# #$?# #@$?# #%# #@%#
+    for (const sep of COSMETIC_MARKERS) {
+        const pos = line.indexOf(sep);
+        if (pos > 0) {
+            const left = line.slice(0, pos);
+            return left.split(",").map(s => s.trim()).filter(Boolean);
+        }
+    }
+    // Dollar markers: $$ $@$
+    for (const sep of DOLLAR_MARKERS) {
+        const pos = line.indexOf(sep);
+        if (pos > 0) {
+            if (!line.slice(0, pos).match(/\$\w+=/)) {
+                const left = line.slice(0, pos);
+                return left.split(",").map(s => s.trim()).filter(Boolean);
+            }
+        }
+    }
+    // URL rules: ||domain^
+    const urlMatch = line.match(/^\|\|([^/^]+)\^/);
+    if (urlMatch) {
+        return [urlMatch[1]];
+    }
+    // Domain parameters: $domain=val or $domain=val1|val2
+    const paramMatch = line.match(/\$([^$]+)$/);
+    if (paramMatch) {
+        const params = paramMatch[1];
+        const domains = [];
+        for (const pair of params.split(",")) {
+            const eq = pair.indexOf("=");
+            if (eq === -1)
+                continue;
+            const pv = pair.slice(eq + 1);
+            if (pv.includes("|")) {
+                domains.push(...pv.split("|").map(s => s.trim()).filter(Boolean));
+            }
+            else {
+                domains.push(pv.trim());
+            }
+        }
+        return domains;
+    }
+    return [];
 }
 // Exports for testing
 

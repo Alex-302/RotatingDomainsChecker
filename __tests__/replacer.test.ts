@@ -2293,4 +2293,38 @@ describe('7. applyReplacements — patternDiffs diff collection', () => {
     // No diff: initial_domain not in filter, primary is identity, no extraLines generated
     expect(result.patternDiffs).toHaveLength(0);
   });
+
+  test('cosmetic rule with existing + new additional domains → only truly new in added (Bug 2 regression)', async () => {
+    // Simulates second run: filter already has example001.com + example002.com from a previous run.
+    // New run's force_search_ahead provides 002 (already present) + 003 (truly new).
+    // patternDiffs.added must contain ONLY 003, not 002.
+    const filterFile = path.join(tmpDir, 'TestFilter', 'pattern.txt');
+    await fsp.writeFile(filterFile, 'example001.com,example002.com##.ads\n', 'utf-8');
+
+    const cfg = makeConfig(tmpDir);
+    const logger = new Logger(cfg);
+    const replacer = new FilterReplacer(cfg, logger, false);
+
+    const replacements: ReplacementPair[] = [
+      // Primary: identity (oldHost === newHost)
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example001.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      // Additional domain ALREADY in filter from previous run
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example002.com', startedHost: 'example001.com', checkDurationMs: 100 },
+      // Additional domain TRULY NEW
+      { siteName: 'PatternWatcher', oldHost: 'example001.com', newHost: 'example003.com', startedHost: 'example001.com', checkDurationMs: 100 },
+    ];
+
+    const result = await replacer.applyReplacements(replacements, false);
+
+    expect(result.patternDiffs).toHaveLength(1);
+    const diff = result.patternDiffs[0];
+    // Only example003.com is truly new
+    expect(diff.added).toEqual(['example003.com']);
+    // example002.com is already in the filter, should NOT be in added
+    expect(diff.added).not.toContain('example002.com');
+    // No domains were removed
+    expect(diff.removed).toHaveLength(0);
+    // additionalCount reflects total additional, not just new
+    expect(diff.additionalCount).toBe(2);
+  });
 });

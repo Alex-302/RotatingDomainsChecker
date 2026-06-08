@@ -1131,6 +1131,41 @@ export class BatchProcessor {
       }
     }
 
+    // LKM verification: if Phase 1 checked via initial_domain (not LKM), and LKM is a
+    // numeric pattern with a lower number than the new host, verify LKM too. If LKM is
+    // alive, prefer it as canonical (spec §5.1a). This prevents losing a working LKM
+    // when initial_domain takes priority and redirects to a higher-numbered domain.
+    if (result.success && !triedRecentLastKnownMirror && hostChanged && site.initial_domain &&
+        site.last_known_mirror && this.matchesNumericPattern(site.last_known_mirror) &&
+        this.matchesNumericPattern(newHost) && !site.initial_domain.match(/\d+/)) {
+      const lkmNum = parseInt(site.last_known_mirror.match(/\d+/)?.[0] || '0', 10);
+      const newNum = parseInt(newHost.match(/\d+/)?.[0] || '0', 10);
+      if (lkmNum < newNum) {
+        this.logger.info(siteName, `LKM ${site.last_known_mirror} has lower number than new host ${newHost}, verifying LKM liveliness...`);
+        const lkmUrl = site.last_known_mirror.startsWith('http://') || site.last_known_mirror.startsWith('https://')
+          ? site.last_known_mirror
+          : `https://${site.last_known_mirror}`;
+        const lkmCheckUrl = this.appendSitePath(lkmUrl, site.path);
+        const lkmResult = await this.resolver.resolve(lkmCheckUrl, false, site, site.probe_text);
+        if (lkmResult.success) {
+          // LKM is alive — prefer it
+          this.logger.info(siteName, `LKM ${site.last_known_mirror} is alive, reverting from ${newHost}`);
+          return {
+            siteName,
+            oldHost,
+            newHost: site.last_known_mirror,
+            hostChanged: false,
+            startedHost,
+            result: lkmResult,
+            shouldUpdate: false,
+            checkDurationMs: Date.now() - siteStartTime,
+            actualCheckedDomain: lkmCheckUrl,
+          };
+        }
+        this.logger.info(siteName, `LKM ${site.last_known_mirror} is dead, keeping ${newHost}`);
+      }
+    }
+
     return {
       siteName,
       oldHost,
