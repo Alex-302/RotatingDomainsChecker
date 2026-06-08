@@ -2285,3 +2285,66 @@ describe('10. probe_text filtering in heuristic search', () => {
     expect(results[0].newHost).toBe('example220tv.com');
   });
 });
+
+// ============================================================================
+// 8.12: force_search_ahead: Phase 1 antibot result must NOT be overwritten
+// by Phase 2 heuristic candidate that also returns antibot (regression)
+// ============================================================================
+describe('8.12 force_search_ahead: Phase 1 result preserved over Phase 2 antibot', () => {
+  test('Phase 1 antibot result (LKM) preserved when Phase 2 candidate has higher number + antibot', async () => {
+    // Bug scenario: Phase 1 confirms LKM works (antibot accepted).
+    // Phase 2 heuristic checks higher-numbered candidate (LKM+1), which also
+    // returns antibot accepted. The antibot handler (line 693+) must NOT
+    // overwrite the Phase 1 result with the higher-numbered candidate.
+    //
+    // Without this guard, LKM regresses (e.g., 1015 → 1016) even though
+    // Phase 1 confirmed the original LKM is alive.
+    const config = makeConfig({
+      dnsPreCheck: { enabled: false, timeout: 3000, retryOnce: false },
+      heuristic: { enabled: true, maxAttempts: 5, skipOnAntibot: true, forceHeuristicOnCodes: [] },
+    });
+    const site = makeSite({
+      last_known_mirror: 'example100.com',
+      accept_antibot: true,
+      force_search_ahead: true,
+    });
+    const watchers = makeWatchers({ 'TestSite': site });
+    const logger = makeLogger();
+    const resolver = new HttpResolver(config);
+
+    jest.spyOn(resolver, 'resolve').mockImplementation((url: string) => {
+      const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+
+      // Phase 1: example100.com → antibot accepted (LKM is alive)
+      // CRITICAL: must set shouldTriggerHeuristic=true so skipOnAntibot doesn't
+      // block the heuristic (real httpResolver sets this for force_search_ahead sites)
+      if (host === 'example100.com') {
+        return Promise.resolve(makeSuccessResult('example100.com', {
+          antibotDetected: true,
+          statusCode: 403,
+          shouldTriggerHeuristic: true, // real httpResolver sets this when force_search_ahead is enabled
+        }));
+      }
+
+      // Phase 2 heuristic: example101.com → also antibot accepted
+      if (host === 'example101.com') {
+        return Promise.resolve(makeSuccessResult('example101.com', {
+          antibotDetected: true,
+          statusCode: 403,
+        }));
+      }
+
+      return Promise.resolve(makeFailResult('Not found'));
+    });
+
+    const processor = new BatchProcessor(config, watchers, logger, resolver);
+    const results = await processor.processAll();
+
+    expect(results).toHaveLength(1);
+    // Phase 1 result MUST be preserved (original LKM, not overwritten by higher number)
+    expect(results[0].newHost).toBe('example100.com');
+    // 101 should be collected as additional working domain (force_search_ahead still works)
+    expect(results[0].additionalWorkingDomains).toBeDefined();
+    expect(results[0].additionalWorkingDomains).toContain('example101.com');
+  });
+});

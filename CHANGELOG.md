@@ -2,6 +2,16 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.4.1] - 2026-06-08
+
+### Fixed
+
+- Phase 2 antibot handler could overwrite a successful Phase 1 result when `force_search_ahead`
+  is enabled and both Phase 1 and heuristic candidates return antibot accepted. The handler now
+  checks whether the site was already resolved from Phase 1 before overwriting the primary result.
+  Prevents LKM regression (e.g., 1015 → 1016 pattern) when the original mirror (1015) is alive through the gateway
+  but not directly reachable from the checking environment due to geo-blocking.
+
 ## [1.4.0] - 2026-06-02
 
 ### Added

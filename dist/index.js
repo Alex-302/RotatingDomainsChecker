@@ -16399,30 +16399,40 @@ class BatchProcessor {
                         const chainFormatted = this.resolver.formatRedirectChain(result.redirectChain);
                         this.logger.info(task.siteName, `Heuristic SUCCESS (antibot accepted): ${task.candidateUrl}`);
                         this.logger.info(task.siteName, `Heuristic redirect chain: ${chainFormatted}`);
-                        // Normalize URL before extracting host for heuristic success
-                        const heuristicStartUrl = task.site.initial_domain || task.site.last_known_mirror;
-                        const heuristicNormalized = heuristicStartUrl.startsWith("http://") || heuristicStartUrl.startsWith("https://")
-                            ? heuristicStartUrl
-                            : `https://${heuristicStartUrl}`;
-                        const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
-                        // Save old last_known_mirror BEFORE any mutation for history comparison
-                        const oldLastKnownMirrorAntibot = task.site.last_known_mirror;
-                        // Update domain history now (we have the correct old value)
-                        this.updateDomainHistory(task.site, newHost, oldLastKnownMirrorAntibot);
-                        // If new domain is non-pattern, do NOT update filters
-                        const newHostIsPatternAntibot = this.matchesNumericPattern(newHost);
-                        results[task.siteIndex] = {
-                            siteName: task.siteName,
-                            oldHost,
-                            newHost,
-                            hostChanged: newHostIsPatternAntibot,
-                            startedHost: this.resolver.extractHostWithoutQuery(heuristicNormalized),
-                            result,
-                            shouldUpdate: newHostIsPatternAntibot,
-                            checkDurationMs: siteDuration,
-                            actualCheckedDomain: task.candidateUrl,
-                            historyUpdated: true, // already called updateDomainHistory above
-                        };
+                        // CRITICAL: If site was already found from Phase 1 (force_search_ahead), do NOT
+                        // overwrite the Phase 1 result. The candidate is already collected as additional
+                        // working domain by the result.success handler above. Without this guard, a heuristic
+                        // candidate with antibot accepted would overwrite Phase 1's primary result, causing
+                        // LKM regression (e.g., 1015 → 1016) even when Phase 1 confirmed the LKM works.
+                        if (!alreadyFound) {
+                            // Normalize URL before extracting host for heuristic success
+                            const heuristicStartUrl = task.site.initial_domain || task.site.last_known_mirror;
+                            const heuristicNormalized = heuristicStartUrl.startsWith("http://") || heuristicStartUrl.startsWith("https://")
+                                ? heuristicStartUrl
+                                : `https://${heuristicStartUrl}`;
+                            const siteDuration = Date.now() - siteStartTimes[task.siteIndex];
+                            // Save old last_known_mirror BEFORE any mutation for history comparison
+                            const oldLastKnownMirrorAntibot = task.site.last_known_mirror;
+                            // Update domain history now (we have the correct old value)
+                            this.updateDomainHistory(task.site, newHost, oldLastKnownMirrorAntibot);
+                            // If new domain is non-pattern, do NOT update filters
+                            const newHostIsPatternAntibot = this.matchesNumericPattern(newHost);
+                            results[task.siteIndex] = {
+                                siteName: task.siteName,
+                                oldHost,
+                                newHost,
+                                hostChanged: newHostIsPatternAntibot,
+                                startedHost: this.resolver.extractHostWithoutQuery(heuristicNormalized),
+                                result,
+                                shouldUpdate: newHostIsPatternAntibot,
+                                checkDurationMs: siteDuration,
+                                actualCheckedDomain: task.candidateUrl,
+                                historyUpdated: true, // already called updateDomainHistory above
+                            };
+                        }
+                        else {
+                            this.logger.debug(task.siteName, `Heuristic: skip antibot result overwrite for ${task.candidateUrl} (already found from Phase 1)`);
+                        }
                     }
                     // Start next task if available and below parallel limit
                     while (nextTaskIndex < dnsOkTasks.length && activePromises.size < heuristicParallel) {
@@ -18638,7 +18648,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.4.0";
+const VERSION = "1.4.1";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).

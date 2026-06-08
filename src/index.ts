@@ -30,7 +30,7 @@ export function gitSkipReason(
 }
 
 // Version
-const VERSION = "1.4.0";
+const VERSION = "1.4.1";
 
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
