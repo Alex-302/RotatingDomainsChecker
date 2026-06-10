@@ -18679,7 +18679,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.4.2";
+const VERSION = "1.4.3";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
@@ -19266,8 +19266,19 @@ async function main() {
     logger.logGlobal(LogLevel.RAW, `⌛ Total execution time: ${totalSeconds}s`);
     // Create git manager
     const gitManager = new GitManager(config, logger);
+    // Detect watcher state-only changes (failure flags cleared/added) that modify
+    // watchers.yml without a domain change — e.g., recovery from potentially_dead
+    // when last_known_mirror is unchanged. These must also trigger git operations.
+    let watcherStateChanges = 0;
+    for (const [siteName, site] of Object.entries(watchers.sites)) {
+        const hadFailure = hadFailureBeforeThisRun.get(siteName);
+        const hasFailure = Boolean(site.failed_since);
+        if (hadFailure !== hasFailure) {
+            watcherStateChanges++;
+        }
+    }
     // Determine skip reason BEFORE displaying PR info
-    const skipReason = gitSkipReason(isTestMode, dryRun, hasRealChanges);
+    const skipReason = gitSkipReason(isTestMode, dryRun, hasRealChanges || watcherStateChanges > 0);
     // Display PR/Commit mode information only when git ops are not skipped.
     // Per spec §11.4: test_live must completely skip git logic — no preview either.
     if (!skipReason) {
