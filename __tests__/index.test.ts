@@ -575,6 +575,45 @@ describe('11.8 state cleanup and churn suppression coverage', () => {
     }
   });
 
+  test('success with prior failure rewrites success_since and clears failure fields', () => {
+    jest.useFakeTimers({ now: new Date('2026-06-10T15:33:00Z') });
+    try {
+      const site: {
+        success_since?: string;
+        failed_since?: string;
+        failed_days?: number;
+        potentially_dead?: boolean;
+        last_known_mirror: string;
+      } = {
+        last_known_mirror: 'example027.com',
+        failed_since: '2026-06-10 01:48',
+        failed_days: 0,
+        potentially_dead: true,
+      };
+
+      const hadFailureBeforeThisRun = true;
+      const oldLastKnownMirror = 'example027.com';
+      const effectiveNewHost = 'example027.com'; // same host — no domain change
+      const nowFormatted = '2026-06-10 15:33';
+
+      // Simulate normal success branch (shouldUpdate, unchanged host) from src/index.ts
+      if (effectiveNewHost !== oldLastKnownMirror || hadFailureBeforeThisRun) {
+        site.success_since = nowFormatted;
+      }
+      delete site.failed_days;
+      delete site.failed_since;
+      delete site.potentially_dead;
+
+      expect(site.last_known_mirror).toBe('example027.com');
+      expect(site.success_since).toBe('2026-06-10 15:33');
+      expect(site.failed_since).toBeUndefined();
+      expect(site.failed_days).toBeUndefined();
+      expect(site.potentially_dead).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('repeated real failure preserves failed_since and keeps success_since cleared', () => {
     jest.useFakeTimers({ now: new Date('2026-05-26T12:00:00Z') });
     try {

@@ -2,6 +2,27 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.4.4] - 2026-06-10
+
+### Fixed
+
+- When a site recovered from a failure state (`failed_since` present) but the effective new host
+  was the same as the previous `last_known_mirror`, `updateSuccessSince` was skipped because the
+  guard only checked for host changes. The failure fields (`failed_since`, `failed_days`,
+  `potentially_dead`) were deleted without writing `success_since`, producing an inconsistent
+  watcher state. Added `hadFailureBeforeThisRun` check to the replacement success branch so
+  failure→success recovery with unchanged host correctly sets `success_since`.
+
+## [1.4.3] - 2026-06-10
+
+### Fixed
+
+- Watcher state-only transitions (e.g., recovery from `potentially_dead` when `last_known_mirror`
+  is unchanged) silently modified `watchers.yml` on disk but never triggered a git commit or pull
+  request because `hasRealChanges` only checked domain changes and filter edits. Added a
+  pre-git check that compares `failed_since` presence before and after processing, so entry into
+  or exit from failure state now correctly triggers git operations.
+
 ## [1.4.2] - 2026-06-08
 
 ### Fixed

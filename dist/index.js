@@ -19058,14 +19058,15 @@ async function main() {
                 // Always save only the hostname (domain), regardless of initial_domain format
                 site.last_known_mirror = effectiveNewHost;
                 // State transition: update success_since ONLY when the effective new host is
-                // genuinely different from the previously stored mirror. This suppresses
-                // churn in force_search_ahead scenarios where hostChanged=true comes from a
-                // redirect alias (Phase 1) but selectFirstByOrder picks back the same
-                // last_known_mirror — e.g., last_known=example001.com (alias→003),
-                // collected [001, 002, 003], effectiveNewHost = min = 001 (unchanged).
-                // Without this guard, repeated identical runs would rewrite the timestamp
-                // and produce spurious diffs in watchers.yml on every invocation.
-                if (effectiveNewHost !== oldLastKnownMirror) {
+                // genuinely different from the previously stored mirror, or when the site is
+                // recovering from a failure state. This suppresses churn in force_search_ahead
+                // scenarios where hostChanged=true comes from a redirect alias (Phase 1) but
+                // selectFirstByOrder picks back the same last_known_mirror — e.g.,
+                // last_known=example001.com (alias→003), collected [001, 002, 003],
+                // effectiveNewHost = min = 001 (unchanged). Without this guard, repeated
+                // identical runs would rewrite the timestamp and produce spurious diffs in
+                // watchers.yml on every invocation.
+                if (effectiveNewHost !== oldLastKnownMirror || hadFailureBeforeThisRun.get(result.siteName)) {
                     updateSuccessSince(site, nowFormatted);
                 }
                 delete site.failed_days; // Reset on success
