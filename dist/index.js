@@ -18679,7 +18679,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.4.2";
+const VERSION = "1.4.4";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
@@ -19058,14 +19058,15 @@ async function main() {
                 // Always save only the hostname (domain), regardless of initial_domain format
                 site.last_known_mirror = effectiveNewHost;
                 // State transition: update success_since ONLY when the effective new host is
-                // genuinely different from the previously stored mirror. This suppresses
-                // churn in force_search_ahead scenarios where hostChanged=true comes from a
-                // redirect alias (Phase 1) but selectFirstByOrder picks back the same
-                // last_known_mirror — e.g., last_known=example001.com (alias→003),
-                // collected [001, 002, 003], effectiveNewHost = min = 001 (unchanged).
-                // Without this guard, repeated identical runs would rewrite the timestamp
-                // and produce spurious diffs in watchers.yml on every invocation.
-                if (effectiveNewHost !== oldLastKnownMirror) {
+                // genuinely different from the previously stored mirror, or when the site is
+                // recovering from a failure state. This suppresses churn in force_search_ahead
+                // scenarios where hostChanged=true comes from a redirect alias (Phase 1) but
+                // selectFirstByOrder picks back the same last_known_mirror — e.g.,
+                // last_known=example001.com (alias→003), collected [001, 002, 003],
+                // effectiveNewHost = min = 001 (unchanged). Without this guard, repeated
+                // identical runs would rewrite the timestamp and produce spurious diffs in
+                // watchers.yml on every invocation.
+                if (effectiveNewHost !== oldLastKnownMirror || hadFailureBeforeThisRun.get(result.siteName)) {
                     updateSuccessSince(site, nowFormatted);
                 }
                 delete site.failed_days; // Reset on success
@@ -19266,8 +19267,19 @@ async function main() {
     logger.logGlobal(LogLevel.RAW, `⌛ Total execution time: ${totalSeconds}s`);
     // Create git manager
     const gitManager = new GitManager(config, logger);
+    // Detect watcher state-only changes (failure flags cleared/added) that modify
+    // watchers.yml without a domain change — e.g., recovery from potentially_dead
+    // when last_known_mirror is unchanged. These must also trigger git operations.
+    let watcherStateChanges = 0;
+    for (const [siteName, site] of Object.entries(watchers.sites)) {
+        const hadFailure = hadFailureBeforeThisRun.get(siteName);
+        const hasFailure = Boolean(site.failed_since);
+        if (hadFailure !== hasFailure) {
+            watcherStateChanges++;
+        }
+    }
     // Determine skip reason BEFORE displaying PR info
-    const skipReason = gitSkipReason(isTestMode, dryRun, hasRealChanges);
+    const skipReason = gitSkipReason(isTestMode, dryRun, hasRealChanges || watcherStateChanges > 0);
     // Display PR/Commit mode information only when git ops are not skipped.
     // Per spec §11.4: test_live must completely skip git logic — no preview either.
     if (!skipReason) {
