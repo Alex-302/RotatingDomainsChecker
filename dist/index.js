@@ -18679,7 +18679,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.4.4";
+const VERSION = "1.4.5";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
@@ -18979,9 +18979,10 @@ async function main() {
             if (site.non_pattern_mirror !== nonPatternCanonical) {
                 site.non_pattern_mirror = nonPatternCanonical;
             }
-            // Update success_since only on real state transition: entry into non-pattern phase,
-            // change of the active non-pattern mirror, or failure → success recovery.
-            if (oldNonPatternMirror !== nonPatternCanonical || hadFailureBeforeThisRun.get(result.siteName)) {
+            // Update success_since on real state transition: entry into non-pattern phase,
+            // change of the active non-pattern mirror, failure → success recovery,
+            // or first-time initialization (no prior state).
+            if (oldNonPatternMirror !== nonPatternCanonical || hadFailureBeforeThisRun.get(result.siteName) || !site.success_since) {
                 updateSuccessSince(site, nowFormatted);
             }
             delete site.failed_days;
@@ -19025,8 +19026,9 @@ async function main() {
                 summary.unchanged++;
             }
             // Single cleanup block — runs for both antibotActuallyChanged and unchanged.
-            // updateSuccessSince only on host change or failure→success transition (spec §8.4).
-            if (antibotActuallyChanged || hadFailureBeforeThisRun.get(result.siteName)) {
+            // updateSuccessSince on host change, failure→success transition, or
+            // first-time initialization (no prior state).
+            if (antibotActuallyChanged || hadFailureBeforeThisRun.get(result.siteName) || !site.success_since) {
                 updateSuccessSince(site, nowFormatted);
             }
             delete site.failed_days;
@@ -19059,14 +19061,15 @@ async function main() {
                 site.last_known_mirror = effectiveNewHost;
                 // State transition: update success_since ONLY when the effective new host is
                 // genuinely different from the previously stored mirror, or when the site is
-                // recovering from a failure state. This suppresses churn in force_search_ahead
-                // scenarios where hostChanged=true comes from a redirect alias (Phase 1) but
+                // recovering from a failure state, or on first-time initialization (no prior
+                // success_since). This suppresses churn in force_search_ahead scenarios where
+                // hostChanged=true comes from a redirect alias (Phase 1) but
                 // selectFirstByOrder picks back the same last_known_mirror — e.g.,
                 // last_known=example001.com (alias→003), collected [001, 002, 003],
                 // effectiveNewHost = min = 001 (unchanged). Without this guard, repeated
                 // identical runs would rewrite the timestamp and produce spurious diffs in
                 // watchers.yml on every invocation.
-                if (effectiveNewHost !== oldLastKnownMirror || hadFailureBeforeThisRun.get(result.siteName)) {
+                if (effectiveNewHost !== oldLastKnownMirror || hadFailureBeforeThisRun.get(result.siteName) || !site.success_since) {
                     updateSuccessSince(site, nowFormatted);
                 }
                 delete site.failed_days; // Reset on success
@@ -19104,11 +19107,12 @@ async function main() {
             }
         }
         else {
-            // Success but no change - reset failure flags; update success_since ONLY on
-            // failure→success transition. Otherwise suppress churn so repeated identical
-            // runs do not rewrite watchers.yml with a new timestamp.
+            // Success but no change - reset failure flags; update success_since on
+            // failure→success transition or first-time initialization (no prior state).
+            // Suppress churn so repeated identical runs do not rewrite watchers.yml
+            // with a new timestamp.
             summary.unchanged++;
-            if (hadFailureBeforeThisRun.get(result.siteName)) {
+            if (hadFailureBeforeThisRun.get(result.siteName) || !site.success_since) {
                 updateSuccessSince(site, nowFormatted);
             }
             delete site.failed_days;

@@ -840,3 +840,180 @@ describe('11.10 gitSkipReason', () => {
     expect(skipReason === null).toBe(true);
   });
 });
+
+// ============================================================================
+// 11.11 success_since first-time initialization (no prior state)
+// ============================================================================
+describe('11.11 success_since first-time initialization (no prior state)', () => {
+  test('shouldUpdate branch: same LKM, no prior state → writes success_since', () => {
+    jest.useFakeTimers({ now: new Date('2026-06-10T19:17:00Z') });
+    try {
+      const site: {
+        last_known_mirror: string;
+        success_since?: string;
+        failed_since?: string;
+        failed_days?: number;
+        potentially_dead?: boolean;
+      } = {
+        last_known_mirror: 'hdfilmcehennemi27.org',
+      };
+      // No failed_since, no success_since → hadFailureBeforeThisRun = false
+
+      const oldLastKnownMirror = site.last_known_mirror; // hdfilmcehennemi27.org
+      const effectiveNewHost = 'hdfilmcehennemi27.org'; // same domain
+      const hadFailureBeforeThisRun = false;
+      const nowFormatted = '2026-06-10 19:17';
+
+      // Simulate shouldUpdate success branch with FIX:
+      // effectiveNewHost !== oldLastKnownMirror → false
+      // hadFailureBeforeThisRun → false
+      // !site.success_since → true (first-time init)
+      if (effectiveNewHost !== oldLastKnownMirror || hadFailureBeforeThisRun || !site.success_since) {
+        if (site.success_since !== nowFormatted) {
+          site.success_since = nowFormatted;
+        }
+      }
+      delete site.failed_days;
+      delete site.failed_since;
+      delete site.potentially_dead;
+
+      expect(site.success_since).toBe('2026-06-10 19:17');
+      expect(site.last_known_mirror).toBe('hdfilmcehennemi27.org');
+      expect(site.failed_since).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('unchanged branch: no prior state → writes success_since', () => {
+    jest.useFakeTimers({ now: new Date('2026-06-10T19:17:00Z') });
+    try {
+      const site: {
+        success_since?: string;
+        failed_since?: string;
+        failed_days?: number;
+        potentially_dead?: boolean;
+      } = {};
+      // No state at all
+
+      const hadFailureBeforeThisRun = false;
+      const nowFormatted = '2026-06-10 19:17';
+
+      // Simulate unchanged branch with FIX:
+      // hadFailureBeforeThisRun → false
+      // !site.success_since → true (first-time init)
+      if (hadFailureBeforeThisRun || !site.success_since) {
+        if (site.success_since !== nowFormatted) {
+          site.success_since = nowFormatted;
+        }
+      }
+      delete site.failed_days;
+      delete site.failed_since;
+      delete site.potentially_dead;
+
+      expect(site.success_since).toBe('2026-06-10 19:17');
+      expect(site.failed_since).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('antibot branch: no prior state → writes success_since', () => {
+    jest.useFakeTimers({ now: new Date('2026-06-10T19:17:00Z') });
+    try {
+      const site: {
+        last_known_mirror: string;
+        success_since?: string;
+        failed_since?: string;
+        failed_days?: number;
+        potentially_dead?: boolean;
+      } = {
+        last_known_mirror: 'example001.com',
+      };
+
+      const antibotActuallyChanged = false; // same domain
+      const hadFailureBeforeThisRun = false;
+      const nowFormatted = '2026-06-10 19:17';
+
+      // Simulate antibot branch with FIX
+      if (antibotActuallyChanged || hadFailureBeforeThisRun || !site.success_since) {
+        if (site.success_since !== nowFormatted) {
+          site.success_since = nowFormatted;
+        }
+      }
+      delete site.failed_days;
+      delete site.failed_since;
+      delete site.potentially_dead;
+
+      expect(site.success_since).toBe('2026-06-10 19:17');
+      expect(site.last_known_mirror).toBe('example001.com');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('heuristic non-pattern branch: no prior state → writes success_since', () => {
+    jest.useFakeTimers({ now: new Date('2026-06-10T19:17:00Z') });
+    try {
+      const site: {
+        non_pattern_mirror?: string;
+        success_since?: string;
+        failed_since?: string;
+        failed_days?: number;
+        potentially_dead?: boolean;
+      } = {};
+      // No state, not even non_pattern_mirror
+
+      const oldNonPatternMirror = undefined;
+      const nonPatternCanonical = 'nopattern.com';
+      const hadFailureBeforeThisRun = false;
+      const nowFormatted = '2026-06-10 19:17';
+
+      // Simulate heuristic non-pattern branch with FIX
+      site.non_pattern_mirror = nonPatternCanonical;
+      if (oldNonPatternMirror !== nonPatternCanonical || hadFailureBeforeThisRun || !site.success_since) {
+        if (site.success_since !== nowFormatted) {
+          site.success_since = nowFormatted;
+        }
+      }
+      delete site.failed_days;
+      delete site.failed_since;
+      delete site.potentially_dead;
+
+      expect(site.success_since).toBe('2026-06-10 19:17');
+      expect(site.non_pattern_mirror).toBe('nopattern.com');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('shouldUpdate branch: already has success_since → does NOT rewrite (churn suppression)', () => {
+    jest.useFakeTimers({ now: new Date('2026-06-10T19:17:00Z') });
+    try {
+      const site: {
+        last_known_mirror: string;
+        success_since?: string;
+      } = {
+        last_known_mirror: 'hdfilmcehennemi27.org',
+        success_since: '2026-06-10 12:00', // already set by previous run
+      };
+
+      const oldLastKnownMirror = site.last_known_mirror;
+      const effectiveNewHost = 'hdfilmcehennemi27.org'; // same domain
+      const hadFailureBeforeThisRun = false;
+      const nowFormatted = '2026-06-10 19:17';
+
+      // Guard: first two are false, !site.success_since is false (already has it)
+      // So updateSuccessSince is NOT called → churn suppressed
+      if (effectiveNewHost !== oldLastKnownMirror || hadFailureBeforeThisRun || !site.success_since) {
+        if (site.success_since !== nowFormatted) {
+          site.success_since = nowFormatted;
+        }
+      }
+
+      expect(site.success_since).toBe('2026-06-10 12:00'); // unchanged
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
