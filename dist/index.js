@@ -18679,7 +18679,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.4.3";
+const VERSION = "1.4.4";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
