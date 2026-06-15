@@ -2,6 +2,19 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.4.5] - 2026-06-10
+
+### Fixed
+
+- When a site was added manually to `watchers.yml` without any prior runtime state (no
+  `success_since`, no `failed_since`), the first successful check never initialized
+  `success_since`. All four success-branch guards only checked for domain change or
+  failure→success recovery, but not for first-time initialization. Added `!site.success_since`
+  to each guard so the timestamp is written on the first successful check regardless of
+  domain change or prior failure state. The HDFilmCehennemi watcher with a manually-set
+  `last_known_mirror` previously remained without `success_since` after a successful run; now
+  it is correctly initialized.
+
 ## [1.4.4] - 2026-06-10
 
 ### Fixed

@@ -248,4 +248,198 @@ sites:
     expect(savedContent).not.toContain('last_seen');
     expect(savedContent).toContain('success_since');
   });
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // 9.x saveWatchers — state transition field persistence (failed_since / success_since)
+  // ──────────────────────────────────────────────────────────────────────────────
+
+  test('saveWatchers: success→failure removes success_since, adds failed_since/failed_days/potentially_dead', async () => {
+    const watchersContent = `sites:
+  Site1:
+    last_known_mirror: himovies.bz
+    success_since: "2026-05-25"
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    // Load, simulate failure transition, then save
+    const watchers = await loadWatchers(watchersPath);
+    const site = watchers.sites['Site1'];
+
+    // Simulate failure branch from index.ts: delete success_since, set failure fields
+    delete site.success_since;
+    site.failed_since = '2026-06-10 16:55';
+    site.failed_days = 0;
+    site.potentially_dead = true;
+
+    await saveWatchers(watchers, watchersPath);
+
+    const savedContent = readFileSync(watchersPath, 'utf-8');
+    // success_since must NOT appear after failure transition
+    expect(savedContent).not.toContain('success_since');
+    // failure fields must appear
+    expect(savedContent).toContain('failed_since:');
+    expect(savedContent).toContain('failed_days:');
+    expect(savedContent).toContain('potentially_dead:');
+    // last_known_mirror must be preserved
+    expect(savedContent).toContain('last_known_mirror: himovies.bz');
+
+    // Verify round-trip: reload and check in-memory state
+    const reloaded = await loadWatchers(watchersPath);
+    expect(reloaded.sites['Site1'].success_since).toBeUndefined();
+    expect(reloaded.sites['Site1'].failed_since).toBe('2026-06-10 16:55');
+    expect(reloaded.sites['Site1'].failed_days).toBe(0);
+    expect(reloaded.sites['Site1'].potentially_dead).toBe(true);
+    expect(reloaded.sites['Site1'].last_known_mirror).toBe('himovies.bz');
+  });
+
+  test('saveWatchers: failure→success removes failed_since/failed_days/potentially_dead, adds success_since', async () => {
+    const watchersContent = `sites:
+  Site2:
+    last_known_mirror: example027.com
+    failed_since: "2026-06-10 01:48"
+    failed_days: 0
+    potentially_dead: true
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    // Load, simulate recovery (failure→success), then save
+    const watchers = await loadWatchers(watchersPath);
+    const site = watchers.sites['Site2'];
+
+    // Simulate success recovery branch from index.ts
+    site.success_since = '2026-06-10 15:33';
+    delete site.failed_since;
+    delete site.failed_days;
+    delete site.potentially_dead;
+
+    await saveWatchers(watchers, watchersPath);
+
+    const savedContent = readFileSync(watchersPath, 'utf-8');
+    // success_since must appear
+    expect(savedContent).toContain('success_since:');
+    // failure fields must NOT appear
+    expect(savedContent).not.toContain('failed_since');
+    expect(savedContent).not.toContain('failed_days');
+    expect(savedContent).not.toContain('potentially_dead');
+    // last_known_mirror must be preserved
+    expect(savedContent).toContain('last_known_mirror: example027.com');
+
+    // Verify round-trip
+    const reloaded = await loadWatchers(watchersPath);
+    expect(reloaded.sites['Site2'].success_since).toBe('2026-06-10 15:33');
+    expect(reloaded.sites['Site2'].failed_since).toBeUndefined();
+    expect(reloaded.sites['Site2'].failed_days).toBeUndefined();
+    expect(reloaded.sites['Site2'].potentially_dead).toBeUndefined();
+    expect(reloaded.sites['Site2'].last_known_mirror).toBe('example027.com');
+  });
+
+  test('saveWatchers: repeated success does NOT rewrite success_since (churn suppression)', async () => {
+    const watchersContent = `sites:
+  Site3:
+    last_known_mirror: example001.com
+    success_since: "2026-05-24 12:00"
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    // Load and save WITHOUT changing success_since (simulating churn suppression)
+    const watchers = await loadWatchers(watchersPath);
+
+    // Do NOT touch success_since (churn suppression)
+    await saveWatchers(watchers, watchersPath);
+
+    const savedContent = readFileSync(watchersPath, 'utf-8');
+    // success_since must still have the original value
+    expect(savedContent).toContain('success_since: "2026-05-24 12:00"');
+  });
+
+  test('saveWatchers: repeated failure preserves original failed_since', async () => {
+    const watchersContent = `sites:
+  Site4:
+    last_known_mirror: example001.com
+    failed_since: "2026-05-20 12:00"
+    failed_days: 0
+    potentially_dead: true
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    // Load, simulate repeated failure with day-bucket suppression
+    const watchers = await loadWatchers(watchersPath);
+    const site = watchers.sites['Site4'];
+
+    // Simulate repeated failure: failed_since NOT reassigned, failed_days preserved
+    // (day-bucket suppression — same-day repeated failure does not rewrite failed_days)
+    // No changes to failure fields
+    await saveWatchers(watchers, watchersPath);
+
+    const savedContent = readFileSync(watchersPath, 'utf-8');
+    // Original failed_since preserved
+    expect(savedContent).toContain('failed_since: "2026-05-20 12:00"');
+    expect(savedContent).toContain('failed_days: 0');
+    expect(savedContent).toContain('potentially_dead:');
+  });
+
+  test('saveWatchers: first-time initialization writes success_since (no prior state)', async () => {
+    // Simulate HDFilmCehennemi scenario: site added manually without any timestamps
+    const watchersContent = `sites:
+  HDFilmCehennemi:
+    initial_domain: t.co/3D4ep5ZtK4
+    last_known_mirror: hdfilmcehennemi27.org
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    // Load, simulate first successful check, save
+    const watchers = await loadWatchers(watchersPath);
+    const site = watchers.sites['HDFilmCehennemi'];
+
+    // Simulate first-time initialization: no prior state, success_since was never set
+    expect(site.success_since).toBeUndefined();
+    site.success_since = '2026-06-10 19:17';
+
+    await saveWatchers(watchers, watchersPath);
+
+    const savedContent = readFileSync(watchersPath, 'utf-8');
+    expect(savedContent).toContain('success_since:');
+    expect(savedContent).toContain('last_known_mirror: hdfilmcehennemi27.org');
+
+    // Round-trip verification
+    const reloaded = await loadWatchers(watchersPath);
+    expect(reloaded.sites['HDFilmCehennemi'].success_since).toBe('2026-06-10 19:17');
+    expect(reloaded.sites['HDFilmCehennemi'].last_known_mirror).toBe('hdfilmcehennemi27.org');
+  });
+
+  test('saveWatchers: empty failed_since is cleaned up on success recovery', async () => {
+    const watchersContent = `sites:
+  Site5:
+    last_known_mirror: example001.com
+    failed_since: ""
+    failed_days: 0
+    potentially_dead: true
+    success_since: "2026-06-10 15:33"
+`;
+    const watchersPath = join(tempDir, 'watchers.yml');
+    writeFileSync(watchersPath, watchersContent, 'utf-8');
+
+    // Load, simulate success recovery with cleanup of empty failed_since
+    const watchers = await loadWatchers(watchersPath);
+    const site = watchers.sites['Site5'];
+
+    // If the site was already saved with both success_since and empty
+    // failed_since, recovery must clean up the empty failure fields
+    delete site.failed_since;
+    delete site.failed_days;
+    delete site.potentially_dead;
+
+    await saveWatchers(watchers, watchersPath);
+
+    const savedContent = readFileSync(watchersPath, 'utf-8');
+    expect(savedContent).not.toContain('failed_since');
+    expect(savedContent).not.toContain('failed_days');
+    expect(savedContent).not.toContain('potentially_dead');
+    expect(savedContent).toContain('success_since:');
+  });
 });
