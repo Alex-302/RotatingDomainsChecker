@@ -551,6 +551,35 @@ describe('3.4 processDomainList — additional domains appending', () => {
     const count = processed.filter(d => d === 'new433.com').length;
     expect(count).toBe(1);
   });
+
+  test('blocks cross-pattern additional domains (e.g. sample002.xyz on example{N}.com line)', () => {
+    // Cross-pattern: "sample002.xyz" has different base pattern from "example005.com"
+    const hostMap = new Map([['old.com', 'example005.com']]);
+    const crossPatternMap = new Map([['example005.com', ['sample002.xyz']]]);
+    const { processed } = processDomainList(['old.com'], hostMap, emptyInitialMap, emptyPriorityMap, crossPatternMap);
+    // Cross-pattern domain must NOT be appended
+    expect(processed).not.toContain('sample002.xyz');
+    expect(processed).toEqual(['example005.com']);
+  });
+
+  test('allows same-pattern additional domains', () => {
+    // Same pattern: "example006.com" has same base pattern as "example005.com"
+    const hostMap = new Map([['old.com', 'example005.com']]);
+    const samePatternMap = new Map([['example005.com', ['example006.com', 'example007.com']]]);
+    const { processed } = processDomainList(['old.com'], hostMap, emptyInitialMap, emptyPriorityMap, samePatternMap);
+    expect(processed).toContain('example005.com');
+    expect(processed).toContain('example006.com');
+    expect(processed).toContain('example007.com');
+  });
+
+  test('blocks non-pattern additional domain on numeric-pattern line', () => {
+    // Non-pattern: "nopattern.com" has no numeric pattern
+    const hostMap = new Map([['old.com', 'example005.com']]);
+    const nonPatternMap = new Map([['example005.com', ['nopattern.com']]]);
+    const { processed } = processDomainList(['old.com'], hostMap, emptyInitialMap, emptyPriorityMap, nonPatternMap);
+    expect(processed).not.toContain('nopattern.com');
+    expect(processed).toEqual(['example005.com']);
+  });
 });
 
 // ============================================================================

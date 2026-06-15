@@ -204,7 +204,10 @@ function processDomainList(
       if (extras) {
         let changedByExtras = false;
         for (const extra of extras) {
-          if (matchesNumericPattern(d) && !matchesNumericPattern(extra)) {
+          // Skip extra domains whose numeric pattern does not match the line's
+          // pattern (e.g. "sample002.xyz" appended to an "example{N}.com" line).
+          // This prevents cross-pattern contamination from force_search_ahead results.
+          if (matchesNumericPattern(d) && (!matchesNumericPattern(extra) || !matchesSamePattern(d, extra))) {
             continue;
           }
           const extraNorm = normalizeDomain(extra);
@@ -348,7 +351,10 @@ export class FilterReplacer {
       } else {
         // Subsequent replacements are additional domains from force_search_ahead
         const primary = seenPrimary.get(r.siteName)!;
-        if (matchesNumericPattern(primary) && !matchesNumericPattern(r.newHost)) {
+        // Block cross-pattern additional domains (e.g. "sample002.xyz" for
+        // an "example{N}.com" primary). This check also prevents non-pattern
+        // domains from being added to numeric-pattern lines.
+        if (matchesNumericPattern(primary) && (!matchesNumericPattern(r.newHost) || !matchesSamePattern(primary, r.newHost))) {
           continue;
         }
         const key = normalizeDomain(primary);
