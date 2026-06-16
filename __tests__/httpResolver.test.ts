@@ -845,3 +845,119 @@ describe('6.12 Early exit on probe_text + JS redirect', () => {
     expect(result.redirectChain).toHaveLength(2);
   });
 });
+
+// ============================================================================
+// 6.13 forceHeuristicOnCodes with probe_text on error status
+// ============================================================================
+
+describe('6.13 forceHeuristicOnCodes with probe_text on error status', () => {
+  function makeFakeResponse(status: number, body: string, headers: Record<string, string> = {}): Response {
+    return {
+      status,
+      headers: {
+        get: (name: string) => headers[name.toLowerCase()] ?? null,
+      },
+      text: async () => body,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response;
+  }
+
+  test('forceHeuristicOnCodes matches + probe_text provided + text/html → success=true with finalBody', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      heuristic: { enabled: true, forceHeuristicOnCodes: [404], maxAttempts: 3, skipOnAntibot: true },
+    });
+    const resolver = new HttpResolver(config);
+
+    const errorBody = '<html><body><h1>404 Not Found</h1><p>Welcome to ExampleSite</p></body></html>';
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(404, errorBody, { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve('https://example001.com/', false, undefined, ['ExampleSite']);
+
+    expect(result.success).toBe(true);
+    expect(result.statusCode).toBe(404);
+    expect(result.finalBody).toBe(errorBody);
+    expect(result.shouldTriggerHeuristic).toBe(true);
+  });
+
+  test('forceHeuristicOnCodes matches + probe_text provided + non-text content → success=true, finalBody=undefined', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      heuristic: { enabled: true, forceHeuristicOnCodes: [500], maxAttempts: 3, skipOnAntibot: true },
+    });
+    const resolver = new HttpResolver(config);
+
+    const errorBody = 'Binary data';
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(500, errorBody, { 'content-type': 'application/octet-stream' }));
+
+    const result = await resolver.resolve('https://example001.com/', false, undefined, ['ExampleSite']);
+
+    expect(result.success).toBe(true);
+    expect(result.statusCode).toBe(500);
+    expect(result.finalBody).toBeUndefined();
+    expect(result.shouldTriggerHeuristic).toBe(true);
+  });
+
+  test('forceHeuristicOnCodes matches + probe_text NOT provided → success=false (backward compatibility)', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      heuristic: { enabled: true, forceHeuristicOnCodes: [404], maxAttempts: 3, skipOnAntibot: true },
+    });
+    const resolver = new HttpResolver(config);
+
+    const errorBody = '<html><body>404 Not Found</body></html>';
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(404, errorBody, { 'content-type': 'text/html' }));
+
+    // No probe_text provided (undefined)
+    const result = await resolver.resolve('https://example001.com/', false, undefined, undefined);
+
+    expect(result.success).toBe(false);
+    expect(result.statusCode).toBe(404);
+    expect(result.finalBody).toBeUndefined();
+    expect(result.shouldTriggerHeuristic).toBe(true);
+    expect(result.error).toContain('Non-success status: 404');
+  });
+
+  test('forceHeuristicOnCodes does NOT match + probe_text provided → success=false', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      heuristic: { enabled: true, forceHeuristicOnCodes: [404], maxAttempts: 3, skipOnAntibot: true }, // 500 is not in the list
+    });
+    const resolver = new HttpResolver(config);
+
+    const errorBody = '<html><body>500 Internal Server Error</body></html>';
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(500, errorBody, { 'content-type': 'text/html' }));
+
+    const result = await resolver.resolve('https://example001.com/', false, undefined, ['ExampleSite']);
+
+    expect(result.success).toBe(false);
+    expect(result.statusCode).toBe(500);
+    expect(result.finalBody).toBeUndefined();
+    expect(result.shouldTriggerHeuristic).toBe(false);
+    expect(result.error).toContain('Non-success status: 500');
+  });
+
+  test('forceHeuristicOnCodes matches + empty probe_text array → success=false', async () => {
+    const config = makeConfig({
+      processing: { redirectDepth: 5, parallel: 1 },
+      heuristic: { enabled: true, forceHeuristicOnCodes: [404], maxAttempts: 3, skipOnAntibot: true },
+    });
+    const resolver = new HttpResolver(config);
+
+    const errorBody = '<html><body>404 Not Found</body></html>';
+    jest.spyOn(resolver as any, 'fetchWithRetry')
+      .mockResolvedValueOnce(makeFakeResponse(404, errorBody, { 'content-type': 'text/html' }));
+
+    // Empty probe_text array
+    const result = await resolver.resolve('https://example001.com/', false, undefined, []);
+
+    expect(result.success).toBe(false);
+    expect(result.statusCode).toBe(404);
+    expect(result.finalBody).toBeUndefined();
+    expect(result.shouldTriggerHeuristic).toBe(true);
+  });
+});

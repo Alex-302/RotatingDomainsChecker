@@ -17086,7 +17086,34 @@ class HttpResolver {
                     continue;
                 }
                 // Other error status
-                // Consume body to release connection - must not throw
+                // For status codes listed in forceHeuristicOnCodes, try to capture
+                // the response body for content probing. If probe_text is configured
+                // and matches, the site is considered working despite the error code.
+                // This handles cases where the server returns a non-2xx status but
+                // still serves identifiable content (e.g. 404 page with site branding).
+                if (this.config.heuristic.forceHeuristicOnCodes.includes(response.status) && probeText && probeText.length > 0) {
+                    let finalBody;
+                    try {
+                        const contentType = response.headers.get("content-type") || "";
+                        if (contentType.includes("text/html") || contentType.includes("text/plain")) {
+                            finalBody = await response.text();
+                        }
+                        else {
+                            await response.arrayBuffer();
+                        }
+                    }
+                    catch { }
+                    return {
+                        success: true,
+                        finalUrl: currentUrl,
+                        finalHost: new URL(currentUrl).hostname,
+                        statusCode: response.status,
+                        redirectChain: chain,
+                        finalBody,
+                        shouldTriggerHeuristic: true,
+                    };
+                }
+                // Otherwise, consume body to release connection - must not throw
                 try {
                     await response.arrayBuffer();
                 }
@@ -18685,7 +18712,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.4.6";
+const VERSION = "1.5.0";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).

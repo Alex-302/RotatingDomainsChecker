@@ -2,6 +2,16 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.5.0] - 2026-06-16
+
+### Added
+
+- When `forceHeuristicOnCodes` match an error status code (e.g. 404, 500) and
+  `probe_text` is configured, `HttpResolver.resolve()` now captures the response
+  body and returns `success: true` if matched `finalBody`. This lets sites that serve
+  identifiable content (e.g. branded 404 pages) be treated as working despite the
+  non-2xx status, triggering the heuristic for further discovery.
+
 ## [1.4.6] - 2026-06-15
 
 ### Fixed
