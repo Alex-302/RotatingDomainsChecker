@@ -178,6 +178,46 @@ describe('11.2b selectPatternAwareWorkingSet - mixed-set canonicalization', () =
     ]);
     expect(workingSet.ignoredNonPatternDomains).toEqual([]);
   });
+
+  test('separates cross-pattern domains from same-pattern additions', () => {
+    // "sample002.xyz" has a different base pattern from "example031.com"
+    const workingSet = selectPatternAwareWorkingSet('example031.com', [
+      'example032.com',
+      'sample002.xyz',
+      'example033.com',
+    ]);
+
+    expect(workingSet.canonicalHost).toBe('example031.com');
+    // Only same-pattern domains appear in additionalPatternDomains
+    expect(workingSet.additionalPatternDomains).toEqual(['example032.com', 'example033.com']);
+    // Cross-pattern domain is separated
+    expect(workingSet.crossPatternDomains).toEqual(['sample002.xyz']);
+    expect(workingSet.ignoredNonPatternDomains).toEqual([]);
+  });
+
+  test('cross-pattern domains include multiple unrelated numeric patterns', () => {
+    const workingSet = selectPatternAwareWorkingSet('example001.com', [
+      'example002.com',
+      'othersite99.net',
+      'example003.com',
+      'another42.org',
+    ]);
+
+    expect(workingSet.canonicalHost).toBe('example001.com');
+    expect(workingSet.additionalPatternDomains).toEqual(['example002.com', 'example003.com']);
+    expect(workingSet.crossPatternDomains).toEqual(['another42.org', 'othersite99.net']);
+    expect(workingSet.ignoredNonPatternDomains).toEqual([]);
+  });
+
+  test('no cross-pattern domains when all pattern domains share same base', () => {
+    const workingSet = selectPatternAwareWorkingSet('example001.com', [
+      'example002.com',
+      'example003.com',
+    ]);
+
+    expect(workingSet.additionalPatternDomains).toEqual(['example002.com', 'example003.com']);
+    expect(workingSet.crossPatternDomains).toEqual([]);
+  });
 });
 
 describe('11.3 success_since — legacy migration & state semantic', () => {

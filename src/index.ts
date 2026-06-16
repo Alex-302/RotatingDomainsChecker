@@ -3,7 +3,7 @@
 import { loadConfig, loadWatchers, saveWatchers } from "./config.js";
 import { BatchProcessor } from "./batch.js";
 import { HttpResolver } from "./httpResolver.js";
-import { FilterReplacer } from "./replacer.js";
+import { FilterReplacer, matchesSamePattern } from "./replacer.js";
 import { GitManager } from "./git.js";
 import { Logger, LogLevel } from "./logger.js";
 import { connectionDiagnostics } from "./diagnostics.js";
@@ -30,7 +30,7 @@ export function gitSkipReason(
 }
 
 // Version
-const VERSION = "1.4.5";
+const VERSION = "1.4.6";
 
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
@@ -55,6 +55,7 @@ export function selectPatternAwareWorkingSet(newHost: string, additionalDomains?
   canonicalHost: string;
   additionalPatternDomains: string[];
   ignoredNonPatternDomains: string[];
+  crossPatternDomains: string[];
 } {
   const allUniqueDomains = [...new Set([newHost, ...(additionalDomains || [])])];
 
@@ -63,28 +64,40 @@ export function selectPatternAwareWorkingSet(newHost: string, additionalDomains?
   // "papazsports1016.pro" ('w' > 'p') even though 1015 < 1016.
   const stripWww = (s: string) => s.replace(/^www\./, '');
   const patternDomains = allUniqueDomains
-    .filter(matchesNumericPattern)
+    .filter(matchesNumericPattern);
+
+  // Separate domains by base pattern. Only domains that share newHost's base
+  // pattern participate in canonical selection and filter-rule additions.
+  // Cross-pattern domains (e.g. "sample002.xyz" alongside "example{N}.com")
+  // are excluded from filter rules and only reported via warnings.
+  const samePattern = patternDomains.filter(d => matchesSamePattern(newHost, d));
+  const crossPatternDomains = patternDomains.filter(d => !matchesSamePattern(newHost, d))
     .sort((a, b) => naturalCompare(stripWww(a), stripWww(b)));
 
-  if (patternDomains.length === 0) {
+  if (samePattern.length === 0) {
+    // No matching pattern domains — fall back to non-pattern canonical selection
     const canonicalHost = selectFirstByOrder(newHost, additionalDomains);
     const ignoredNonPatternDomains = allUniqueDomains
-      .filter(domain => domain !== canonicalHost)
+      .filter(domain => domain !== canonicalHost && !matchesNumericPattern(domain))
       .sort((a, b) => naturalCompare(stripWww(a), stripWww(b)));
 
     return {
       canonicalHost,
       additionalPatternDomains: [],
       ignoredNonPatternDomains,
+      crossPatternDomains,
     };
   }
 
+  const sortedSamePattern = [...samePattern].sort((a, b) => naturalCompare(stripWww(a), stripWww(b)));
+
   return {
-    canonicalHost: patternDomains[0],
-    additionalPatternDomains: patternDomains.slice(1),
+    canonicalHost: sortedSamePattern[0],
+    additionalPatternDomains: sortedSamePattern.slice(1),
     ignoredNonPatternDomains: allUniqueDomains
       .filter(domain => !matchesNumericPattern(domain))
       .sort((a, b) => naturalCompare(stripWww(a), stripWww(b))),
+    crossPatternDomains,
   };
 }
 
@@ -399,6 +412,9 @@ export async function main() {
     } else if (isAntibotAccepted && result.shouldUpdate) {
       // Antibot accepted: compute effective new host first to check if anything actually changed
       const workingSetAntibot = selectPatternAwareWorkingSet(result.newHost, result.additionalWorkingDomains);
+      if (workingSetAntibot.crossPatternDomains.length > 0) {
+        logger.warn(result.siteName, `Pattern likely changed: discovered domain(s) with different base pattern — ${workingSetAntibot.crossPatternDomains.join(', ')} (expected pattern around ${result.newHost})`);
+      }
       const effectiveNewHostAntibot = workingSetAntibot.canonicalHost;
       const antibotActuallyChanged = effectiveNewHostAntibot !== site.last_known_mirror;
 
@@ -461,6 +477,9 @@ export async function main() {
       // Only update filters if check was successful
       if (result.result.success) {
         const workingSet = selectPatternAwareWorkingSet(result.newHost, result.additionalWorkingDomains);
+        if (workingSet.crossPatternDomains.length > 0) {
+          logger.warn(result.siteName, `Pattern likely changed: discovered domain(s) with different base pattern — ${workingSet.crossPatternDomains.join(', ')} (expected pattern around ${result.newHost})`);
+        }
         const hasAdditionalWorkingDomains = workingSet.additionalPatternDomains.length > 0;
         // Count as updated only if domain actually changed
         if (result.hostChanged || hasAdditionalWorkingDomains) {

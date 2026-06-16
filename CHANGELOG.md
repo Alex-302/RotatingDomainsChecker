@@ -2,6 +2,20 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.4.6] - 2026-06-15
+
+### Fixed
+
+- The safety check in `replacer.ts` for `force_search_ahead` additional domains only
+  prevented non-numeric-pattern domains from being added to numeric-pattern filter lines.
+  Domains with a different base pattern but containing a digit (e.g. `sample002.xyz` on
+  an `example{N}.com` line) passed through and contaminated the rule. Added a
+  `matchesSamePattern()` check alongside `matchesNumericPattern()` in both the
+  `additionalDomainsMap` build loop and `processDomainList()` step 5 so that cross-pattern
+  domains are blocked from filter rules. Also updated `selectPatternAwareWorkingSet()` in
+  `index.ts` to separate cross-pattern domains into a dedicated return field and log a
+  warning when they are detected.
+
 ## [1.4.5] - 2026-06-10
 
 ### Fixed

@@ -17540,7 +17540,10 @@ function processDomainList(domains, hostMap, initialToLastKnownMap, priorityMap,
             if (extras) {
                 let changedByExtras = false;
                 for (const extra of extras) {
-                    if (matchesNumericPattern(d) && !matchesNumericPattern(extra)) {
+                    // Skip extra domains whose numeric pattern does not match the line's
+                    // pattern (e.g. "sample002.xyz" appended to an "example{N}.com" line).
+                    // This prevents cross-pattern contamination from force_search_ahead results.
+                    if (matchesNumericPattern(d) && (!matchesNumericPattern(extra) || !matchesSamePattern(d, extra))) {
                         continue;
                     }
                     const extraNorm = normalizeDomain(extra);
@@ -17667,7 +17670,10 @@ class FilterReplacer {
             else {
                 // Subsequent replacements are additional domains from force_search_ahead
                 const primary = seenPrimary.get(r.siteName);
-                if (matchesNumericPattern(primary) && !matchesNumericPattern(r.newHost)) {
+                // Block cross-pattern additional domains (e.g. "sample002.xyz" for
+                // an "example{N}.com" primary). This check also prevents non-pattern
+                // domains from being added to numeric-pattern lines.
+                if (matchesNumericPattern(primary) && (!matchesNumericPattern(r.newHost) || !matchesSamePattern(primary, r.newHost))) {
                     continue;
                 }
                 const key = normalizeDomain(primary);
@@ -18679,7 +18685,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.4.5";
+const VERSION = "1.4.6";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
@@ -18704,25 +18710,35 @@ function selectPatternAwareWorkingSet(newHost, additionalDomains) {
     // "papazsports1016.pro" ('w' > 'p') even though 1015 < 1016.
     const stripWww = (s) => s.replace(/^www\./, '');
     const patternDomains = allUniqueDomains
-        .filter(src_matchesNumericPattern)
+        .filter(src_matchesNumericPattern);
+    // Separate domains by base pattern. Only domains that share newHost's base
+    // pattern participate in canonical selection and filter-rule additions.
+    // Cross-pattern domains (e.g. "sample002.xyz" alongside "example{N}.com")
+    // are excluded from filter rules and only reported via warnings.
+    const samePattern = patternDomains.filter(d => matchesSamePattern(newHost, d));
+    const crossPatternDomains = patternDomains.filter(d => !matchesSamePattern(newHost, d))
         .sort((a, b) => naturalCompare(stripWww(a), stripWww(b)));
-    if (patternDomains.length === 0) {
+    if (samePattern.length === 0) {
+        // No matching pattern domains — fall back to non-pattern canonical selection
         const canonicalHost = selectFirstByOrder(newHost, additionalDomains);
         const ignoredNonPatternDomains = allUniqueDomains
-            .filter(domain => domain !== canonicalHost)
+            .filter(domain => domain !== canonicalHost && !src_matchesNumericPattern(domain))
             .sort((a, b) => naturalCompare(stripWww(a), stripWww(b)));
         return {
             canonicalHost,
             additionalPatternDomains: [],
             ignoredNonPatternDomains,
+            crossPatternDomains,
         };
     }
+    const sortedSamePattern = [...samePattern].sort((a, b) => naturalCompare(stripWww(a), stripWww(b)));
     return {
-        canonicalHost: patternDomains[0],
-        additionalPatternDomains: patternDomains.slice(1),
+        canonicalHost: sortedSamePattern[0],
+        additionalPatternDomains: sortedSamePattern.slice(1),
         ignoredNonPatternDomains: allUniqueDomains
             .filter(domain => !src_matchesNumericPattern(domain))
             .sort((a, b) => naturalCompare(stripWww(a), stripWww(b))),
+        crossPatternDomains,
     };
 }
 function extractHostname(value) {
@@ -18994,6 +19010,9 @@ async function main() {
         else if (isAntibotAccepted && result.shouldUpdate) {
             // Antibot accepted: compute effective new host first to check if anything actually changed
             const workingSetAntibot = selectPatternAwareWorkingSet(result.newHost, result.additionalWorkingDomains);
+            if (workingSetAntibot.crossPatternDomains.length > 0) {
+                logger.warn(result.siteName, `Pattern likely changed: discovered domain(s) with different base pattern — ${workingSetAntibot.crossPatternDomains.join(', ')} (expected pattern around ${result.newHost})`);
+            }
             const effectiveNewHostAntibot = workingSetAntibot.canonicalHost;
             const antibotActuallyChanged = effectiveNewHostAntibot !== site.last_known_mirror;
             if (antibotActuallyChanged) {
@@ -19039,6 +19058,9 @@ async function main() {
             // Only update filters if check was successful
             if (result.result.success) {
                 const workingSet = selectPatternAwareWorkingSet(result.newHost, result.additionalWorkingDomains);
+                if (workingSet.crossPatternDomains.length > 0) {
+                    logger.warn(result.siteName, `Pattern likely changed: discovered domain(s) with different base pattern — ${workingSet.crossPatternDomains.join(', ')} (expected pattern around ${result.newHost})`);
+                }
                 const hasAdditionalWorkingDomains = workingSet.additionalPatternDomains.length > 0;
                 // Count as updated only if domain actually changed
                 if (result.hostChanged || hasAdditionalWorkingDomains) {
