@@ -2,6 +2,17 @@
 
 This project follows Keep a Changelog structure with SemVer-oriented release numbers.
 
+## [1.5.1] - 2026-07-20
+
+### Fixed
+
+- `$domain=` parameters with a single value (no `|` separator) did not receive
+  additional domains from `force_search_ahead`. The single-value branch used
+  `replaceDomain()` directly instead of `processDomainList()`, which is the
+  only path that checks `additionalDomainsMap`. Switched to `processDomainList()`
+  so that extra working domains are appended regardless of whether the value
+  contains a pipe separator.
+
 ## [1.5.0] - 2026-06-16
 
 ### Added

@@ -864,8 +864,10 @@ function processLine(
         np.push(r.changed || r.processed.length !== d.length
           ? pn + "=" + r.processed.join("|") : pair);
       } else {
-        const r = replaceDomain(pv, hostMap, initialToLastKnownMap);
-        np.push(r !== pv ? pn + "=" + r : pair);
+        const d = [pv];
+        const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
+        np.push(r.changed || r.processed.length !== 1
+          ? pn + "=" + r.processed.join("|") : pair);
       }
     }
     const upd = np.join(",");

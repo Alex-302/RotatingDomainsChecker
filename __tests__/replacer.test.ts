@@ -523,6 +523,13 @@ describe('3.3 processLine — additional domains in $domain= parameters', () => 
     expect(result[0]).toContain('new433.com');
     expect(result[0]).toContain('other.com');
   });
+
+  test('$domain=old.com (single value) → $domain=new432.com|new433.com (adds additional domains)', () => {
+    // Regression test: single-value $domain= must also get additional domains from additionalDomainsMap
+    const result = processLine('||example.com^$domain=old.com', hostMap, emptyInitialMap, emptyPriorityMap, additionalDomainsMap);
+    expect(result[0]).toContain('new432.com');
+    expect(result[0]).toContain('new433.com');
+  });
 });
 
 describe('3.4 processDomainList — additional domains appending', () => {
