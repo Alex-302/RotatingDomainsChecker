@@ -18175,8 +18175,10 @@ function processLine(line, hostMap, initialToLastKnownMap, priorityMap, addition
                     ? pn + "=" + r.processed.join("|") : pair);
             }
             else {
-                const r = replaceDomain(pv, hostMap, initialToLastKnownMap);
-                np.push(r !== pv ? pn + "=" + r : pair);
+                const d = [pv];
+                const r = processDomainList(d, hostMap, initialToLastKnownMap, priorityMap, additionalDomainsMap, usedAdditionalKeys);
+                np.push(r.changed || r.processed.length !== 1
+                    ? pn + "=" + r.processed.join("|") : pair);
             }
         }
         const upd = np.join(",");
@@ -18712,7 +18714,7 @@ function gitSkipReason(isTestMode, dryRun, hasRealChanges) {
     return null;
 }
 // Version
-const VERSION = "1.5.0";
+const VERSION = "1.5.1";
 /**
  * From newHost + additionalWorkingDomains, pick the first domain after natural sorting.
  * This ensures consistent, deterministic selection (lowest-numbered pattern domain first).
